@@ -1,6 +1,7 @@
 pub mod inbound;
 pub mod outbound;
 pub mod relay;
+pub mod transport;
 
 use std::net::SocketAddr;
 

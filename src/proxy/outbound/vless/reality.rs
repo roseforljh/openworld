@@ -507,7 +507,7 @@ mod tests {
     #[test]
     fn test_parse_hex() {
         assert_eq!(parse_hex("0a1b2c").unwrap(), vec![0x0a, 0x1b, 0x2c]);
-        assert_eq!(parse_hex("").unwrap(), vec![]);
+        assert_eq!(parse_hex("").unwrap(), Vec::<u8>::new());
         assert!(parse_hex("0g").is_err());
         assert!(parse_hex("0").is_err());
     }

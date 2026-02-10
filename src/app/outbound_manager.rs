@@ -35,4 +35,8 @@ impl OutboundManager {
     pub fn get(&self, tag: &str) -> Option<Arc<dyn OutboundHandler>> {
         self.handlers.get(tag).cloned()
     }
+
+    pub fn list(&self) -> &HashMap<String, Arc<dyn OutboundHandler>> {
+        &self.handlers
+    }
 }

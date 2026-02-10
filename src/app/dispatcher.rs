@@ -12,6 +12,7 @@ use crate::proxy::{relay::relay, InboundResult, Network, Session};
 use crate::router::Router;
 
 use super::outbound_manager::OutboundManager;
+use super::tracker::ConnectionTracker;
 
 /// NAT 表条目超时时间
 const NAT_ENTRY_TTL_SECS: i64 = 120;
@@ -54,13 +55,19 @@ impl NatEntry {
 pub struct Dispatcher {
     router: Arc<Router>,
     outbound_manager: Arc<OutboundManager>,
+    tracker: Arc<ConnectionTracker>,
 }
 
 impl Dispatcher {
-    pub fn new(router: Arc<Router>, outbound_manager: Arc<OutboundManager>) -> Self {
+    pub fn new(
+        router: Arc<Router>,
+        outbound_manager: Arc<OutboundManager>,
+        tracker: Arc<ConnectionTracker>,
+    ) -> Self {
         Self {
             router,
             outbound_manager,
+            tracker,
         }
     }
 
@@ -94,8 +101,11 @@ impl Dispatcher {
             "dispatching TCP"
         );
 
+        let guard = self.tracker.track(&session, outbound.tag()).await;
         let outbound_stream = outbound.connect(&session).await?;
-        relay(inbound_stream, outbound_stream).await?;
+        let (up, down) = relay(inbound_stream, outbound_stream).await?;
+        guard.add_upload(up);
+        guard.add_download(down);
 
         Ok(())
     }

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use serde::Deserialize;
 
@@ -9,6 +11,8 @@ pub struct Config {
     pub outbounds: Vec<OutboundConfig>,
     #[serde(default)]
     pub router: RouterConfig,
+    pub api: Option<ApiConfig>,
+    pub dns: Option<DnsConfig>,
 }
 
 impl Config {
@@ -73,7 +77,7 @@ pub struct OutboundConfig {
     pub settings: OutboundSettings,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Clone)]
 pub struct OutboundSettings {
     pub address: Option<String>,
     pub port: Option<u16>,
@@ -88,6 +92,121 @@ pub struct OutboundSettings {
     pub short_id: Option<String>,
     pub server_name: Option<String>,
     pub fingerprint: Option<String>,
+    /// 传输层配置（新格式）
+    pub transport: Option<TransportConfig>,
+    /// TLS 配置（新格式）
+    pub tls: Option<TlsConfig>,
+}
+
+impl OutboundSettings {
+    /// 获取有效的传输层配置（新格式优先，回退到默认 TCP）
+    pub fn effective_transport(&self) -> TransportConfig {
+        self.transport.clone().unwrap_or_default()
+    }
+
+    /// 获取有效的 TLS 配置（新格式优先，回退到旧字段）
+    pub fn effective_tls(&self) -> TlsConfig {
+        if let Some(ref tls) = self.tls {
+            return tls.clone();
+        }
+        // 从旧字段构建
+        let security = self.security.clone().unwrap_or_default();
+        let enabled = !security.is_empty() && security != "none";
+        TlsConfig {
+            enabled,
+            security: if security.is_empty() { "tls".to_string() } else { security },
+            sni: self.sni.clone(),
+            allow_insecure: self.allow_insecure,
+            alpn: None,
+            public_key: self.public_key.clone(),
+            short_id: self.short_id.clone(),
+            server_name: self.server_name.clone(),
+            fingerprint: self.fingerprint.clone(),
+        }
+    }
+}
+
+fn default_tcp() -> String {
+    "tcp".to_string()
+}
+
+fn default_tls_security() -> String {
+    "tls".to_string()
+}
+
+/// 传输层配置
+#[derive(Debug, Default, Deserialize, Clone)]
+pub struct TransportConfig {
+    #[serde(rename = "type", default = "default_tcp")]
+    pub transport_type: String,
+    pub path: Option<String>,
+    pub host: Option<String>,
+    pub headers: Option<HashMap<String, String>>,
+}
+
+/// TLS 配置
+#[derive(Debug, Deserialize, Clone)]
+pub struct TlsConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_tls_security")]
+    pub security: String,
+    pub sni: Option<String>,
+    #[serde(default)]
+    pub allow_insecure: bool,
+    pub alpn: Option<Vec<String>>,
+    pub public_key: Option<String>,
+    pub short_id: Option<String>,
+    pub server_name: Option<String>,
+    pub fingerprint: Option<String>,
+}
+
+impl Default for TlsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            security: "tls".to_string(),
+            sni: None,
+            allow_insecure: false,
+            alpn: None,
+            public_key: None,
+            short_id: None,
+            server_name: None,
+            fingerprint: None,
+        }
+    }
+}
+
+/// API 配置（Clash 兼容）
+#[derive(Debug, Deserialize, Clone)]
+pub struct ApiConfig {
+    #[serde(default = "default_api_listen")]
+    pub listen: String,
+    #[serde(default = "default_api_port")]
+    pub port: u16,
+    pub secret: Option<String>,
+}
+
+fn default_api_listen() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_api_port() -> u16 {
+    9090
+}
+
+/// DNS 配置
+#[derive(Debug, Deserialize, Clone)]
+pub struct DnsConfig {
+    pub servers: Vec<DnsServerConfig>,
+}
+
+/// DNS 服务器配置
+#[derive(Debug, Deserialize, Clone)]
+pub struct DnsServerConfig {
+    pub address: String,
+    #[serde(default)]
+    pub domains: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -96,6 +215,8 @@ pub struct RouterConfig {
     pub rules: Vec<RuleConfig>,
     #[serde(default = "default_outbound")]
     pub default: String,
+    pub geoip_db: Option<String>,
+    pub geosite_db: Option<String>,
 }
 
 impl Default for RouterConfig {
@@ -103,6 +224,8 @@ impl Default for RouterConfig {
         Self {
             rules: Vec::new(),
             default: "direct".to_string(),
+            geoip_db: None,
+            geosite_db: None,
         }
     }
 }
@@ -140,7 +263,11 @@ mod tests {
             router: RouterConfig {
                 rules: Vec::new(),
                 default: "direct".to_string(),
+                geoip_db: None,
+                geosite_db: None,
             },
+            api: None,
+            dns: None,
         }
     }
 

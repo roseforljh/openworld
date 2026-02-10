@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use crate::config::types::InboundConfig;
@@ -20,10 +21,15 @@ struct InboundEntry {
 pub struct InboundManager {
     entries: Vec<InboundEntry>,
     dispatcher: Arc<Dispatcher>,
+    cancel_token: CancellationToken,
 }
 
 impl InboundManager {
-    pub fn new(configs: &[InboundConfig], dispatcher: Arc<Dispatcher>) -> Result<Self> {
+    pub fn new(
+        configs: &[InboundConfig],
+        dispatcher: Arc<Dispatcher>,
+        cancel_token: CancellationToken,
+    ) -> Result<Self> {
         let mut entries = Vec::new();
 
         for config in configs {
@@ -42,6 +48,7 @@ impl InboundManager {
         Ok(Self {
             entries,
             dispatcher,
+            cancel_token,
         })
     }
 
@@ -52,6 +59,7 @@ impl InboundManager {
             let dispatcher = self.dispatcher.clone();
             let handler = entry.handler.clone();
             let bind_addr = format!("{}:{}", entry.listen, entry.port);
+            let cancel = self.cancel_token.clone();
 
             let handle = tokio::spawn(async move {
                 let listener = match TcpListener::bind(&bind_addr).await {
@@ -69,45 +77,52 @@ impl InboundManager {
                 );
 
                 loop {
-                    let (tcp_stream, source) = match listener.accept().await {
-                        Ok(v) => v,
-                        Err(e) => {
-                            error!(error = %e, "accept failed");
-                            continue;
-                        }
-                    };
-
-                    let handler = handler.clone();
-                    let dispatcher = dispatcher.clone();
-
-                    tokio::spawn(async move {
-                        let stream = Box::new(tcp_stream);
-                        match handler.handle(stream, source).await {
-                            Ok(result) => {
-                                if let Err(e) = dispatcher.dispatch(result).await {
-                                    error!(
-                                        source = %source,
-                                        error = %e,
-                                        "dispatch failed"
-                                    );
+                    tokio::select! {
+                        result = listener.accept() => {
+                            let (tcp_stream, source) = match result {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    error!(error = %e, "accept failed");
+                                    continue;
                                 }
-                            }
-                            Err(e) => {
-                                error!(
-                                    source = %source,
-                                    error = %e,
-                                    "inbound handle failed"
-                                );
-                            }
+                            };
+
+                            let handler = handler.clone();
+                            let dispatcher = dispatcher.clone();
+
+                            tokio::spawn(async move {
+                                let stream = Box::new(tcp_stream);
+                                match handler.handle(stream, source).await {
+                                    Ok(result) => {
+                                        if let Err(e) = dispatcher.dispatch(result).await {
+                                            error!(
+                                                source = %source,
+                                                error = %e,
+                                                "dispatch failed"
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!(
+                                            source = %source,
+                                            error = %e,
+                                            "inbound handle failed"
+                                        );
+                                    }
+                                }
+                            });
                         }
-                    });
+                        _ = cancel.cancelled() => {
+                            info!(tag = handler.tag(), "inbound shutting down");
+                            break;
+                        }
+                    }
                 }
             });
 
             handles.push(handle);
         }
 
-        // 等待所有监听器（正常情况下不会返回）
         for handle in handles {
             let _ = handle.await;
         }

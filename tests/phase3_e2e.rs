@@ -12,6 +12,7 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 
 use openworld::app::dispatcher::Dispatcher;
 use openworld::app::outbound_manager::OutboundManager;
+use openworld::app::tracker::ConnectionTracker;
 use openworld::common::{Address, UdpPacket};
 use openworld::config::types::{
     OutboundConfig, OutboundSettings, RuleConfig, RouterConfig,
@@ -74,6 +75,8 @@ fn make_dispatcher_with_rules(rules: Vec<RuleConfig>, default: &str) -> Dispatch
     let router_cfg = RouterConfig {
         rules,
         default: default.to_string(),
+        geoip_db: None,
+        geosite_db: None,
     };
     let router = Arc::new(Router::new(&router_cfg).unwrap());
 
@@ -85,7 +88,8 @@ fn make_dispatcher_with_rules(rules: Vec<RuleConfig>, default: &str) -> Dispatch
         },
     ];
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds).unwrap());
-    Dispatcher::new(router, outbound_manager)
+    let tracker = Arc::new(ConnectionTracker::new());
+    Dispatcher::new(router, outbound_manager, tracker)
 }
 
 // ============================================================
@@ -309,6 +313,8 @@ fn e2e_router_multi_rule_first_match() {
             },
         ],
         default: "direct".to_string(),
+        geoip_db: None,
+        geosite_db: None,
     };
     let router = Router::new(&router_cfg).unwrap();
 

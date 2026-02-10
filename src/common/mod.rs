@@ -1,6 +1,7 @@
 pub mod addr;
 pub mod error;
 pub mod stream;
+pub mod tls;
 pub mod udp;
 
 pub use addr::Address;

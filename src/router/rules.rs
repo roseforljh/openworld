@@ -16,6 +16,10 @@ pub enum Rule {
     DomainFull(Vec<String>),
     /// IP CIDR 匹配
     IpCidr(Vec<IpNet>),
+    /// GeoIP 国家代码匹配
+    GeoIp(Vec<String>),
+    /// GeoSite 分类匹配
+    GeoSite(Vec<String>),
 }
 
 impl Rule {
@@ -32,11 +36,22 @@ impl Rule {
                     .collect();
                 Ok(Rule::IpCidr(nets?))
             }
+            "geoip" => Ok(Rule::GeoIp(
+                config.values.iter().map(|s| s.to_uppercase()).collect(),
+            )),
+            "geosite" => Ok(Rule::GeoSite(
+                config.values.iter().map(|s| s.to_lowercase()).collect(),
+            )),
             other => anyhow::bail!("unsupported rule type: {}", other),
         }
     }
 
-    pub fn matches(&self, addr: &Address) -> bool {
+    pub fn matches(
+        &self,
+        addr: &Address,
+        geoip_db: Option<&super::geoip::GeoIpDb>,
+        geosite_db: Option<&super::geosite::GeoSiteDb>,
+    ) -> bool {
         match self {
             Rule::DomainSuffix(suffixes) => {
                 if let Address::Domain(domain, _) = addr {
@@ -78,6 +93,25 @@ impl Rule {
                     false
                 }
             }
+            Rule::GeoIp(codes) => {
+                if let Address::Ip(sock_addr) = addr {
+                    if let Some(db) = geoip_db {
+                        if let Some(country) = db.lookup_country(sock_addr.ip()) {
+                            let country_upper = country.to_uppercase();
+                            return codes.iter().any(|c| c == &country_upper);
+                        }
+                    }
+                }
+                false
+            }
+            Rule::GeoSite(categories) => {
+                if let Address::Domain(domain, _) = addr {
+                    if let Some(db) = geosite_db {
+                        return categories.iter().any(|cat| db.matches(domain, cat));
+                    }
+                }
+                false
+            }
         }
     }
 }
@@ -99,76 +133,76 @@ mod tests {
     #[test]
     fn domain_suffix_match() {
         let rule = Rule::DomainSuffix(vec!["example.com".to_string()]);
-        assert!(rule.matches(&domain("www.example.com", 443)));
-        assert!(rule.matches(&domain("example.com", 443)));
-        assert!(!rule.matches(&domain("notexample.com", 443)));
-        assert!(!rule.matches(&domain("example.org", 443)));
+        assert!(rule.matches(&domain("www.example.com", 443), None, None));
+        assert!(rule.matches(&domain("example.com", 443), None, None));
+        assert!(!rule.matches(&domain("notexample.com", 443), None, None));
+        assert!(!rule.matches(&domain("example.org", 443), None, None));
     }
 
     #[test]
     fn domain_suffix_case_insensitive() {
         let rule = Rule::DomainSuffix(vec!["Example.COM".to_string()]);
-        assert!(rule.matches(&domain("WWW.EXAMPLE.COM", 443)));
-        assert!(rule.matches(&domain("www.example.com", 443)));
+        assert!(rule.matches(&domain("WWW.EXAMPLE.COM", 443), None, None));
+        assert!(rule.matches(&domain("www.example.com", 443), None, None));
     }
 
     #[test]
     fn domain_suffix_no_match_ip() {
         let rule = Rule::DomainSuffix(vec!["example.com".to_string()]);
-        assert!(!rule.matches(&ip("1.2.3.4:443")));
+        assert!(!rule.matches(&ip("1.2.3.4:443"), None, None));
     }
 
     #[test]
     fn domain_suffix_cn() {
         let rule = Rule::DomainSuffix(vec!["cn".to_string()]);
-        assert!(rule.matches(&domain("baidu.cn", 80)));
-        assert!(rule.matches(&domain("www.gov.cn", 443)));
-        assert!(!rule.matches(&domain("cnn.com", 443)));
+        assert!(rule.matches(&domain("baidu.cn", 80), None, None));
+        assert!(rule.matches(&domain("www.gov.cn", 443), None, None));
+        assert!(!rule.matches(&domain("cnn.com", 443), None, None));
     }
 
     // DomainKeyword
     #[test]
     fn domain_keyword_match() {
         let rule = Rule::DomainKeyword(vec!["google".to_string()]);
-        assert!(rule.matches(&domain("www.google.com", 443)));
-        assert!(rule.matches(&domain("google.co.jp", 443)));
-        assert!(!rule.matches(&domain("example.com", 443)));
+        assert!(rule.matches(&domain("www.google.com", 443), None, None));
+        assert!(rule.matches(&domain("google.co.jp", 443), None, None));
+        assert!(!rule.matches(&domain("example.com", 443), None, None));
     }
 
     #[test]
     fn domain_keyword_no_match_ip() {
         let rule = Rule::DomainKeyword(vec!["google".to_string()]);
-        assert!(!rule.matches(&ip("8.8.8.8:53")));
+        assert!(!rule.matches(&ip("8.8.8.8:53"), None, None));
     }
 
     // DomainFull
     #[test]
     fn domain_full_match() {
         let rule = Rule::DomainFull(vec!["example.com".to_string()]);
-        assert!(rule.matches(&domain("example.com", 443)));
-        assert!(!rule.matches(&domain("www.example.com", 443)));
-        assert!(!rule.matches(&domain("example.com.cn", 443)));
+        assert!(rule.matches(&domain("example.com", 443), None, None));
+        assert!(!rule.matches(&domain("www.example.com", 443), None, None));
+        assert!(!rule.matches(&domain("example.com.cn", 443), None, None));
     }
 
     #[test]
     fn domain_full_case_insensitive() {
         let rule = Rule::DomainFull(vec!["Example.COM".to_string()]);
-        assert!(rule.matches(&domain("example.com", 443)));
+        assert!(rule.matches(&domain("example.com", 443), None, None));
     }
 
     // IpCidr
     #[test]
     fn ip_cidr_match() {
         let rule = Rule::IpCidr(vec!["192.168.0.0/16".parse().unwrap()]);
-        assert!(rule.matches(&ip("192.168.1.1:80")));
-        assert!(rule.matches(&ip("192.168.255.255:443")));
-        assert!(!rule.matches(&ip("10.0.0.1:80")));
+        assert!(rule.matches(&ip("192.168.1.1:80"), None, None));
+        assert!(rule.matches(&ip("192.168.255.255:443"), None, None));
+        assert!(!rule.matches(&ip("10.0.0.1:80"), None, None));
     }
 
     #[test]
     fn ip_cidr_no_match_domain() {
         let rule = Rule::IpCidr(vec!["10.0.0.0/8".parse().unwrap()]);
-        assert!(!rule.matches(&domain("example.com", 80)));
+        assert!(!rule.matches(&domain("example.com", 80), None, None));
     }
 
     #[test]
@@ -178,10 +212,10 @@ mod tests {
             "172.16.0.0/12".parse().unwrap(),
             "192.168.0.0/16".parse().unwrap(),
         ]);
-        assert!(rule.matches(&ip("10.1.2.3:80")));
-        assert!(rule.matches(&ip("172.16.0.1:80")));
-        assert!(rule.matches(&ip("192.168.0.1:80")));
-        assert!(!rule.matches(&ip("8.8.8.8:53")));
+        assert!(rule.matches(&ip("10.1.2.3:80"), None, None));
+        assert!(rule.matches(&ip("172.16.0.1:80"), None, None));
+        assert!(rule.matches(&ip("192.168.0.1:80"), None, None));
+        assert!(!rule.matches(&ip("8.8.8.8:53"), None, None));
     }
 
     // from_config
@@ -193,8 +227,8 @@ mod tests {
             outbound: "direct".to_string(),
         };
         let rule = Rule::from_config(&config).unwrap();
-        assert!(rule.matches(&domain("www.baidu.com", 443)));
-        assert!(rule.matches(&domain("test.cn", 80)));
+        assert!(rule.matches(&domain("www.baidu.com", 443), None, None));
+        assert!(rule.matches(&domain("test.cn", 80), None, None));
     }
 
     #[test]
@@ -235,6 +269,8 @@ impl fmt::Display for Rule {
                 let strs: Vec<String> = v.iter().map(|n| n.to_string()).collect();
                 write!(f, "ip-cidr({})", strs.join(","))
             }
+            Rule::GeoIp(v) => write!(f, "geoip({})", v.join(",")),
+            Rule::GeoSite(v) => write!(f, "geosite({})", v.join(",")),
         }
     }
 }

@@ -5,7 +5,7 @@
 - **项目名称**：OpenWorld
 - **文档类型**：完整实施计划（含已完成内容与后续规划）
 - **当前范围**：代理内核（Rust）
-- **当前状态**：Phase 1 已完成；Phase 2 待启动
+- **当前状态**：Phase 1-3 已完成；Phase 4 待启动
 - **运行环境**：Windows / PowerShell（也兼容 Linux）
 
 ---
@@ -17,28 +17,48 @@
 构建一个高性能、模块化、可扩展的代理内核，支持：
 
 1. **入站协议**：
-   - SOCKS5（RFC 1928，TCP CONNECT）
+   - SOCKS5（RFC 1928，TCP CONNECT + UDP ASSOCIATE）
    - HTTP CONNECT
 2. **出站协议**：
    - Direct（直连）
-   - VLESS over TLS
+   - VLESS over TLS / Reality / Vision
    - Hysteria2（TCP over QUIC）
-3. **路由规则**：
-   - domain-suffix
-   - domain-keyword
-   - domain-full
-   - ip-cidr
+3. **传输层**：
+   - TCP、TLS、Reality、WebSocket
+4. **路由规则**：
+   - domain-suffix、domain-keyword、domain-full、ip-cidr
+   - GeoIP（mmdb）、GeoSite（文本域名列表）
    - 首条命中优先，无命中走默认出站
+5. **DNS**：
+   - 系统 DNS、UDP DNS、DNS over TLS、DNS over HTTPS
+   - 域名分流解析（SplitResolver）
+6. **管理 API**：
+   - Clash 兼容 RESTful API（代理管理、连接管理、流量统计、规则查询）
+   - WebSocket 实时流量推送
 
-## 1.2 非目标（当前阶段）
+## 1.2 已完成能力总览
 
-以下功能不在当前交付范围内（规划到 Phase 2+）：
-
-- XTLS-Vision
-- Reality
-- UDP 代理
-- TUN/TAP
-- 控制面 API / Web 面板
+| 能力 | 状态 | Phase |
+|------|------|-------|
+| SOCKS5 入站 | 已完成 | 1 |
+| HTTP CONNECT 入站 | 已完成 | 1 |
+| Direct 出站 | 已完成 | 1 |
+| VLESS over TLS | 已完成 | 1 |
+| Hysteria2 TCP | 已完成 | 1 |
+| 基础路由（domain/ip-cidr） | 已完成 | 1 |
+| XTLS-Vision 流控 | 已完成 | 2 |
+| Reality 握手 | 已完成 | 2 |
+| VLESS UDP 代理 | 已完成 | 2 |
+| 公共 TLS 工具提取 | 已完成 | 3A |
+| 配置结构改造（transport/tls） | 已完成 | 3A |
+| StreamTransport trait + 实现 | 已完成 | 3A |
+| WebSocket 传输 | 已完成 | 3A |
+| VLESS 迁移至 StreamTransport | 已完成 | 3A |
+| 优雅关闭 + 连接跟踪 | 已完成 | 3A |
+| Clash 兼容 REST API | 已完成 | 3B |
+| DNS 解析器模块 | 已完成 | 3C |
+| GeoIP 路由 | 已完成 | 3C |
+| GeoSite 路由 | 已完成 | 3C |
 
 ---
 
@@ -48,48 +68,56 @@
 
 ```text
 客户端连接
-  -> 入站握手（SOCKS5 / HTTP CONNECT）
-  -> 生成 Session(target/source/inbound/network)
-  -> Router 按规则匹配 outbound tag
-  -> Outbound 建立远端连接（Direct / VLESS / HY2）
-  -> relay 双向转发(copy_bidirectional)
-  -> 连接关闭与日志记录
+  -> InboundManager 接受 TCP 连接，每连接 spawn 一个 tokio task
+  -> InboundHandler (SOCKS5/HTTP) 协议握手，产出 InboundResult(Session + Stream)
+  -> Dispatcher 调用 Router 匹配路由规则，选择出站 tag
+  -> OutboundManager 按 tag 查找 OutboundHandler
+  -> OutboundHandler (Direct/VLESS/Hysteria2) 通过 StreamTransport 建立远端连接
+  -> relay() 双向转发 (copy_bidirectional)
+  -> ConnectionTracker 记录连接状态与流量统计
+  -> 连接关闭时 ConnectionGuard 自动清理
 ```
 
 架构分层：
 
-- **common**：地址、错误、流抽象
-- **config**：YAML 反序列化与校验
-- **proxy**：协议抽象与入/出站实现
-- **router**：规则引擎
-- **app**：组装器、调度器、监听器管理
+- **common/** — 地址、错误、流抽象、公共 TLS 工具、UDP 包抽象
+- **config/** — YAML 反序列化与校验（含 transport/tls 子结构）
+- **proxy/** — 协议抽象、入/出站实现、传输层抽象
+- **router/** — 规则引擎（含 GeoIP/GeoSite）
+- **dns/** — DNS 解析器（System/Hickory/Split）
+- **api/** — Clash 兼容 RESTful API
+- **app/** — 组装器、调度器、监听器管理、连接跟踪
 
 ---
 
 ## 3. 技术选型与依赖
 
-核心依赖（已落地）：
+核心依赖：
 
-- `tokio`：异步运行时
-- `quinn`：QUIC
-- `rustls` + `tokio-rustls`：TLS
-- `h3` + `h3-quinn`：HTTP/3（HY2 认证）
-- `serde` + `serde_yml`：配置解析
-- `tracing` + `tracing-subscriber`：结构化日志
-- `ipnet`：CIDR 匹配
-- `uuid`：VLESS UUID
-- `bytes`：协议编码
-
-设计原则：
-
-- 统一 trait 抽象（InboundHandler / OutboundHandler）
-- 协议实现与调度解耦
-- 默认安全，允许显式 `allow_insecure`
-- 最小可用核心优先，后续逐步增强
+| 依赖 | 用途 |
+|---|---|
+| `tokio` | 异步运行时 |
+| `quinn` | QUIC 协议（Hysteria2） |
+| `rustls` + `tokio-rustls` | TLS |
+| `h3` + `h3-quinn` | HTTP/3（Hysteria2 认证） |
+| `serde` + `serde_yml` | YAML 配置解析 |
+| `tracing` + `tracing-subscriber` | 结构化日志 |
+| `ipnet` | IP CIDR 匹配 |
+| `uuid` | VLESS UUID |
+| `bytes` | 协议编码 |
+| `axum` | REST API 框架（含 WebSocket） |
+| `tower-http` | CORS 中间件 |
+| `serde_json` | JSON 序列化 |
+| `hickory-resolver` | DNS 解析（UDP/DoT/DoH） |
+| `maxminddb` | GeoIP mmdb 数据库 |
+| `tokio-tungstenite` | WebSocket 传输层 |
+| `tokio-util` | CancellationToken（优雅关闭） |
+| `async-trait` | 异步 trait |
+| `reqwest` | API 集成测试（dev） |
 
 ---
 
-## 4. 目录与模块规划
+## 4. 目录与模块结构
 
 ```text
 openworld/
@@ -102,10 +130,12 @@ openworld/
    │  ├─ mod.rs
    │  ├─ addr.rs
    │  ├─ error.rs
-   │  └─ stream.rs
+   │  ├─ stream.rs
+   │  ├─ tls.rs              [Phase 3A] 公共 TLS 工具
+   │  └─ udp.rs               [Phase 2] UDP 包抽象
    ├─ config/
    │  ├─ mod.rs
-   │  └─ types.rs
+   │  └─ types.rs             含 TransportConfig / TlsConfig / DnsConfig / ApiConfig
    ├─ proxy/
    │  ├─ mod.rs
    │  ├─ relay.rs
@@ -113,26 +143,55 @@ openworld/
    │  │  ├─ mod.rs
    │  │  ├─ socks5.rs
    │  │  └─ http.rs
-   │  └─ outbound/
-   │     ├─ mod.rs
-   │     ├─ direct.rs
-   │     ├─ vless/
-   │     │  ├─ mod.rs
-   │     │  ├─ protocol.rs
-   │     │  └─ tls.rs
-   │     └─ hysteria2/
-   │        ├─ mod.rs
-   │        ├─ auth.rs
-   │        ├─ protocol.rs
-   │        └─ quic.rs
+   │  ├─ outbound/
+   │  │  ├─ mod.rs
+   │  │  ├─ direct.rs
+   │  │  ├─ vless/
+   │  │  │  ├─ mod.rs          使用 StreamTransport
+   │  │  │  ├─ protocol.rs
+   │  │  │  ├─ tls.rs
+   │  │  │  ├─ reality.rs     [Phase 2] Reality 握手
+   │  │  │  └─ vision.rs      [Phase 2] XTLS-Vision
+   │  │  └─ hysteria2/
+   │  │     ├─ mod.rs
+   │  │     ├─ auth.rs
+   │  │     ├─ protocol.rs
+   │  │     └─ quic.rs
+   │  └─ transport/           [Phase 3A] 传输层抽象
+   │     ├─ mod.rs             StreamTransport trait + build_transport()
+   │     ├─ tcp.rs
+   │     ├─ tls.rs
+   │     ├─ reality.rs
+   │     └─ ws.rs
    ├─ router/
    │  ├─ mod.rs
-   │  └─ rules.rs
+   │  ├─ rules.rs             含 GeoIp / GeoSite 规则
+   │  ├─ geoip.rs             [Phase 3C] mmdb 查询
+   │  └─ geosite.rs           [Phase 3C] 域名列表
+   ├─ dns/                    [Phase 3C]
+   │  ├─ mod.rs               DnsResolver trait
+   │  └─ resolver.rs          System / Hickory / Split 解析器
+   ├─ api/                    [Phase 3B]
+   │  ├─ mod.rs               API 服务器启动与路由
+   │  ├─ handlers.rs          端点处理函数
+   │  └─ models.rs            Clash 兼容响应结构
    └─ app/
-      ├─ mod.rs
-      ├─ dispatcher.rs
-      ├─ inbound_manager.rs
-      └─ outbound_manager.rs
+      ├─ mod.rs               App 组装（含 API 启动）
+      ├─ dispatcher.rs        路由调度 + 连接跟踪
+      ├─ inbound_manager.rs   TCP 监听 + CancellationToken
+      ├─ outbound_manager.rs  出站注册表
+      └─ tracker.rs           [Phase 3A] 连接跟踪器
+```
+
+测试文件：
+
+```text
+tests/
+├─ phase3_baseline.rs          基础架构测试（163 项中的核心）
+├─ phase3_e2e.rs               端到端集成测试
+├─ phase4_protocol_e2e.rs      协议层端到端测试
+├─ phase5_api.rs               [Phase 3B] API 端点测试
+└─ phase5_routing.rs           [Phase 3C] DNS + 路由增强测试
 ```
 
 ---
@@ -144,154 +203,160 @@ openworld/
 - `Ip(SocketAddr)`
 - `Domain(String, u16)`
 
-能力：
-
-- 端口/主机读取
-- VLESS 地址编码
-- HY2 地址字符串转换
-- DNS 解析
-- SOCKS5 地址解码
+能力：端口/主机读取、VLESS 地址编码、HY2 地址转换、DNS 解析、SOCKS5 地址解码
 
 ## 5.2 Session
 
-```text
+```rust
 Session {
-  target: Address,
-  source: Option<SocketAddr>,
-  inbound_tag: String,
-  network: Network(Tcp/Udp)
+    target: Address,
+    source: Option<SocketAddr>,
+    inbound_tag: String,
+    network: Network(Tcp/Udp),
 }
 ```
 
-## 5.3 协议 trait
+## 5.3 核心 trait
 
-- `InboundHandler::handle(...) -> InboundResult`
-- `OutboundHandler::connect(&Session) -> ProxyStream`
+```rust
+#[async_trait]
+pub trait InboundHandler: Send + Sync {
+    fn tag(&self) -> &str;
+    async fn handle(&self, stream: ProxyStream, source: SocketAddr) -> Result<InboundResult>;
+}
 
-统一通过 `ProxyStream`（AsyncRead + AsyncWrite）进行后续转发。
+#[async_trait]
+pub trait OutboundHandler: Send + Sync {
+    fn tag(&self) -> &str;
+    async fn connect(&self, session: &Session) -> Result<ProxyStream>;
+    async fn connect_udp(&self, session: &Session) -> Result<Box<dyn UdpTransport>>;
+}
+
+#[async_trait]
+pub trait StreamTransport: Send + Sync {
+    async fn connect(&self, addr: &Address) -> Result<ProxyStream>;
+}
+
+#[async_trait]
+pub trait DnsResolver: Send + Sync {
+    async fn resolve(&self, host: &str) -> Result<Vec<IpAddr>>;
+}
+```
+
+## 5.4 连接跟踪
+
+```rust
+ConnectionTracker {
+    track(session, outbound_tag) -> ConnectionGuard,
+    list() -> Vec<ConnectionInfo>,
+    snapshot() -> TrafficSnapshot { total_up, total_down, active_count },
+    close(id) -> bool,
+    close_all() -> usize,
+}
+```
+
+`ConnectionGuard` 实现 Drop 自动从 tracker 移除，持有 `upload/download: Arc<AtomicU64>` 供 relay 累加。
 
 ---
 
-## 6. 协议实现计划（详细）
+## 6. 协议实现详情
 
 ## 6.1 SOCKS5 入站
 
-范围：TCP CONNECT（cmd=0x01）
-
-流程：
-
-1. 读取版本和 methods
-2. 返回无认证 `0x00`
-3. 读取请求头（ver/cmd/rsv/atyp/addr/port）
-4. 仅允许 CONNECT，其他命令返回不支持
-5. 解析目标地址（IPv4/Domain/IPv6）
-6. 返回成功响应
-7. 构建 Session 并交给 Dispatcher
-
-错误处理：
-
-- 非 0x05 版本拒绝
-- 非 CONNECT 拒绝
-- 未支持地址类型拒绝
+RFC 1928 TCP CONNECT + UDP ASSOCIATE 支持。
 
 ## 6.2 HTTP CONNECT 入站
 
-范围：仅支持 `CONNECT host:port HTTP/1.1`
-
-流程：
-
-1. 读取请求行
-2. 校验 method=CONNECT
-3. 解析 `host:port`
-4. 消费请求头直到空行
-5. 返回 `200 Connection Established`
-6. 构建 Session 进入调度
-
-错误处理：
-
-- 非 CONNECT 直接拒绝
-- 目标地址格式非法拒绝
+仅 CONNECT 方法，返回 200 后进入透传。
 
 ## 6.3 Direct 出站
 
-流程：
+DNS 解析 -> TCP connect -> ProxyStream。
 
-1. `session.target.resolve()`
-2. `TcpStream::connect()`
-3. 返回 ProxyStream
+## 6.4 VLESS 出站
 
-## 6.4 VLESS over TLS 出站
+支持三种安全模式：
+- **TLS**：标准 rustls TLS
+- **Reality**：x25519 密钥交换 + 自定义握手
+- **Vision**：XTLS 流控（检测内层 TLS 握手，完成后直通）
 
-流程：
+通过 StreamTransport 抽象传输层，VLESS 协议层仅关注头编码/解码。
 
-1. TCP 连接到远端节点
-2. 建立 TLS（SNI + 可选 insecure）
-3. 编码并发送 VLESS 请求头
-4. 读取并校验 VLESS 响应头
-5. 进入数据透传
+## 6.5 Hysteria2 出站
 
-VLESS 请求头结构：
-
-```text
-[Version=0x00]
-[UUID(16B)]
-[AddonsLen=0x00]
-[Command=0x01(TCP)]
-[Port(2B, BE)]
-[AddrType + Addr]
-```
-
-## 6.5 Hysteria2（TCP）出站
-
-流程：
-
-1. 获取/复用 QUIC 连接
-2. 走 HTTP/3 `POST /auth` 认证（期望状态码 233）
-3. 打开 QUIC 双向流
-4. 发送 TCP 请求头（varint 编码）
-5. 读取 TCP 响应（status/message/padding）
-6. 包装为 AsyncRead/AsyncWrite 流
-
-关键点：
-
-- QUIC varint 编解码
-- 连接池复用
-- rustls 验证器切换（secure / insecure）
+QUIC 连接池 + HTTP/3 认证 + varint 帧编解码。保持内部 QuicManager 管理。
 
 ---
 
-## 7. 路由与分流策略
+## 7. 路由系统
 
 规则类型：
+- `domain-suffix` — 域名后缀匹配
+- `domain-keyword` — 域名关键词匹配
+- `domain-full` — 完整域名精确匹配
+- `ip-cidr` — IP CIDR 范围匹配
+- `geoip` — 基于 mmdb 的国家级 IP 归属匹配
+- `geosite` — 基于域名列表的分类匹配
 
-- `domain-suffix`
-- `domain-keyword`
-- `domain-full`
-- `ip-cidr`
+匹配逻辑：配置顺序逐条匹配（first-match），全部不命中走 `router.default`。
 
-匹配逻辑：
-
-1. 按配置顺序逐条匹配（first-match）
-2. 命中则返回该规则绑定的 outbound
-3. 全部不命中则返回 `router.default`
-
-注意事项：
-
-- 域名匹配大小写不敏感
-- IP CIDR 仅对 `Address::Ip` 生效
-- 域名规则仅对 `Address::Domain` 生效
+API 接口：`Router::route(&Session) -> &str` + `Router::rules()` + `Router::default_outbound()`
 
 ---
 
-## 8. 配置系统计划
+## 8. DNS 系统
 
-配置文件：`config.yaml`
+解析器类型：
+- **SystemResolver**：使用 `tokio::net::lookup_host`
+- **HickoryResolver**：hickory-resolver，支持 UDP / DoT / DoH
+- **SplitResolver**：域名后缀分流，不同域名走不同上游 DNS
 
-主结构：
+配置格式：
+```yaml
+dns:
+  servers:
+    - address: "223.5.5.5"                     # UDP
+      domains: ["cn", "baidu.com"]
+    - address: "tls://1.1.1.1"                 # DNS over TLS
+    - address: "https://dns.google/dns-query"   # DNS over HTTPS
+```
+
+---
+
+## 9. Clash 兼容 API
+
+| 方法 | 路径 | 功能 |
+|------|------|------|
+| GET | /version | 版本信息 |
+| GET | /proxies | 出站列表 |
+| GET | /proxies/{name} | 单个出站详情 |
+| GET | /connections | 活跃连接列表 |
+| DELETE | /connections | 关闭所有连接 |
+| DELETE | /connections/{id} | 关闭指定连接 |
+| WS | /traffic | 实时流量推送（每秒） |
+| WS | /logs | 实时日志流（占位） |
+| GET | /rules | 路由规则列表 |
+
+认证：Bearer token middleware + WebSocket `?token=xxx` 查询参数。
+
+---
+
+## 10. 配置系统
 
 ```yaml
 log:
   level: info
+
+dns:
+  servers:
+    - address: "223.5.5.5"
+      domains: ["cn"]
+    - address: "8.8.8.8"
+
+api:
+  listen: "127.0.0.1"
+  port: 9090
+  secret: "optional-secret"
 
 inbounds:
   - tag: socks-in
@@ -308,241 +373,164 @@ outbounds:
       address: 1.2.3.4
       port: 443
       uuid: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-      security: tls
-      sni: server.example.com
-      allow_insecure: false
+      tls:
+        enabled: true
+        security: tls
+        sni: server.example.com
+        allow_insecure: false
+        alpn: ["h2", "http/1.1"]
+      transport:
+        type: ws
+        path: /ws
+        host: server.example.com
 
 router:
+  geoip_db: "GeoLite2-Country.mmdb"
+  geosite_db: "geosite-cn.txt"
   rules:
+    - type: geosite
+      values: ["cn"]
+      outbound: direct
+    - type: geoip
+      values: ["CN"]
+      outbound: direct
     - type: domain-suffix
       values: ["cn", "baidu.com"]
       outbound: direct
   default: my-vless
 ```
 
-校验要求：
+---
 
-- 至少 1 个 inbound
-- 至少 1 个 outbound
-- `router.default` 必须引用已存在 outbound tag
-- 每条规则 `outbound` 必须存在
+## 11. 分阶段实施记录
+
+## 11.1 Phase 1（已完成）
+
+项目骨架、配置系统、核心 trait、Router、SOCKS5/HTTP 入站、Direct/VLESS/Hysteria2 出站、App 组装。
+
+## 11.2 Phase 2（已完成）
+
+- XTLS-Vision 流控
+- Reality 握手协议
+- VLESS UDP 代理（SOCKS5 UDP ASSOCIATE）
+- 协议层端到端测试
+
+## 11.3 Phase 3（已完成）
+
+### Phase 3A：基础设施升级
+- 3A-1: 提取公共 TLS 工具 (`common/tls.rs`)
+- 3A-2: 配置结构改造 (TransportConfig / TlsConfig)
+- 3A-3: StreamTransport trait + TCP/TLS/Reality 实现
+- 3A-4: WebSocket 传输
+- 3A-5: 迁移 VLESS 使用 StreamTransport
+- 3A-6: Hysteria2 清理（复用公共 TLS）
+- 3A-7: 优雅关闭 + 连接跟踪 (CancellationToken + ConnectionTracker)
+- 3A-8: 测试适配
+
+### Phase 3B：Clash API
+- 3B-1: RESTful API 框架 (axum + WebSocket)
+- 3B-2: API 集成测试
+
+### Phase 3C：DNS + 路由增强
+- 3C-1: DNS 解析器模块 (System/Hickory/Split)
+- 3C-2: GeoIP 支持 (maxminddb)
+- 3C-3: GeoSite 支持（文本域名列表）
+- 3C-4: DNS + 路由测试
+
+测试覆盖：163 项测试全部通过，0 警告。
 
 ---
 
-## 9. 分阶段实施计划
+## 12. Phase 4 规划（待启动）
 
-## 9.1 Phase 1（已完成）
+### 目标：从"可用的代理工具"到"功能完备的代理客户端"
 
-### Step 1：项目骨架与公共类型（已完成）
+### Phase 4A：代理组 + 自动选择
 
-- 创建基础目录与模块
-- 引入依赖
-- 完成 Address / Error / Stream 抽象
+- **Proxy Group 抽象**：`selector`（手动选择）、`url-test`（延迟自动选择）、`fallback`（故障转移）、`load-balance`（负载均衡）
+- 配置格式扩展：`proxy-groups` 区块
+- API 扩展：`PUT /proxies/{group}/select` 切换选中节点
+- 延迟测试：`GET /proxies/{name}/delay?url=...&timeout=...`
 
-### Step 2：配置系统（已完成）
+### Phase 4B：协议嗅探 (Sniffing)
 
-- YAML 结构定义
-- `load_config()` + `validate()`
-- 提供示例 `config.yaml`
+- 入站流量协议检测（TLS ClientHello SNI / HTTP Host）
+- 用检测到的域名覆盖 Session target（提高路由准确性）
+- 可配置开关：`sniffing: { enabled: true, destinations: ["http", "tls"] }`
 
-### Step 3：核心 trait + Router 引擎（已完成）
+### Phase 4C：更多传输层
 
-- Session/InboundResult/Network
-- InboundHandler/OutboundHandler
-- Router + Rule
-- `relay` 封装
+- gRPC 传输 (`grpc`)
+- HTTP/2 传输 (`h2`)
+- 传输层 TLS 组合（ws+tls / grpc+tls / h2+tls）
 
-### Step 4：SOCKS5 入站（已完成）
+### Phase 4D：规则提供者 (Rule Provider)
 
-- RFC 1928 基础握手
-- CONNECT 支持
-- 目标解析与 Session 输出
+- 远程规则列表（HTTP 拉取 + 本地缓存）
+- 定时更新（interval 配置）
+- 格式支持：文本域名列表、YAML 规则集
 
-### Step 5：HTTP CONNECT 入站（已完成）
+### Phase 4E：配置热重载
 
-- 请求行解析
-- CONNECT 校验
-- 200 建链响应
+- 文件监听（notify crate）或 API 触发 (`PATCH /configs`)
+- 支持出站/路由/DNS 配置热更新
+- 入站监听器的平滑迁移
 
-### Step 6：Direct 出站 + App 组装（已完成）
+### Phase 4 执行顺序建议
 
-- OutboundManager
-- Dispatcher
-- InboundManager
-- App 启动与多监听器
-
-### Step 7：VLESS over TLS 出站（已完成）
-
-- TLS 连接
-- VLESS 请求/响应头
-- 出站注册与调度接入
-
-### Step 8：Hysteria2 TCP 出站（已完成）
-
-- QUIC 连接管理
-- HTTP/3 认证
-- TCP 请求/响应帧
-- 流包装与转发接入
-
-## 9.2 Phase 2（待启动）
-
-### 目标 A：XTLS-Vision
-
-- 在 VLESS 出站中扩展 Vision 流控路径
-- 增加配置项（flow）
-- 明确与普通 TLS 的兼容策略
-
-### 目标 B：Reality
-
-- 新增 Reality 相关配置（public key / short id / server name）
-- 完成 Reality 握手流程
-- 与 allow_insecure 行为边界清晰化
-
-### 目标 C：UDP 代理
-
-- 扩展 `Network::Udp` 的端到端处理链路
-- 增加 SOCKS5 UDP ASSOCIATE（或独立入站 UDP）
-- 出站协议 UDP 能力映射与回包路径
-
-Phase 2 原则：
-
-1. 不破坏 Phase 1 稳定能力
-2. 先补齐测试基线，再推进新协议
-3. 每项能力独立开关、独立验收
-
----
-
-## 10. 测试与验收计划
-
-## 10.1 构建验收
-
-```powershell
-cargo check
-cargo build
+```
+4A (代理组) ──> 4B (嗅探) ──> 4C (传输层)
+                              4D (规则提供者) ──> 4E (热重载)
 ```
 
-要求：
+4A 优先级最高，因为代理组是客户端核心交互能力。
 
-- 编译通过
-- 无错误
-- 无警告（目标）
+---
 
-## 10.2 功能验收
+## 13. 测试与验收
 
-1. SOCKS5 + HTTP 目标
-2. SOCKS5 + HTTPS 目标
-3. HTTP CONNECT + HTTPS 目标
-4. 域名路由规则命中验证
-5. 默认路由兜底验证
-6. Direct/VLESS/HY2 出站切换验证
+## 13.1 自动化测试
 
-示例命令：
+```powershell
+cargo test       # 163 项测试
+cargo check      # 编译检查
+cargo build      # 构建
+```
+
+## 13.2 功能验收
 
 ```powershell
 # SOCKS5
 curl.exe --proxy socks5h://127.0.0.1:1080 https://httpbin.org/ip
 
-# HTTP CONNECT（HTTPS 才会走 CONNECT）
+# HTTP CONNECT
 curl.exe --proxy http://127.0.0.1:1081 https://httpbin.org/ip
+
+# API
+curl.exe http://127.0.0.1:9090/version
+curl.exe http://127.0.0.1:9090/proxies
+curl.exe http://127.0.0.1:9090/connections
 ```
-
-## 10.3 回归验收
-
-- 改动任一协议模块后必须回归：
-  - 两类入站
-  - 三类出站
-  - 至少一条域名规则 + 一条 ip-cidr 规则
 
 ---
 
-## 11. 安全与稳定性要求
+## 14. 安全与稳定性要求
 
 1. 禁止硬编码敏感信息
 2. `allow_insecure` 默认 false
-3. 边界输入要做格式校验
-4. 连接失败要有清晰错误日志
+3. 边界输入做格式校验
+4. 连接失败有清晰错误日志
 5. 不允许静默吞错
 6. 关键路径必须有错误回传
+7. API 支持 Bearer token 认证
 
 ---
 
-## 12. 性能与可观测性规划
-
-## 12.1 当前可观测性
-
-- tracing 日志覆盖关键节点：
-  - inbound 接入
-  - route 命中
-  - outbound 连接
-  - relay 结束
-
-## 12.2 后续性能项（Phase 2+）
-
-- 路由规则预处理优化
-- 连接池策略细化（空闲回收、最大连接数）
-- 可选指标导出（Prometheus）
-
----
-
-## 13. 风险清单与应对
-
-1. **协议兼容风险**（VLESS/HY2 服务端差异）
-   - 应对：保留严格日志，先覆盖标准路径
-2. **证书与 SNI 配置错误**
-   - 应对：配置校验 + 握手错误明示
-3. **路由误分流**
-   - 应对：规则顺序显式化 + 命中日志
-4. **连接复用状态异常**（QUIC）
-   - 应对：连接健康检查 + 断线重建
-
----
-
-## 14. 交付物清单
-
-## 14.1 已交付（Phase 1）
-
-- 完整 Rust 项目骨架
-- 两种入站协议实现
-- 三种出站协议实现
-- 路由引擎
-- 配置系统与样例配置
-- 应用组装与调度
-- 基本功能测试链路
-
-## 14.2 待交付（Phase 2）
-
-- XTLS-Vision
-- Reality
-- UDP 代理
-- 更完整自动化测试
-
----
-
-## 15. 开发与变更规范
+## 15. 开发规范
 
 1. 变更前先读相关模块与调用链
 2. 新增协议必须接入统一 trait
 3. 修改会影响路由/调度时必须做全链路回归
 4. 仅做必要改动，避免过度重构
 5. 文档与配置示例同步更新
-
----
-
-## 16. 下一步执行建议
-
-建议按以下顺序进入 Phase 2：
-
-1. 先补齐自动化测试（为后续协议扩展兜底）
-2. 落地 XTLS-Vision（先完成最小可用）
-3. 落地 Reality（配置与握手）
-4. 最后做 UDP（影响面最大，放在基线稳定后）
-
----
-
-## 17. 当前结论
-
-OpenWorld 已具备可运行的 **Phase 1 代理内核能力**：
-
-- 入站：SOCKS5 / HTTP CONNECT
-- 出站：Direct / VLESS(TLS) / Hysteria2(TCP)
-- 路由：domain + cidr 基础规则
+6. 每个 Phase 完成后提交并更新本文档

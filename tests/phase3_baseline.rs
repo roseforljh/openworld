@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use openworld::app::dispatcher::Dispatcher;
 use openworld::app::outbound_manager::OutboundManager;
+use openworld::app::tracker::ConnectionTracker;
 use openworld::common::{Address, UdpPacket};
 use std::io;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -78,7 +79,11 @@ fn phase3_config_validate_baseline_ok() {
         router: RouterConfig {
             rules: vec![],
             default: "direct".to_string(),
+            geoip_db: None,
+            geosite_db: None,
         },
+        api: None,
+        dns: None,
     };
 
     assert!(config.validate().is_ok());
@@ -89,6 +94,8 @@ fn phase3_router_default_route_baseline() {
     let router_cfg = RouterConfig {
         rules: vec![],
         default: "direct".to_string(),
+        geoip_db: None,
+        geosite_db: None,
     };
     let router = Router::new(&router_cfg).unwrap();
 
@@ -156,6 +163,8 @@ async fn phase3_dispatcher_udp_requires_inbound_transport() {
     let router_cfg = RouterConfig {
         rules: vec![],
         default: "direct".to_string(),
+        geoip_db: None,
+        geosite_db: None,
     };
     let router = Arc::new(Router::new(&router_cfg).unwrap());
 
@@ -165,7 +174,8 @@ async fn phase3_dispatcher_udp_requires_inbound_transport() {
         settings: OutboundSettings::default(),
     }];
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds).unwrap());
-    let dispatcher = Dispatcher::new(router, outbound_manager);
+    let tracker = Arc::new(ConnectionTracker::new());
+    let dispatcher = Dispatcher::new(router, outbound_manager, tracker);
 
     let session = Session {
         target: Address::Domain("example.com".to_string(), 53),
@@ -231,6 +241,8 @@ fn phase3_dispatcher_construction_baseline() {
     let router_cfg = RouterConfig {
         rules: vec![],
         default: "direct".to_string(),
+        geoip_db: None,
+        geosite_db: None,
     };
     let router = Arc::new(Router::new(&router_cfg).unwrap());
 
@@ -241,5 +253,6 @@ fn phase3_dispatcher_construction_baseline() {
     }];
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds).unwrap());
 
-    let _dispatcher = Dispatcher::new(router, outbound_manager);
+    let tracker = Arc::new(ConnectionTracker::new());
+    let _dispatcher = Dispatcher::new(router, outbound_manager, tracker);
 }

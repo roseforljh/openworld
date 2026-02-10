@@ -3,11 +3,8 @@ pub mod reality;
 pub mod tls;
 pub mod vision;
 
-use std::sync::Arc;
-
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tracing::debug;
 
@@ -18,19 +15,11 @@ use crate::proxy::{OutboundHandler, Session};
 /// VLESS flow 常量
 pub const XRV: &str = "xtls-rprx-vision";
 
-/// TLS 安全模式
-#[derive(Debug, Clone)]
-enum SecurityMode {
-    Tls { config: Arc<rustls::ClientConfig>, sni: String },
-    Reality { reality_config: reality::RealityConfig, sni: String },
-}
-
 pub struct VlessOutbound {
     tag: String,
-    server_addr: String,
-    server_port: u16,
+    server_addr: Address,
     uuid: uuid::Uuid,
-    security: SecurityMode,
+    transport: Box<dyn crate::proxy::transport::StreamTransport>,
     flow: Option<String>,
 }
 
@@ -61,93 +50,38 @@ impl VlessOutbound {
             tracing::warn!("vless: 'fingerprint' is configured but not yet implemented");
         }
 
-        let security_str = settings.security.as_deref().unwrap_or("tls");
-        let security = match security_str {
-            "reality" => {
-                let public_key_str = settings
-                    .public_key
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("vless: reality requires public_key"))?;
-                let server_public_key = reality::parse_public_key(public_key_str)?;
+        // 构建有效的 TLS 配置
+        let mut tls_config = settings.effective_tls();
+        // 如果没有显式设置 tls，但有 security 字段，则启用 TLS
+        if !tls_config.enabled && settings.security.is_some() {
+            tls_config.enabled = true;
+        }
+        // 如果 SNI 未设置，使用服务器地址
+        if tls_config.sni.is_none() {
+            tls_config.sni = Some(address.clone());
+        }
+        // Vision flow 需要 ALPN
+        if flow.as_deref() == Some(XRV) && tls_config.alpn.is_none() {
+            tls_config.alpn = Some(vec!["h2".to_string(), "http/1.1".to_string()]);
+        }
 
-                let short_id_str = settings.short_id.as_deref().unwrap_or("");
-                let short_id = if short_id_str.is_empty() {
-                    vec![]
-                } else {
-                    reality::parse_hex(short_id_str)?
-                };
+        let transport_config = settings.effective_transport();
+        let transport = crate::proxy::transport::build_transport(
+            address,
+            port,
+            &transport_config,
+            &tls_config,
+        )?;
 
-                let server_name = settings
-                    .server_name
-                    .clone()
-                    .or_else(|| settings.sni.clone())
-                    .unwrap_or_else(|| address.clone());
-
-                let sni = settings
-                    .sni
-                    .clone()
-                    .or_else(|| settings.server_name.clone())
-                    .unwrap_or_else(|| address.clone());
-
-                SecurityMode::Reality {
-                    reality_config: reality::RealityConfig {
-                        server_public_key,
-                        short_id,
-                        server_name,
-                    },
-                    sni,
-                }
-            }
-            "tls" | _ => {
-                let sni = settings
-                    .sni
-                    .clone()
-                    .unwrap_or_else(|| address.clone());
-                let allow_insecure = settings.allow_insecure;
-                let with_alpn = flow.as_deref() == Some(XRV);
-                let tls_config = tls::build_tls_config(&sni, allow_insecure, with_alpn)?;
-
-                SecurityMode::Tls {
-                    config: Arc::new(tls_config),
-                    sni,
-                }
-            }
-        };
+        let server_addr = Address::Domain(address.clone(), port);
 
         Ok(Self {
             tag: config.tag.clone(),
-            server_addr: address.clone(),
-            server_port: port,
+            server_addr,
             uuid,
-            security,
+            transport,
             flow,
         })
-    }
-
-    /// 建立 TLS 连接（TCP + TLS 握手），复用于 TCP 和 UDP
-    async fn establish_tls(&self) -> Result<ProxyStream> {
-        let server_addr = format!("{}:{}", self.server_addr, self.server_port);
-        let tcp_stream = TcpStream::connect(&server_addr).await?;
-
-        match &self.security {
-            SecurityMode::Tls { config, sni } => {
-                let connector = tokio_rustls::TlsConnector::from(config.clone());
-                let server_name = rustls::pki_types::ServerName::try_from(sni.clone())?;
-                let tls_stream = connector.connect(server_name, tcp_stream).await?;
-                debug!("VLESS TLS handshake completed");
-                Ok(Box::new(tls_stream))
-            }
-            SecurityMode::Reality { reality_config, sni } => {
-                let (tls_config, handshake_ctx) = reality::build_reality_config(reality_config)?;
-                let connector = tokio_rustls::TlsConnector::from(Arc::new(tls_config));
-                let server_name = rustls::pki_types::ServerName::try_from(sni.clone())?;
-                let tls_stream = handshake_ctx
-                    .scope(|| connector.connect(server_name, tcp_stream))
-                    .await?;
-                debug!("VLESS Reality handshake completed");
-                Ok(Box::new(tls_stream))
-            }
-        }
     }
 }
 
@@ -158,12 +92,10 @@ impl OutboundHandler for VlessOutbound {
     }
 
     async fn connect(&self, session: &Session) -> Result<ProxyStream> {
-        let server_addr = format!("{}:{}", self.server_addr, self.server_port);
-        debug!(server = server_addr, "VLESS connecting to server");
+        debug!(server = %self.server_addr, "VLESS connecting to server");
 
-        let mut stream = self.establish_tls().await?;
+        let mut stream = self.transport.connect(&self.server_addr).await?;
 
-        // 发送 VLESS 请求头（TCP command）
         protocol::write_request(
             &mut stream,
             &self.uuid,
@@ -173,12 +105,10 @@ impl OutboundHandler for VlessOutbound {
         )
         .await?;
 
-        // 读取 VLESS 响应头
         protocol::read_response(&mut stream).await?;
 
         debug!(target = %session.target, "VLESS connection established");
 
-        // 如果启用 Vision flow，包装为 VisionStream
         if self.flow.as_deref() == Some(XRV) {
             let vision_stream = vision::VisionStream::new(stream, self.uuid);
             Ok(Box::new(vision_stream))
@@ -188,12 +118,10 @@ impl OutboundHandler for VlessOutbound {
     }
 
     async fn connect_udp(&self, session: &Session) -> Result<BoxUdpTransport> {
-        let server_addr = format!("{}:{}", self.server_addr, self.server_port);
-        debug!(server = server_addr, target = %session.target, "VLESS UDP connecting");
+        debug!(server = %self.server_addr, target = %session.target, "VLESS UDP connecting");
 
-        let mut stream = self.establish_tls().await?;
+        let mut stream = self.transport.connect(&self.server_addr).await?;
 
-        // 发送 VLESS 请求头（UDP command，不支持 Vision flow）
         protocol::write_request(
             &mut stream,
             &self.uuid,
@@ -203,7 +131,6 @@ impl OutboundHandler for VlessOutbound {
         )
         .await?;
 
-        // 读取 VLESS 响应头
         protocol::read_response(&mut stream).await?;
 
         debug!(target = %session.target, "VLESS UDP stream established");
