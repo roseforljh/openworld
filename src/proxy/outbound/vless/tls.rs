@@ -3,12 +3,18 @@ use rustls::ClientConfig;
 use std::sync::Arc;
 
 /// 构建 TLS ClientConfig
-pub fn build_tls_config(_sni: &str, allow_insecure: bool) -> Result<ClientConfig> {
-    if allow_insecure {
-        build_insecure_config()
+pub fn build_tls_config(_sni: &str, allow_insecure: bool, with_alpn: bool) -> Result<ClientConfig> {
+    let mut config = if allow_insecure {
+        build_insecure_config()?
     } else {
-        build_secure_config()
+        build_secure_config()?
+    };
+
+    if with_alpn {
+        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     }
+
+    Ok(config)
 }
 
 fn build_secure_config() -> Result<ClientConfig> {

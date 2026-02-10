@@ -185,6 +185,100 @@ pub async fn read_tcp_response(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn varint_1byte() {
+        assert_eq!(encode_varint(0), vec![0x00]);
+        assert_eq!(encode_varint(1), vec![0x01]);
+        assert_eq!(encode_varint(63), vec![0x3F]);
+    }
+
+    #[test]
+    fn varint_2byte() {
+        let encoded = encode_varint(64);
+        assert_eq!(encoded.len(), 2);
+        assert_eq!(encoded[0] >> 6, 1);
+    }
+
+    #[test]
+    fn varint_4byte() {
+        let encoded = encode_varint(16384);
+        assert_eq!(encoded.len(), 4);
+        assert_eq!(encoded[0] >> 6, 2);
+    }
+
+    #[test]
+    fn varint_8byte() {
+        let encoded = encode_varint(1073741824);
+        assert_eq!(encoded.len(), 8);
+        assert_eq!(encoded[0] >> 6, 3);
+    }
+
+    #[test]
+    fn decode_varint_1byte() {
+        let (val, len) = decode_varint_from_buf(&[0x25]).unwrap();
+        assert_eq!(val, 37);
+        assert_eq!(len, 1);
+    }
+
+    #[test]
+    fn decode_varint_empty() {
+        assert!(decode_varint_from_buf(&[]).is_err());
+    }
+
+    #[test]
+    fn decode_varint_insufficient_2byte() {
+        assert!(decode_varint_from_buf(&[0x40]).is_err());
+    }
+
+    #[test]
+    fn decode_varint_insufficient_4byte() {
+        assert!(decode_varint_from_buf(&[0x80, 0x00]).is_err());
+    }
+
+    #[test]
+    fn decode_varint_insufficient_8byte() {
+        assert!(decode_varint_from_buf(&[0xC0, 0x00, 0x00]).is_err());
+    }
+
+    #[test]
+    fn varint_roundtrip() {
+        let values = [0, 1, 63, 64, 16383, 16384, 1073741823, 1073741824, 4611686018427387903];
+        for &val in &values {
+            let encoded = encode_varint(val);
+            let (decoded, consumed) = decode_varint_from_buf(&encoded).unwrap();
+            assert_eq!(decoded, val, "roundtrip failed for {}", val);
+            assert_eq!(consumed, encoded.len(), "consumed mismatch for {}", val);
+        }
+    }
+
+    #[test]
+    fn varint_request_id_0x401() {
+        let encoded = encode_varint(0x401);
+        let (decoded, _) = decode_varint_from_buf(&encoded).unwrap();
+        assert_eq!(decoded, 0x401);
+    }
+
+    #[test]
+    fn varint_boundary_values() {
+        // 1-byte max
+        let (val, len) = decode_varint_from_buf(&encode_varint(63)).unwrap();
+        assert_eq!((val, len), (63, 1));
+        // 2-byte min
+        let (val, len) = decode_varint_from_buf(&encode_varint(64)).unwrap();
+        assert_eq!((val, len), (64, 2));
+        // 2-byte max
+        let (val, len) = decode_varint_from_buf(&encode_varint(16383)).unwrap();
+        assert_eq!((val, len), (16383, 2));
+        // 4-byte min
+        let (val, len) = decode_varint_from_buf(&encode_varint(16384)).unwrap();
+        assert_eq!((val, len), (16384, 4));
+    }
+}
+
 /// 从 quinn::RecvStream 精确读取指定字节数
 async fn read_exact_quinn(recv: &mut quinn::RecvStream, buf: &mut [u8]) -> Result<()> {
     let mut offset = 0;

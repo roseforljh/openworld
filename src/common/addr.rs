@@ -112,6 +112,104 @@ impl fmt::Display for Address {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_socks5_ipv4() {
+        let addr = Address::from_socks5(0x01, &[127, 0, 0, 1], 8080).unwrap();
+        assert_eq!(addr, Address::Ip(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080)));
+    }
+
+    #[test]
+    fn from_socks5_ipv6() {
+        let data = [0u8; 16];
+        let addr = Address::from_socks5(0x04, &data, 443).unwrap();
+        assert_eq!(addr, Address::Ip(SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 443)));
+    }
+
+    #[test]
+    fn from_socks5_domain() {
+        let addr = Address::from_socks5(0x03, b"example.com", 443).unwrap();
+        assert_eq!(addr, Address::Domain("example.com".to_string(), 443));
+    }
+
+    #[test]
+    fn from_socks5_invalid_atyp() {
+        assert!(Address::from_socks5(0xFF, &[], 80).is_err());
+    }
+
+    #[test]
+    fn from_socks5_ipv4_too_short() {
+        assert!(Address::from_socks5(0x01, &[127, 0, 0], 80).is_err());
+    }
+
+    #[test]
+    fn from_socks5_ipv6_too_short() {
+        assert!(Address::from_socks5(0x04, &[0u8; 10], 80).is_err());
+    }
+
+    #[test]
+    fn encode_vless_ipv4() {
+        let addr = Address::Ip(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)), 80));
+        let mut buf = BytesMut::new();
+        addr.encode_vless(&mut buf);
+        assert_eq!(&buf[..], &[0x01, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn encode_vless_ipv6() {
+        let addr = Address::Ip(SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 443));
+        let mut buf = BytesMut::new();
+        addr.encode_vless(&mut buf);
+        assert_eq!(buf[0], 0x03);
+        assert_eq!(buf.len(), 1 + 16);
+    }
+
+    #[test]
+    fn encode_vless_domain() {
+        let addr = Address::Domain("test.com".to_string(), 443);
+        let mut buf = BytesMut::new();
+        addr.encode_vless(&mut buf);
+        assert_eq!(buf[0], 0x02);
+        assert_eq!(buf[1], 8);
+        assert_eq!(&buf[2..], b"test.com");
+    }
+
+    #[test]
+    fn hysteria2_addr_string_ip() {
+        let addr = Address::Ip("127.0.0.1:8080".parse().unwrap());
+        assert_eq!(addr.to_hysteria2_addr_string(), "127.0.0.1:8080");
+    }
+
+    #[test]
+    fn hysteria2_addr_string_domain() {
+        let addr = Address::Domain("example.com".to_string(), 443);
+        assert_eq!(addr.to_hysteria2_addr_string(), "example.com:443");
+    }
+
+    #[test]
+    fn port_and_host() {
+        let ip_addr = Address::Ip("10.0.0.1:3000".parse().unwrap());
+        assert_eq!(ip_addr.port(), 3000);
+        assert_eq!(ip_addr.host(), "10.0.0.1");
+
+        let domain_addr = Address::Domain("foo.bar".to_string(), 8443);
+        assert_eq!(domain_addr.port(), 8443);
+        assert_eq!(domain_addr.host(), "foo.bar");
+    }
+
+    #[test]
+    fn display_format() {
+        let addr = Address::Domain("example.com".to_string(), 443);
+        assert_eq!(format!("{}", addr), "example.com:443");
+
+        let addr = Address::Ip("1.2.3.4:80".parse().unwrap());
+        assert_eq!(format!("{}", addr), "1.2.3.4:80");
+    }
+}
+
 impl<'de> Deserialize<'de> for Address {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where

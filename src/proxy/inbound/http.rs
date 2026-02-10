@@ -74,6 +74,44 @@ impl InboundHandler for HttpInbound {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_domain() {
+        let addr = parse_connect_target("example.com:443").unwrap();
+        assert_eq!(addr, Address::Domain("example.com".to_string(), 443));
+    }
+
+    #[test]
+    fn parse_ipv4() {
+        let addr = parse_connect_target("127.0.0.1:8080").unwrap();
+        assert_eq!(addr, Address::Ip("127.0.0.1:8080".parse().unwrap()));
+    }
+
+    #[test]
+    fn parse_ipv6_bracket() {
+        let addr = parse_connect_target("[::1]:443").unwrap();
+        assert_eq!(addr, Address::Ip("[::1]:443".parse().unwrap()));
+    }
+
+    #[test]
+    fn parse_no_port() {
+        assert!(parse_connect_target("example.com").is_err());
+    }
+
+    #[test]
+    fn parse_invalid_port() {
+        assert!(parse_connect_target("example.com:abc").is_err());
+    }
+
+    #[test]
+    fn parse_empty() {
+        assert!(parse_connect_target("").is_err());
+    }
+}
+
 /// 解析 CONNECT 目标地址 "host:port"
 fn parse_connect_target(s: &str) -> Result<Address> {
     // 尝试解析为 SocketAddr（处理 IP 地址情况）

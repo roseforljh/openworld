@@ -1,5 +1,6 @@
 pub mod protocol;
 pub mod tls;
+pub mod vision;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -10,6 +11,9 @@ use crate::common::ProxyStream;
 use crate::config::types::OutboundConfig;
 use crate::proxy::{OutboundHandler, Session};
 
+/// VLESS flow 常量
+pub const XRV: &str = "xtls-rprx-vision";
+
 pub struct VlessOutbound {
     tag: String,
     server_addr: String,
@@ -17,6 +21,7 @@ pub struct VlessOutbound {
     uuid: uuid::Uuid,
     tls_config: std::sync::Arc<tokio_rustls::rustls::ClientConfig>,
     sni: String,
+    flow: Option<String>,
 }
 
 impl VlessOutbound {
@@ -40,7 +45,16 @@ impl VlessOutbound {
             .unwrap_or_else(|| address.clone());
         let allow_insecure = settings.allow_insecure;
 
-        let tls_config = tls::build_tls_config(&sni, allow_insecure)?;
+        let flow = settings.flow.clone();
+        // Vision 要求 ALPN 设置为 h2, http/1.1
+        let with_alpn = flow.as_deref() == Some(XRV);
+        let tls_config = tls::build_tls_config(&sni, allow_insecure, with_alpn)?;
+
+        if let Some(ref f) = flow {
+            if f != XRV {
+                anyhow::bail!("vless: unsupported flow: {}", f);
+            }
+        }
 
         Ok(Self {
             tag: config.tag.clone(),
@@ -49,6 +63,7 @@ impl VlessOutbound {
             uuid,
             tls_config: std::sync::Arc::new(tls_config),
             sni,
+            flow,
         })
     }
 }
@@ -72,15 +87,27 @@ impl OutboundHandler for VlessOutbound {
 
         debug!("VLESS TLS handshake completed");
 
-        // 3. 发送 VLESS 请求头
+        // 3. 发送 VLESS 请求头（含 flow addons）
         let mut stream: ProxyStream = Box::new(tls_stream);
-        protocol::write_request(&mut stream, &self.uuid, &session.target).await?;
+        protocol::write_request(
+            &mut stream,
+            &self.uuid,
+            &session.target,
+            self.flow.as_deref(),
+        )
+        .await?;
 
         // 4. 读取 VLESS 响应头
         protocol::read_response(&mut stream).await?;
 
         debug!(target = %session.target, "VLESS connection established");
 
-        Ok(stream)
+        // 5. 如果启用 Vision flow，包装为 VisionStream
+        if self.flow.as_deref() == Some(XRV) {
+            let vision_stream = vision::VisionStream::new(stream, self.uuid);
+            Ok(Box::new(vision_stream))
+        } else {
+            Ok(stream)
+        }
     }
 }
