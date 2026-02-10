@@ -14,6 +14,7 @@ pub struct QuicManager {
     allow_insecure: bool,
     endpoint: Option<quinn::Endpoint>,
     connection: Option<quinn::Connection>,
+    authenticated: bool,
 }
 
 impl QuicManager {
@@ -30,30 +31,52 @@ impl QuicManager {
             allow_insecure,
             endpoint: None,
             connection: None,
+            authenticated: false,
         })
     }
 
     /// 获取 QUIC 连接（复用已有连接或创建新连接）
-    pub async fn get_connection(&mut self) -> Result<quinn::Connection> {
+    /// 返回 (connection, is_new) - is_new 表示是否为新建连接（需要认证）
+    pub async fn get_connection(&mut self) -> Result<(quinn::Connection, bool)> {
         // 检查现有连接是否可用
         if let Some(ref conn) = self.connection {
             if conn.close_reason().is_none() {
-                return Ok(conn.clone());
+                return Ok((conn.clone(), false));
             }
         }
 
-        // 创建新连接
+        // 创建新连接，重置认证状态
         let conn = self.create_connection().await?;
         self.connection = Some(conn.clone());
-        Ok(conn)
+        self.authenticated = false;
+        Ok((conn, true))
+    }
+
+    /// 标记当前连接已认证
+    pub fn mark_authenticated(&mut self) {
+        self.authenticated = true;
+    }
+
+    /// 当前连接是否已认证
+    pub fn is_authenticated(&self) -> bool {
+        self.authenticated
     }
 
     async fn create_connection(&mut self) -> Result<quinn::Connection> {
         // 构建 TLS 配置
         let tls_config = build_quic_tls_config(&self.sni, self.allow_insecure)?;
-        let client_config = quinn::ClientConfig::new(Arc::new(
+        let mut client_config = quinn::ClientConfig::new(Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(tls_config)?,
         ));
+
+        // 启用 datagram 支持（UDP 代理需要）
+        let mut transport_config = quinn::TransportConfig::default();
+        transport_config.max_idle_timeout(Some(
+            quinn::IdleTimeout::try_from(std::time::Duration::from_secs(30)).unwrap(),
+        ));
+        transport_config.keep_alive_interval(Some(std::time::Duration::from_secs(15)));
+        transport_config.datagram_receive_buffer_size(Some(1350 * 256));
+        client_config.transport_config(Arc::new(transport_config));
 
         // 创建 endpoint
         let mut endpoint = quinn::Endpoint::client("0.0.0.0:0".parse::<SocketAddr>()?)?;

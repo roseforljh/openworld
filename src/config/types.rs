@@ -84,6 +84,10 @@ pub struct OutboundSettings {
     #[serde(default)]
     pub allow_insecure: bool,
     pub flow: Option<String>,
+    pub public_key: Option<String>,
+    pub short_id: Option<String>,
+    pub server_name: Option<String>,
+    pub fingerprint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

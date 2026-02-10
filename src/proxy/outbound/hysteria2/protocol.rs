@@ -277,6 +277,42 @@ mod tests {
         let (val, len) = decode_varint_from_buf(&encode_varint(16384)).unwrap();
         assert_eq!((val, len), (16384, 4));
     }
+
+    #[test]
+    fn udp_message_encode_decode_roundtrip() {
+        let session_id = 42u32;
+        let packet_id = 1u16;
+        let addr = "8.8.8.8:53";
+        let payload = b"hello dns";
+
+        let encoded = encode_udp_message(session_id, packet_id, addr, payload);
+        let (dec_sid, dec_pid, dec_addr, dec_payload) = decode_udp_message(&encoded).unwrap();
+
+        assert_eq!(dec_sid, session_id);
+        assert_eq!(dec_pid, packet_id);
+        assert_eq!(dec_addr, addr);
+        assert_eq!(&dec_payload[..], payload);
+    }
+
+    #[test]
+    fn udp_message_encode_decode_domain() {
+        let encoded = encode_udp_message(100, 5, "example.com:443", b"data");
+        let (sid, pid, addr, payload) = decode_udp_message(&encoded).unwrap();
+        assert_eq!(sid, 100);
+        assert_eq!(pid, 5);
+        assert_eq!(addr, "example.com:443");
+        assert_eq!(&payload[..], b"data");
+    }
+
+    #[test]
+    fn udp_message_decode_empty() {
+        assert!(decode_udp_message(&[]).is_err());
+    }
+
+    #[test]
+    fn udp_message_decode_truncated() {
+        assert!(decode_udp_message(&[0x00, 0x01, 0x02]).is_err());
+    }
 }
 
 /// 从 quinn::RecvStream 精确读取指定字节数
@@ -288,4 +324,69 @@ async fn read_exact_quinn(recv: &mut quinn::RecvStream, buf: &mut [u8]) -> Resul
         offset += n;
     }
     Ok(())
+}
+
+/// 编码 Hysteria2 UDPMessage
+///
+/// 格式:
+/// [Session ID: uint32]
+/// [Packet ID: uint16]
+/// [Fragment ID: uint8]
+/// [Fragment Count: uint8]
+/// [Address Length: varint]
+/// [Address: bytes "host:port"]
+/// [Payload: bytes]
+pub fn encode_udp_message(
+    session_id: u32,
+    packet_id: u16,
+    addr: &str,
+    data: &[u8],
+) -> Vec<u8> {
+    let addr_bytes = addr.as_bytes();
+    let mut buf = Vec::with_capacity(4 + 2 + 1 + 1 + 8 + addr_bytes.len() + data.len());
+
+    // Session ID
+    buf.extend_from_slice(&session_id.to_be_bytes());
+    // Packet ID
+    buf.extend_from_slice(&packet_id.to_be_bytes());
+    // Fragment ID = 0 (不分片)
+    buf.push(0);
+    // Fragment Count = 1 (不分片)
+    buf.push(1);
+    // Address Length (varint)
+    buf.extend_from_slice(&encode_varint(addr_bytes.len() as u64));
+    // Address
+    buf.extend_from_slice(addr_bytes);
+    // Payload
+    buf.extend_from_slice(data);
+
+    buf
+}
+
+/// 解码 Hysteria2 UDPMessage
+///
+/// 返回 (session_id, packet_id, address_string, payload)
+pub fn decode_udp_message(data: &[u8]) -> Result<(u32, u16, String, bytes::Bytes)> {
+    // 最小长度: 4(sid) + 2(pid) + 1(frag_id) + 1(frag_count) + 1(addr_len_varint) = 9
+    if data.len() < 9 {
+        anyhow::bail!("Hysteria2 UDPMessage too short: {} bytes", data.len());
+    }
+
+    let session_id = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
+    let packet_id = u16::from_be_bytes([data[4], data[5]]);
+    let _fragment_id = data[6];
+    let _fragment_count = data[7];
+
+    let (addr_len, varint_size) = decode_varint_from_buf(&data[8..])?;
+    let addr_start = 8 + varint_size;
+    let addr_end = addr_start + addr_len as usize;
+
+    if data.len() < addr_end {
+        anyhow::bail!("Hysteria2 UDPMessage truncated at address");
+    }
+
+    let addr = String::from_utf8(data[addr_start..addr_end].to_vec())?;
+    let payload = bytes::Bytes::copy_from_slice(&data[addr_end..]);
+
+    Ok((session_id, packet_id, addr, payload))
 }

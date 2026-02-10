@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::common::{Address, ProxyStream};
+use crate::common::{Address, BoxUdpTransport, ProxyStream};
 
 /// 网络类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +29,7 @@ pub struct Session {
 pub struct InboundResult {
     pub session: Session,
     pub stream: ProxyStream,
+    pub udp_transport: Option<BoxUdpTransport>,
 }
 
 /// 入站处理器 trait
@@ -43,4 +44,7 @@ pub trait InboundHandler: Send + Sync {
 pub trait OutboundHandler: Send + Sync {
     fn tag(&self) -> &str;
     async fn connect(&self, session: &Session) -> Result<ProxyStream>;
+    async fn connect_udp(&self, _session: &Session) -> Result<BoxUdpTransport> {
+        anyhow::bail!("UDP not supported by outbound '{}'", self.tag())
+    }
 }

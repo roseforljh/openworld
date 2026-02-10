@@ -24,3 +24,11 @@ http = "1"
 async-trait = "0.1"
 rand = "0.8"
 futures-lite = "2"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+hkdf = "0.12"
+sha2 = "0.10"
+hmac = "0.12"
+aes-gcm = "0.10"
+
+[dev-dependencies]
+rcgen = "0.13"

@@ -2,13 +2,19 @@ pub mod auth;
 pub mod protocol;
 pub mod quic;
 
+use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
+
 use anyhow::Result;
 use async_trait::async_trait;
+use bytes::Bytes;
 use tracing::debug;
 
-use crate::common::ProxyStream;
+use crate::common::{Address, BoxUdpTransport, ProxyStream, UdpPacket, UdpTransport};
 use crate::config::types::OutboundConfig;
 use crate::proxy::{OutboundHandler, Session};
+
+/// 全局 session ID 计数器
+static NEXT_SESSION_ID: AtomicU32 = AtomicU32::new(1);
 
 pub struct Hysteria2Outbound {
     tag: String,
@@ -33,6 +39,10 @@ impl Hysteria2Outbound {
         let sni = settings.sni.clone().unwrap_or_else(|| address.clone());
         let allow_insecure = settings.allow_insecure;
 
+        if settings.fingerprint.is_some() {
+            tracing::warn!("hysteria2: 'fingerprint' is configured but not yet implemented");
+        }
+
         let quic_manager = quic::QuicManager::new(
             address.clone(),
             port,
@@ -46,6 +56,19 @@ impl Hysteria2Outbound {
             quic_manager: std::sync::Arc::new(tokio::sync::Mutex::new(quic_manager)),
         })
     }
+
+    /// 获取已认证的 QUIC 连接
+    async fn get_authenticated_connection(&self) -> Result<quinn::Connection> {
+        let mut manager = self.quic_manager.lock().await;
+        let (conn, is_new) = manager.get_connection().await?;
+
+        if is_new || !manager.is_authenticated() {
+            auth::authenticate(&conn, &self.password).await?;
+            manager.mark_authenticated();
+        }
+
+        Ok(conn)
+    }
 }
 
 #[async_trait]
@@ -55,29 +78,92 @@ impl OutboundHandler for Hysteria2Outbound {
     }
 
     async fn connect(&self, session: &Session) -> Result<ProxyStream> {
-        // 1. 获取 QUIC 连接（复用或新建）
-        let quic_conn = {
-            let mut manager = self.quic_manager.lock().await;
-            manager.get_connection().await?
-        };
+        let quic_conn = self.get_authenticated_connection().await?;
 
-        // 2. 认证（如果是新连接）
-        auth::authenticate(&quic_conn, &self.password).await?;
-
-        // 3. 打开双向流
+        // 打开双向流
         let (mut send, mut recv) = quic_conn.open_bi().await?;
 
-        // 4. 发送 TCP 请求头
+        // 发送 TCP 请求头
         let addr_str = session.target.to_hysteria2_addr_string();
         protocol::write_tcp_request(&mut send, &addr_str).await?;
 
-        // 5. 读取 TCP 响应
+        // 读取 TCP 响应
         protocol::read_tcp_response(&mut recv).await?;
 
         debug!(target = %session.target, "Hysteria2 TCP stream established");
 
-        // 6. 包装为 ProxyStream
         let stream = quic::QuicBiStream::new(send, recv);
         Ok(Box::new(stream))
     }
+
+    async fn connect_udp(&self, _session: &Session) -> Result<BoxUdpTransport> {
+        let quic_conn = self.get_authenticated_connection().await?;
+        let session_id = NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed);
+
+        debug!(session_id = session_id, "Hysteria2 UDP transport created");
+
+        Ok(Box::new(Hysteria2UdpTransport {
+            connection: quic_conn,
+            session_id,
+            packet_id: AtomicU16::new(0),
+        }))
+    }
+}
+
+/// Hysteria2 UDP 传输：通过 QUIC Datagram 收发
+struct Hysteria2UdpTransport {
+    connection: quinn::Connection,
+    session_id: u32,
+    packet_id: AtomicU16,
+}
+
+#[async_trait]
+impl UdpTransport for Hysteria2UdpTransport {
+    async fn send(&self, packet: UdpPacket) -> Result<()> {
+        let pid = self.packet_id.fetch_add(1, Ordering::Relaxed);
+        let addr_str = packet.addr.to_hysteria2_addr_string();
+        let msg = protocol::encode_udp_message(
+            self.session_id,
+            pid,
+            &addr_str,
+            &packet.data,
+        );
+        self.connection.send_datagram(Bytes::from(msg))?;
+        Ok(())
+    }
+
+    async fn recv(&self) -> Result<UdpPacket> {
+        loop {
+            let datagram = self.connection.read_datagram().await?;
+            let (sid, _pid, addr_str, payload) = protocol::decode_udp_message(&datagram)?;
+
+            // 过滤非本 session 的包
+            if sid != self.session_id {
+                continue;
+            }
+
+            // 解析地址 "host:port"
+            let addr = parse_hysteria2_addr(&addr_str)?;
+
+            return Ok(UdpPacket {
+                addr,
+                data: payload,
+            });
+        }
+    }
+}
+
+/// 解析 Hysteria2 地址字符串 "host:port" 为 Address
+fn parse_hysteria2_addr(s: &str) -> Result<Address> {
+    if let Ok(addr) = s.parse::<std::net::SocketAddr>() {
+        return Ok(Address::Ip(addr));
+    }
+    let (host, port_str) = s
+        .rsplit_once(':')
+        .ok_or_else(|| anyhow::anyhow!("invalid hysteria2 address: {}", s))?;
+    let port: u16 = port_str.parse()?;
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return Ok(Address::Ip(std::net::SocketAddr::new(ip, port)));
+    }
+    Ok(Address::Domain(host.to_string(), port))
 }

@@ -1,4 +1,5 @@
 use anyhow::Result;
+use rustls::pki_types::CertificateDer;
 use rustls::ClientConfig;
 use std::sync::Arc;
 
@@ -9,6 +10,30 @@ pub fn build_tls_config(_sni: &str, allow_insecure: bool, with_alpn: bool) -> Re
     } else {
         build_secure_config()?
     };
+
+    if with_alpn {
+        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    }
+
+    Ok(config)
+}
+
+/// 构建 TLS ClientConfig，接受自定义根证书（供测试使用）
+pub fn build_tls_config_with_roots(
+    roots: Vec<CertificateDer<'static>>,
+    with_alpn: bool,
+) -> Result<ClientConfig> {
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    for cert in roots {
+        root_store
+            .add(cert)
+            .map_err(|e| anyhow::anyhow!("add custom root cert failed: {}", e))?;
+    }
+
+    let mut config = ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
 
     if with_alpn {
         config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];

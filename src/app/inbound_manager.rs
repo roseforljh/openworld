@@ -28,7 +28,7 @@ impl InboundManager {
 
         for config in configs {
             let handler: Arc<dyn InboundHandler> = match config.protocol.as_str() {
-                "socks5" => Arc::new(Socks5Inbound::new(config.tag.clone())),
+                "socks5" => Arc::new(Socks5Inbound::new(config.tag.clone(), config.listen.clone())),
                 "http" => Arc::new(HttpInbound::new(config.tag.clone())),
                 other => anyhow::bail!("unsupported inbound protocol: {}", other),
             };

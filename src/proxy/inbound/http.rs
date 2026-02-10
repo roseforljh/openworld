@@ -70,7 +70,7 @@ impl InboundHandler for HttpInbound {
             network: Network::Tcp,
         };
 
-        Ok(InboundResult { session, stream })
+        Ok(InboundResult { session, stream, udp_transport: None })
     }
 }
 
