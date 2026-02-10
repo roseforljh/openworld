@@ -25,6 +25,10 @@ impl OutboundHandler for DirectOutbound {
         &self.tag
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     async fn connect(&self, session: &Session) -> Result<ProxyStream> {
         let addr = session.target.resolve().await?;
         debug!(target = %session.target, resolved = %addr, "direct connect");

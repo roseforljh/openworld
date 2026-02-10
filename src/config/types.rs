@@ -9,6 +9,8 @@ pub struct Config {
     pub log: LogConfig,
     pub inbounds: Vec<InboundConfig>,
     pub outbounds: Vec<OutboundConfig>,
+    #[serde(default, rename = "proxy-groups")]
+    pub proxy_groups: Vec<ProxyGroupConfig>,
     #[serde(default)]
     pub router: RouterConfig,
     pub api: Option<ApiConfig>,
@@ -23,20 +25,36 @@ impl Config {
         if self.outbounds.is_empty() {
             anyhow::bail!("at least one outbound is required");
         }
-        // 验证 router default 指向存在的 outbound
-        let outbound_tags: Vec<&str> = self.outbounds.iter().map(|o| o.tag.as_str()).collect();
-        if !outbound_tags.contains(&self.router.default.as_str()) {
+        // 收集所有可用的出站 tag（outbound + proxy-group）
+        let mut all_tags: Vec<&str> = self.outbounds.iter().map(|o| o.tag.as_str()).collect();
+        for group in &self.proxy_groups {
+            all_tags.push(group.name.as_str());
+        }
+        // 验证 router default 指向存在的 outbound/group
+        if !all_tags.contains(&self.router.default.as_str()) {
             anyhow::bail!(
-                "router default '{}' does not match any outbound tag",
+                "router default '{}' does not match any outbound or proxy-group",
                 self.router.default
             );
         }
         for rule in &self.router.rules {
-            if !outbound_tags.contains(&rule.outbound.as_str()) {
+            if !all_tags.contains(&rule.outbound.as_str()) {
                 anyhow::bail!(
-                    "rule outbound '{}' does not match any outbound tag",
+                    "rule outbound '{}' does not match any outbound or proxy-group",
                     rule.outbound
                 );
+            }
+        }
+        // 验证 proxy-group 引用的 proxies 存在
+        for group in &self.proxy_groups {
+            for proxy_name in &group.proxies {
+                if !all_tags.contains(&proxy_name.as_str()) {
+                    anyhow::bail!(
+                        "proxy-group '{}' references unknown proxy '{}'",
+                        group.name,
+                        proxy_name
+                    );
+                }
             }
         }
         Ok(())
@@ -209,6 +227,31 @@ pub struct DnsServerConfig {
     pub domains: Vec<String>,
 }
 
+/// 代理组配置
+#[derive(Debug, Deserialize, Clone)]
+pub struct ProxyGroupConfig {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub group_type: String,
+    pub proxies: Vec<String>,
+    /// url-test/fallback 健康检查 URL
+    pub url: Option<String>,
+    /// 健康检查间隔（秒）
+    #[serde(default = "default_health_interval")]
+    pub interval: u64,
+    /// url-test 容差（毫秒），延迟差在此范围内不切换
+    #[serde(default = "default_tolerance")]
+    pub tolerance: u64,
+}
+
+fn default_health_interval() -> u64 {
+    300
+}
+
+fn default_tolerance() -> u64 {
+    150
+}
+
 #[derive(Debug, Deserialize)]
 pub struct RouterConfig {
     #[serde(default)]
@@ -268,6 +311,7 @@ mod tests {
             },
             api: None,
             dns: None,
+            proxy_groups: vec![],
         }
     }
 

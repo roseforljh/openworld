@@ -77,6 +77,10 @@ impl OutboundHandler for Hysteria2Outbound {
         &self.tag
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     async fn connect(&self, session: &Session) -> Result<ProxyStream> {
         let quic_conn = self.get_authenticated_connection().await?;
 

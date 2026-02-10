@@ -87,7 +87,7 @@ fn make_dispatcher_with_rules(rules: Vec<RuleConfig>, default: &str) -> Dispatch
             settings: OutboundSettings::default(),
         },
     ];
-    let outbound_manager = Arc::new(OutboundManager::new(&outbounds).unwrap());
+    let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
     Dispatcher::new(router, outbound_manager, tracker)
 }

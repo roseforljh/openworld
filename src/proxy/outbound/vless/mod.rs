@@ -91,6 +91,10 @@ impl OutboundHandler for VlessOutbound {
         &self.tag
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     async fn connect(&self, session: &Session) -> Result<ProxyStream> {
         debug!(server = %self.server_addr, "VLESS connecting to server");
 

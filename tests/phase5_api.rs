@@ -23,7 +23,7 @@ async fn start_test_api() -> String {
         protocol: "direct".to_string(),
         settings: OutboundSettings::default(),
     }];
-    let outbound_manager = Arc::new(OutboundManager::new(&outbounds).unwrap());
+    let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
 
     // 手动创建 API 服务器以获取实际端口

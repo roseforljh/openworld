@@ -37,7 +37,8 @@ pub fn start(
     let mut app = axum::Router::new()
         .route("/version", get(handlers::get_version))
         .route("/proxies", get(handlers::get_proxies))
-        .route("/proxies/{name}", get(handlers::get_proxy))
+        .route("/proxies/{name}", get(handlers::get_proxy).put(handlers::select_proxy))
+        .route("/proxies/{name}/delay", get(handlers::test_proxy_delay))
         .route(
             "/connections",
             get(handlers::get_connections).delete(handlers::close_all_connections),

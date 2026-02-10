@@ -54,6 +54,10 @@ impl OutboundHandler for MockUnsupportedUdpOutbound {
         "mock-udp-unsupported"
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     async fn connect(&self, _session: &Session) -> anyhow::Result<openworld::common::ProxyStream> {
         anyhow::bail!("not used")
     }
@@ -84,6 +88,7 @@ fn phase3_config_validate_baseline_ok() {
         },
         api: None,
         dns: None,
+        proxy_groups: vec![],
     };
 
     assert!(config.validate().is_ok());
@@ -117,7 +122,7 @@ fn phase3_outbound_manager_registers_direct() {
         settings: OutboundSettings::default(),
     }];
 
-    let manager = OutboundManager::new(&outbounds).unwrap();
+    let manager = OutboundManager::new(&outbounds, &[]).unwrap();
     assert!(manager.get("direct").is_some());
     assert!(manager.get("missing").is_none());
 }
@@ -173,7 +178,7 @@ async fn phase3_dispatcher_udp_requires_inbound_transport() {
         protocol: "direct".to_string(),
         settings: OutboundSettings::default(),
     }];
-    let outbound_manager = Arc::new(OutboundManager::new(&outbounds).unwrap());
+    let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
     let dispatcher = Dispatcher::new(router, outbound_manager, tracker);
 
@@ -251,7 +256,7 @@ fn phase3_dispatcher_construction_baseline() {
         protocol: "direct".to_string(),
         settings: OutboundSettings::default(),
     }];
-    let outbound_manager = Arc::new(OutboundManager::new(&outbounds).unwrap());
+    let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
 
     let tracker = Arc::new(ConnectionTracker::new());
     let _dispatcher = Dispatcher::new(router, outbound_manager, tracker);

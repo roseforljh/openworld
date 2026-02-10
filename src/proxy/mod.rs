@@ -1,3 +1,4 @@
+pub mod group;
 pub mod inbound;
 pub mod outbound;
 pub mod relay;
@@ -42,10 +43,12 @@ pub trait InboundHandler: Send + Sync {
 
 /// 出站处理器 trait
 #[async_trait]
-pub trait OutboundHandler: Send + Sync {
+pub trait OutboundHandler: Send + Sync + 'static {
     fn tag(&self) -> &str;
     async fn connect(&self, session: &Session) -> Result<ProxyStream>;
     async fn connect_udp(&self, _session: &Session) -> Result<BoxUdpTransport> {
         anyhow::bail!("UDP not supported by outbound '{}'", self.tag())
     }
+    /// 用于 downcasting 到具体类型
+    fn as_any(&self) -> &dyn std::any::Any;
 }

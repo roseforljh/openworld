@@ -22,6 +22,12 @@ pub struct ProxyInfo {
     pub proxy_type: String,
     pub udp: bool,
     pub history: Vec<serde_json::Value>,
+    /// 代理组专有：包含的代理列表
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub all: Option<Vec<String>>,
+    /// 代理组专有：当前选中的代理
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub now: Option<String>,
 }
 
 /// GET /connections 响应
@@ -85,4 +91,16 @@ pub struct RuleItem {
 pub struct TrafficItem {
     pub up: u64,
     pub down: u64,
+}
+
+/// PUT /proxies/{name} 请求体
+#[derive(serde::Deserialize)]
+pub struct SelectProxyRequest {
+    pub name: String,
+}
+
+/// GET /proxies/{name}/delay 响应
+#[derive(Serialize)]
+pub struct DelayResponse {
+    pub delay: u64,
 }

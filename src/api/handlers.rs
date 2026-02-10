@@ -12,6 +12,10 @@ use tracing::debug;
 
 use crate::app::outbound_manager::OutboundManager;
 use crate::app::tracker::ConnectionTracker;
+use crate::proxy::group::fallback::FallbackGroup;
+use crate::proxy::group::loadbalance::LoadBalanceGroup;
+use crate::proxy::group::selector::SelectorGroup;
+use crate::proxy::group::urltest::UrlTestGroup;
 use crate::router::Router;
 
 use super::models::*;
@@ -33,20 +37,74 @@ pub async fn get_version() -> Json<VersionResponse> {
     })
 }
 
+/// 从 handler 构建 ProxyInfo（含代理组信息）
+async fn build_proxy_info(
+    name: &str,
+    handler: &dyn crate::proxy::OutboundHandler,
+    _outbound_manager: &OutboundManager,
+) -> ProxyInfo {
+    let any = handler.as_any();
+
+    // 检查是否为代理组
+    if let Some(selector) = any.downcast_ref::<SelectorGroup>() {
+        return ProxyInfo {
+            name: name.to_string(),
+            proxy_type: "Selector".to_string(),
+            udp: false,
+            history: vec![],
+            all: Some(selector.proxy_names().to_vec()),
+            now: Some(selector.selected_name().await),
+        };
+    }
+    if let Some(urltest) = any.downcast_ref::<UrlTestGroup>() {
+        return ProxyInfo {
+            name: name.to_string(),
+            proxy_type: "URLTest".to_string(),
+            udp: false,
+            history: vec![],
+            all: Some(urltest.proxy_names().to_vec()),
+            now: Some(urltest.selected_name().await),
+        };
+    }
+    if let Some(fallback) = any.downcast_ref::<FallbackGroup>() {
+        return ProxyInfo {
+            name: name.to_string(),
+            proxy_type: "Fallback".to_string(),
+            udp: false,
+            history: vec![],
+            all: Some(fallback.proxy_names().to_vec()),
+            now: Some(fallback.selected_name().await),
+        };
+    }
+    if let Some(lb) = any.downcast_ref::<LoadBalanceGroup>() {
+        return ProxyInfo {
+            name: name.to_string(),
+            proxy_type: "LoadBalance".to_string(),
+            udp: false,
+            history: vec![],
+            all: Some(lb.proxy_names().to_vec()),
+            now: None,
+        };
+    }
+
+    // 普通出站
+    ProxyInfo {
+        name: name.to_string(),
+        proxy_type: "Unknown".to_string(),
+        udp: false,
+        history: vec![],
+        all: None,
+        now: None,
+    }
+}
+
 /// GET /proxies
 pub async fn get_proxies(State(state): State<AppState>) -> Json<ProxiesResponse> {
     let handlers = state.outbound_manager.list();
     let mut proxies = HashMap::new();
-    for (tag, _handler) in handlers {
-        proxies.insert(
-            tag.clone(),
-            ProxyInfo {
-                name: tag.clone(),
-                proxy_type: "Unknown".to_string(),
-                udp: false,
-                history: vec![],
-            },
-        );
+    for (tag, handler) in handlers {
+        let info = build_proxy_info(tag, handler.as_ref(), &state.outbound_manager).await;
+        proxies.insert(tag.clone(), info);
     }
     Json(ProxiesResponse { proxies })
 }
@@ -57,16 +115,62 @@ pub async fn get_proxy(
     Path(name): Path<String>,
 ) -> impl IntoResponse {
     match state.outbound_manager.get(&name) {
-        Some(_handler) => {
-            let info = ProxyInfo {
-                name: name.clone(),
-                proxy_type: "Unknown".to_string(),
-                udp: false,
-                history: vec![],
-            };
+        Some(handler) => {
+            let info =
+                build_proxy_info(&name, handler.as_ref(), &state.outbound_manager).await;
             (StatusCode::OK, Json(serde_json::to_value(info).unwrap())).into_response()
         }
         None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// PUT /proxies/:name - 切换 selector 代理组
+pub async fn select_proxy(
+    State(state): State<AppState>,
+    Path(group_name): Path<String>,
+    Json(body): Json<SelectProxyRequest>,
+) -> StatusCode {
+    let handler = match state.outbound_manager.get(&group_name) {
+        Some(h) => h,
+        None => return StatusCode::NOT_FOUND,
+    };
+
+    let any = handler.as_any();
+    if let Some(selector) = any.downcast_ref::<SelectorGroup>() {
+        if selector.select(&body.name).await {
+            StatusCode::NO_CONTENT
+        } else {
+            StatusCode::BAD_REQUEST
+        }
+    } else {
+        StatusCode::BAD_REQUEST
+    }
+}
+
+/// GET /proxies/:name/delay - 延迟测试
+pub async fn test_proxy_delay(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let url = params
+        .get("url")
+        .cloned()
+        .unwrap_or_else(|| "http://www.gstatic.com/generate_204".to_string());
+    let timeout: u64 = params
+        .get("timeout")
+        .and_then(|t| t.parse().ok())
+        .unwrap_or(5000);
+
+    match state.outbound_manager.test_delay(&name, &url, timeout).await {
+        Some(delay) => {
+            (StatusCode::OK, Json(serde_json::json!({"delay": delay}))).into_response()
+        }
+        None => (
+            StatusCode::REQUEST_TIMEOUT,
+            Json(serde_json::json!({"message": "timeout"})),
+        )
+            .into_response(),
     }
 }
 
@@ -135,7 +239,6 @@ pub async fn traffic_ws(
     Query(params): Query<HashMap<String, String>>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    // WebSocket 认证（通过查询参数）
     if let Some(ref secret) = state.secret {
         let token = params.get("token").map(|s| s.as_str()).unwrap_or("");
         if token != secret {
@@ -188,7 +291,6 @@ pub async fn get_rules(State(state): State<AppState>) -> Json<RulesResponse> {
 /// GET /logs (WebSocket) - 占位
 pub async fn logs_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
     ws.on_upgrade(|mut socket: WebSocket| async move {
-        // 占位：暂不实现日志推送
         let _ = socket
             .send(Message::Text(
                 r#"{"type":"info","payload":"log streaming not yet implemented"}"#.into(),
@@ -197,7 +299,6 @@ pub async fn logs_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
     })
 }
 
-/// 从 Rule 提取类型名
 fn rule_type_name(rule: &crate::router::rules::Rule) -> String {
     use crate::router::rules::Rule;
     match rule {
@@ -210,13 +311,11 @@ fn rule_type_name(rule: &crate::router::rules::Rule) -> String {
     }
 }
 
-/// 简易时间格式化：从 elapsed 推算出 ISO 风格的起始时间字符串
 fn chrono_like_start(elapsed: Duration) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     let start_secs = now.as_secs().saturating_sub(elapsed.as_secs());
-    // 简化：返回 Unix 时间戳
     format!("{}s", start_secs)
 }

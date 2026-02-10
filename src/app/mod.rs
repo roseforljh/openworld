@@ -32,7 +32,10 @@ impl App {
     pub fn new(config: Config) -> Result<Self> {
         let cancel_token = CancellationToken::new();
         let router = Arc::new(Router::new(&config.router)?);
-        let outbound_manager = Arc::new(OutboundManager::new(&config.outbounds)?);
+        let outbound_manager = Arc::new(OutboundManager::new(
+            &config.outbounds,
+            &config.proxy_groups,
+        )?);
         let tracker = Arc::new(ConnectionTracker::new());
         let dispatcher = Arc::new(Dispatcher::new(
             router.clone(),
