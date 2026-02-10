@@ -162,6 +162,8 @@ pub struct TransportConfig {
     pub path: Option<String>,
     pub host: Option<String>,
     pub headers: Option<HashMap<String, String>>,
+    /// gRPC 服务名（仅 grpc 传输使用）
+    pub service_name: Option<String>,
 }
 
 /// TLS 配置

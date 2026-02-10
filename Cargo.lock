@@ -1342,6 +1342,7 @@ dependencies = [
  "bytes",
  "futures-lite",
  "futures-util",
+ "h2 0.4.13",
  "h3",
  "h3-quinn",
  "hickory-resolver",
