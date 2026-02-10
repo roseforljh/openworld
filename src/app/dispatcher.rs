@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -53,8 +53,8 @@ impl NatEntry {
 }
 
 pub struct Dispatcher {
-    router: Arc<Router>,
-    outbound_manager: Arc<OutboundManager>,
+    router: RwLock<Arc<Router>>,
+    outbound_manager: RwLock<Arc<OutboundManager>>,
     tracker: Arc<ConnectionTracker>,
 }
 
@@ -65,10 +65,35 @@ impl Dispatcher {
         tracker: Arc<ConnectionTracker>,
     ) -> Self {
         Self {
-            router,
-            outbound_manager,
+            router: RwLock::new(router),
+            outbound_manager: RwLock::new(outbound_manager),
             tracker,
         }
+    }
+
+    /// 获取当前 Router 快照
+    pub fn router(&self) -> Arc<Router> {
+        self.router.read().unwrap().clone()
+    }
+
+    /// 获取当前 OutboundManager 快照
+    pub fn outbound_manager(&self) -> Arc<OutboundManager> {
+        self.outbound_manager.read().unwrap().clone()
+    }
+
+    /// 获取 ConnectionTracker
+    pub fn tracker(&self) -> &Arc<ConnectionTracker> {
+        &self.tracker
+    }
+
+    /// 热更新 Router
+    pub fn update_router(&self, new_router: Arc<Router>) {
+        *self.router.write().unwrap() = new_router;
+    }
+
+    /// 热更新 OutboundManager
+    pub fn update_outbound_manager(&self, new_om: Arc<OutboundManager>) {
+        *self.outbound_manager.write().unwrap() = new_om;
     }
 
     pub async fn dispatch(&self, result: InboundResult) -> Result<()> {
@@ -106,10 +131,13 @@ impl Dispatcher {
             inbound_stream = Box::new(PrefixedStream::new(peek_buf, inbound_stream));
         }
 
-        let outbound_tag = self.router.route(&session);
+        // 快照当前 router/outbound_manager（热重载安全）
+        let router = self.router();
+        let outbound_manager = self.outbound_manager();
 
-        let outbound = self
-            .outbound_manager
+        let outbound_tag = router.route(&session);
+
+        let outbound = outbound_manager
             .get(outbound_tag)
             .ok_or_else(|| anyhow::anyhow!("outbound '{}' not found", outbound_tag))?;
 
@@ -150,8 +178,8 @@ impl Dispatcher {
 
         // 入站 -> 出站 转发任务
         let inbound_udp_recv = inbound_udp.clone();
-        let router = self.router.clone();
-        let outbound_manager = self.outbound_manager.clone();
+        let router = self.router();
+        let outbound_manager = self.outbound_manager();
         let nat_table_clone = nat_table.clone();
         let inbound_udp_send = inbound_udp.clone();
         let session_clone = session.clone();

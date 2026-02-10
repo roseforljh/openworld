@@ -8,25 +8,23 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use tokio::time::interval;
-use tracing::debug;
+use tracing::{debug, info};
 
+use crate::app::dispatcher::Dispatcher;
 use crate::app::outbound_manager::OutboundManager;
-use crate::app::tracker::ConnectionTracker;
 use crate::proxy::group::fallback::FallbackGroup;
 use crate::proxy::group::loadbalance::LoadBalanceGroup;
 use crate::proxy::group::selector::SelectorGroup;
 use crate::proxy::group::urltest::UrlTestGroup;
-use crate::router::Router;
 
 use super::models::*;
 
 /// 共享应用状态
 #[derive(Clone)]
 pub struct AppState {
-    pub router: Arc<Router>,
-    pub outbound_manager: Arc<OutboundManager>,
-    pub tracker: Arc<ConnectionTracker>,
+    pub dispatcher: Arc<Dispatcher>,
     pub secret: Option<String>,
+    pub config_path: Option<String>,
 }
 
 /// GET /version
@@ -100,10 +98,11 @@ async fn build_proxy_info(
 
 /// GET /proxies
 pub async fn get_proxies(State(state): State<AppState>) -> Json<ProxiesResponse> {
-    let handlers = state.outbound_manager.list();
+    let outbound_manager = state.dispatcher.outbound_manager();
+    let handlers = outbound_manager.list();
     let mut proxies = HashMap::new();
     for (tag, handler) in handlers {
-        let info = build_proxy_info(tag, handler.as_ref(), &state.outbound_manager).await;
+        let info = build_proxy_info(tag, handler.as_ref(), &outbound_manager).await;
         proxies.insert(tag.clone(), info);
     }
     Json(ProxiesResponse { proxies })
@@ -114,10 +113,11 @@ pub async fn get_proxy(
     State(state): State<AppState>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
-    match state.outbound_manager.get(&name) {
+    let outbound_manager = state.dispatcher.outbound_manager();
+    match outbound_manager.get(&name) {
         Some(handler) => {
             let info =
-                build_proxy_info(&name, handler.as_ref(), &state.outbound_manager).await;
+                build_proxy_info(&name, handler.as_ref(), &outbound_manager).await;
             (StatusCode::OK, Json(serde_json::to_value(info).unwrap())).into_response()
         }
         None => StatusCode::NOT_FOUND.into_response(),
@@ -130,7 +130,8 @@ pub async fn select_proxy(
     Path(group_name): Path<String>,
     Json(body): Json<SelectProxyRequest>,
 ) -> StatusCode {
-    let handler = match state.outbound_manager.get(&group_name) {
+    let outbound_manager = state.dispatcher.outbound_manager();
+    let handler = match outbound_manager.get(&group_name) {
         Some(h) => h,
         None => return StatusCode::NOT_FOUND,
     };
@@ -162,7 +163,7 @@ pub async fn test_proxy_delay(
         .and_then(|t| t.parse().ok())
         .unwrap_or(5000);
 
-    match state.outbound_manager.test_delay(&name, &url, timeout).await {
+    match state.dispatcher.outbound_manager().test_delay(&name, &url, timeout).await {
         Some(delay) => {
             (StatusCode::OK, Json(serde_json::json!({"delay": delay}))).into_response()
         }
@@ -176,8 +177,9 @@ pub async fn test_proxy_delay(
 
 /// GET /connections
 pub async fn get_connections(State(state): State<AppState>) -> Json<ConnectionsResponse> {
-    let connections = state.tracker.list().await;
-    let snapshot = state.tracker.snapshot();
+    let tracker = state.dispatcher.tracker();
+    let connections = tracker.list().await;
+    let snapshot = tracker.snapshot();
 
     let items: Vec<ConnectionItem> = connections
         .into_iter()
@@ -215,7 +217,7 @@ pub async fn get_connections(State(state): State<AppState>) -> Json<ConnectionsR
 
 /// DELETE /connections
 pub async fn close_all_connections(State(state): State<AppState>) -> StatusCode {
-    let closed = state.tracker.close_all().await;
+    let closed = state.dispatcher.tracker().close_all().await;
     debug!(count = closed, "closed all connections via API");
     StatusCode::NO_CONTENT
 }
@@ -226,7 +228,7 @@ pub async fn close_connection(
     Path(id): Path<String>,
 ) -> StatusCode {
     if let Ok(id) = id.parse::<u64>() {
-        if state.tracker.close(id).await {
+        if state.dispatcher.tracker().close(id).await {
             return StatusCode::NO_CONTENT;
         }
     }
@@ -252,12 +254,13 @@ pub async fn traffic_ws(
 
 async fn handle_traffic_ws(mut socket: WebSocket, state: AppState) {
     let mut ticker = interval(Duration::from_secs(1));
-    let mut last_up = state.tracker.snapshot().total_up;
-    let mut last_down = state.tracker.snapshot().total_down;
+    let tracker = state.dispatcher.tracker().clone();
+    let mut last_up = tracker.snapshot().total_up;
+    let mut last_down = tracker.snapshot().total_down;
 
     loop {
         ticker.tick().await;
-        let snap = state.tracker.snapshot();
+        let snap = tracker.snapshot();
         let item = TrafficItem {
             up: snap.total_up.saturating_sub(last_up),
             down: snap.total_down.saturating_sub(last_down),
@@ -275,7 +278,8 @@ async fn handle_traffic_ws(mut socket: WebSocket, state: AppState) {
 /// GET /rules
 pub async fn get_rules(State(state): State<AppState>) -> Json<RulesResponse> {
     let rules: Vec<RuleItem> = state
-        .router
+        .dispatcher
+        .router()
         .rules()
         .iter()
         .map(|(rule, outbound)| RuleItem {
@@ -297,6 +301,56 @@ pub async fn logs_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
             ))
             .await;
     })
+}
+
+/// PATCH /configs - 热重载配置
+pub async fn reload_config(
+    State(state): State<AppState>,
+    Json(body): Json<ReloadConfigRequest>,
+) -> impl IntoResponse {
+    let path = body
+        .path
+        .or(state.config_path.clone())
+        .unwrap_or_else(|| "config.yaml".to_string());
+
+    let config = match crate::config::load_config(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"message": format!("failed to load config: {}", e)})),
+            )
+                .into_response();
+        }
+    };
+
+    let new_router = match crate::router::Router::new(&config.router) {
+        Ok(r) => std::sync::Arc::new(r),
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"message": format!("failed to build router: {}", e)})),
+            )
+                .into_response();
+        }
+    };
+
+    let new_om = match OutboundManager::new(&config.outbounds, &config.proxy_groups) {
+        Ok(om) => std::sync::Arc::new(om),
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"message": format!("failed to build outbound manager: {}", e)})),
+            )
+                .into_response();
+        }
+    };
+
+    state.dispatcher.update_router(new_router);
+    state.dispatcher.update_outbound_manager(new_om);
+
+    info!(path = path, "config reloaded via API");
+    StatusCode::NO_CONTENT.into_response()
 }
 
 fn rule_type_name(rule: &crate::router::rules::Rule) -> String {

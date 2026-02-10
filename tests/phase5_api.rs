@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use openworld::api;
+use openworld::app::dispatcher::Dispatcher;
 use openworld::app::outbound_manager::OutboundManager;
 use openworld::app::tracker::ConnectionTracker;
 use openworld::config::types::{OutboundConfig, OutboundSettings, RouterConfig};
@@ -27,12 +28,13 @@ async fn start_test_api() -> String {
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
 
+    let dispatcher = Arc::new(Dispatcher::new(router, outbound_manager, tracker));
+
     // 手动创建 API 服务器以获取实际端口
     let state = openworld::api::handlers::AppState {
-        router,
-        outbound_manager,
-        tracker,
+        dispatcher,
         secret: None,
+        config_path: None,
     };
 
     let app = axum::Router::new()

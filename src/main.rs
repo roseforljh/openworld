@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
     let config = openworld::config::load_config(&config_path)?;
     info!("config loaded");
 
-    let app = openworld::app::App::new(config)?;
+    let app = openworld::app::App::new(config, Some(config_path))?;
     app.run().await?;
 
     Ok(())

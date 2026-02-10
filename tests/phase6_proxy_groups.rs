@@ -458,6 +458,7 @@ async fn api_select_proxy_nonexistent_group() {
 /// 启动带代理组的测试 API 服务器
 async fn start_test_api_with_group() -> String {
     use openworld::api;
+    use openworld::app::dispatcher::Dispatcher;
     use openworld::app::tracker::ConnectionTracker;
     use openworld::router::Router;
 
@@ -493,11 +494,12 @@ async fn start_test_api_with_group() -> String {
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &groups).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
 
+    let dispatcher = Arc::new(Dispatcher::new(router, outbound_manager, tracker));
+
     let state = api::handlers::AppState {
-        router,
-        outbound_manager,
-        tracker,
+        dispatcher,
         secret: None,
+        config_path: None,
     };
 
     let app = axum::Router::new()

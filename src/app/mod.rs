@@ -19,17 +19,14 @@ use tracker::ConnectionTracker;
 
 pub struct App {
     inbound_manager: InboundManager,
-    router: Arc<Router>,
-    outbound_manager: Arc<OutboundManager>,
-    #[allow(dead_code)]
     dispatcher: Arc<Dispatcher>,
-    tracker: Arc<ConnectionTracker>,
     cancel_token: CancellationToken,
     api_config: Option<ApiConfig>,
+    config_path: Option<String>,
 }
 
 impl App {
-    pub fn new(config: Config) -> Result<Self> {
+    pub fn new(config: Config, config_path: Option<String>) -> Result<Self> {
         let cancel_token = CancellationToken::new();
         let router = Arc::new(Router::new(&config.router)?);
         let outbound_manager = Arc::new(OutboundManager::new(
@@ -38,9 +35,9 @@ impl App {
         )?);
         let tracker = Arc::new(ConnectionTracker::new());
         let dispatcher = Arc::new(Dispatcher::new(
-            router.clone(),
-            outbound_manager.clone(),
-            tracker.clone(),
+            router,
+            outbound_manager,
+            tracker,
         ));
         let inbound_manager = InboundManager::new(
             &config.inbounds,
@@ -50,12 +47,10 @@ impl App {
 
         Ok(Self {
             inbound_manager,
-            router,
-            outbound_manager,
             dispatcher,
-            tracker,
             cancel_token,
             api_config: config.api,
+            config_path,
         })
     }
 
@@ -66,16 +61,15 @@ impl App {
         let _api_handle = if let Some(ref api_config) = self.api_config {
             Some(crate::api::start(
                 api_config,
-                self.router.clone(),
-                self.outbound_manager.clone(),
-                self.tracker.clone(),
+                self.dispatcher.clone(),
+                self.config_path.clone(),
             )?)
         } else {
             None
         };
 
         let cancel_token = self.cancel_token.clone();
-        let tracker = self.tracker.clone();
+        let tracker = self.dispatcher.tracker().clone();
 
         tokio::select! {
             result = self.inbound_manager.run() => {
@@ -94,20 +88,12 @@ impl App {
     pub async fn shutdown(&self) {
         info!("initiating graceful shutdown");
         self.cancel_token.cancel();
-        let closed = self.tracker.close_all().await;
+        let closed = self.dispatcher.tracker().close_all().await;
         info!(connections = closed, "all connections closed");
     }
 
-    pub fn router(&self) -> &Arc<Router> {
-        &self.router
-    }
-
-    pub fn outbound_manager(&self) -> &Arc<OutboundManager> {
-        &self.outbound_manager
-    }
-
-    pub fn tracker(&self) -> &Arc<ConnectionTracker> {
-        &self.tracker
+    pub fn dispatcher(&self) -> &Arc<Dispatcher> {
+        &self.dispatcher
     }
 
     pub fn cancel_token(&self) -> &CancellationToken {

@@ -8,30 +8,26 @@ use axum::extract::Request;
 use axum::http::{header, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::Response;
-use axum::routing::{delete, get};
+use axum::routing::{delete, get, patch};
 use tokio::task::JoinHandle;
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
-use crate::app::outbound_manager::OutboundManager;
-use crate::app::tracker::ConnectionTracker;
+use crate::app::dispatcher::Dispatcher;
 use crate::config::types::ApiConfig;
-use crate::router::Router;
 
 use handlers::AppState;
 
 /// 启动 API 服务器
 pub fn start(
     config: &ApiConfig,
-    router: Arc<Router>,
-    outbound_manager: Arc<OutboundManager>,
-    tracker: Arc<ConnectionTracker>,
+    dispatcher: Arc<Dispatcher>,
+    config_path: Option<String>,
 ) -> Result<JoinHandle<()>> {
     let state = AppState {
-        router,
-        outbound_manager,
-        tracker,
+        dispatcher,
         secret: config.secret.clone(),
+        config_path,
     };
 
     let mut app = axum::Router::new()
@@ -50,6 +46,7 @@ pub fn start(
         .route("/traffic", get(handlers::traffic_ws))
         .route("/rules", get(handlers::get_rules))
         .route("/logs", get(handlers::logs_ws))
+        .route("/configs", patch(handlers::reload_config))
         .layer(CorsLayer::permissive());
 
     // 如果配置了 secret，添加认证中间件

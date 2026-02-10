@@ -99,6 +99,12 @@ pub struct SelectProxyRequest {
     pub name: String,
 }
 
+/// PATCH /configs 请求体
+#[derive(serde::Deserialize)]
+pub struct ReloadConfigRequest {
+    pub path: Option<String>,
+}
+
 /// GET /proxies/{name}/delay 响应
 #[derive(Serialize)]
 pub struct DelayResponse {
