@@ -5,7 +5,7 @@
 - **项目名称**：OpenWorld
 - **文档类型**：完整实施计划（含已完成内容与后续规划）
 - **当前范围**：代理内核（Rust）
-- **当前状态**：Phase 1-3 + 4A 已完成；Phase 4B 待启动
+- **当前状态**：Phase 1-3 + 4A/4B/4C 已完成；Phase 4D 待启动
 - **运行环境**：Windows / PowerShell（也兼容 Linux）
 
 ---
@@ -24,7 +24,7 @@
    - VLESS over TLS / Reality / Vision
    - Hysteria2（TCP over QUIC）
 3. **传输层**：
-   - TCP、TLS、Reality、WebSocket
+   - TCP、TLS、Reality、WebSocket、HTTP/2、gRPC
 4. **路由规则**：
    - domain-suffix、domain-keyword、domain-full、ip-cidr
    - GeoIP（mmdb）、GeoSite（文本域名列表）
@@ -60,6 +60,9 @@
 | GeoIP 路由 | 已完成 | 3C |
 | GeoSite 路由 | 已完成 | 3C |
 | API 代理组管理（选择/延迟测试） | 已完成 | 4A |
+| 协议嗅探（TLS SNI / HTTP Host） | 已完成 | 4B |
+| H2 传输层 | 已完成 | 4C |
+| gRPC 传输层（gun 模式） | 已完成 | 4C |
 
 ---
 
@@ -111,6 +114,7 @@
 | `serde_json` | JSON 序列化 |
 | `hickory-resolver` | DNS 解析（UDP/DoT/DoH） |
 | `maxminddb` | GeoIP mmdb 数据库 |
+| `h2` | HTTP/2 协议（传输层） |
 | `tokio-tungstenite` | WebSocket 传输层 |
 | `tokio-util` | CancellationToken（优雅关闭） |
 | `async-trait` | 异步 trait |
@@ -163,7 +167,9 @@ openworld/
    │  │  ├─ tcp.rs
    │  │  ├─ tls.rs
    │  │  ├─ reality.rs
-   │  │  └─ ws.rs
+   │  │  ├─ ws.rs
+   │  │  ├─ h2.rs              [Phase 4C] HTTP/2 传输
+   │  │  └─ grpc.rs            [Phase 4C] gRPC 传输（gun 模式）
    │  └─ group/               [Phase 4A] 代理组
    │     ├─ mod.rs             build_proxy_groups() 工厂
    │     ├─ selector.rs        手动选择
@@ -201,6 +207,7 @@ tests/
 ├─ phase5_api.rs               [Phase 3B] API 端点测试
 ├─ phase5_routing.rs           [Phase 3C] DNS + 路由增强测试
 └─ phase6_proxy_groups.rs      [Phase 4A] 代理组 + API 测试
+└─ phase7_transport.rs         [Phase 4C] H2/gRPC 传输层测试
 ```
 
 ---
@@ -461,6 +468,25 @@ router:
 
 测试覆盖：191 项测试全部通过，0 警告。
 
+## 11.5 Phase 4B（已完成）
+
+- 协议嗅探模块 src/proxy/sniff.rs（TLS ClientHello SNI + HTTP Host 检测）
+- PrefixedStream 透明 peek 数据回放
+- SniffingConfig 配置（per-inbound 开关）
+- Dispatcher 集成：peek 4KB → 检测协议 → 覆盖目标地址
+
+测试覆盖：201 项测试全部通过，0 警告。
+
+## 11.6 Phase 4C（已完成）
+
+- HTTP/2 传输层 src/proxy/transport/h2.rs（H2Transport + H2Stream 适配器）
+- gRPC 传输层 src/proxy/transport/grpc.rs（gRPC 帧封装/解帧 + GrpcStream）
+- build_transport() 工厂支持 "h2" 和 "grpc" 类型
+- TransportConfig 新增 service_name 字段（gRPC 服务名）
+- h2 crate 直接依赖
+
+测试覆盖：215 项测试全部通过，0 警告。
+
 ---
 
 ## 12. Phase 4 规划（待启动）
@@ -474,13 +500,13 @@ router:
 - API 扩展：`PUT /proxies/{group}/select` 切换选中节点
 - 延迟测试：`GET /proxies/{name}/delay?url=...&timeout=...`
 
-### Phase 4B：协议嗅探 (Sniffing)
+### Phase 4B：协议嗅探 (Sniffing)（已完成）
 
 - 入站流量协议检测（TLS ClientHello SNI / HTTP Host）
 - 用检测到的域名覆盖 Session target（提高路由准确性）
 - 可配置开关：`sniffing: { enabled: true, destinations: ["http", "tls"] }`
 
-### Phase 4C：更多传输层
+### Phase 4C：更多传输层（已完成）
 
 - gRPC 传输 (`grpc`)
 - HTTP/2 传输 (`h2`)
@@ -514,7 +540,7 @@ router:
 ## 13.1 自动化测试
 
 ```powershell
-cargo test       # 191 项测试
+cargo test       # 215 项测试
 cargo check      # 编译检查
 cargo build      # 构建
 ```
