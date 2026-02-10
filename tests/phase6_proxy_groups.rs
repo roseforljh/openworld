@@ -244,6 +244,7 @@ fn config_validate_proxy_group_reference_ok() {
             protocol: "socks5".to_string(),
             listen: "127.0.0.1".to_string(),
             port: 1080,
+            sniffing: SniffingConfig::default(),
         }],
         outbounds: vec![OutboundConfig {
             tag: "direct".to_string(),
@@ -282,6 +283,7 @@ fn config_validate_proxy_group_unknown_proxy_fails() {
             protocol: "socks5".to_string(),
             listen: "127.0.0.1".to_string(),
             port: 1080,
+            sniffing: SniffingConfig::default(),
         }],
         outbounds: vec![OutboundConfig {
             tag: "direct".to_string(),
@@ -325,6 +327,7 @@ fn config_validate_router_default_can_be_group() {
             protocol: "socks5".to_string(),
             listen: "127.0.0.1".to_string(),
             port: 1080,
+            sniffing: SniffingConfig::default(),
         }],
         outbounds: vec![OutboundConfig {
             tag: "direct".to_string(),

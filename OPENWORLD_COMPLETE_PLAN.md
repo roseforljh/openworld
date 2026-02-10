@@ -5,7 +5,7 @@
 - **项目名称**：OpenWorld
 - **文档类型**：完整实施计划（含已完成内容与后续规划）
 - **当前范围**：代理内核（Rust）
-- **当前状态**：Phase 1-3 已完成；Phase 4 待启动
+- **当前状态**：Phase 1-3 + 4A 已完成；Phase 4B 待启动
 - **运行环境**：Windows / PowerShell（也兼容 Linux）
 
 ---
@@ -59,6 +59,7 @@
 | DNS 解析器模块 | 已完成 | 3C |
 | GeoIP 路由 | 已完成 | 3C |
 | GeoSite 路由 | 已完成 | 3C |
+| API 代理组管理（选择/延迟测试） | 已完成 | 4A |
 
 ---
 
@@ -135,7 +136,7 @@ openworld/
    │  └─ udp.rs               [Phase 2] UDP 包抽象
    ├─ config/
    │  ├─ mod.rs
-   │  └─ types.rs             含 TransportConfig / TlsConfig / DnsConfig / ApiConfig
+   │  └─ types.rs             含 TransportConfig / TlsConfig / DnsConfig / ApiConfig / ProxyGroupConfig
    ├─ proxy/
    │  ├─ mod.rs
    │  ├─ relay.rs
@@ -157,12 +158,19 @@ openworld/
    │  │     ├─ auth.rs
    │  │     ├─ protocol.rs
    │  │     └─ quic.rs
-   │  └─ transport/           [Phase 3A] 传输层抽象
-   │     ├─ mod.rs             StreamTransport trait + build_transport()
-   │     ├─ tcp.rs
-   │     ├─ tls.rs
-   │     ├─ reality.rs
-   │     └─ ws.rs
+   │  ├─ transport/           [Phase 3A] 传输层抽象
+   │  │  ├─ mod.rs             StreamTransport trait + build_transport()
+   │  │  ├─ tcp.rs
+   │  │  ├─ tls.rs
+   │  │  ├─ reality.rs
+   │  │  └─ ws.rs
+   │  └─ group/               [Phase 4A] 代理组
+   │     ├─ mod.rs             build_proxy_groups() 工厂
+   │     ├─ selector.rs        手动选择
+   │     ├─ urltest.rs         延迟自动选择
+   │     ├─ fallback.rs        故障转移
+   │     ├─ loadbalance.rs     负载均衡
+   │     └─ health.rs          健康检查器
    ├─ router/
    │  ├─ mod.rs
    │  ├─ rules.rs             含 GeoIp / GeoSite 规则
@@ -173,13 +181,13 @@ openworld/
    │  └─ resolver.rs          System / Hickory / Split 解析器
    ├─ api/                    [Phase 3B]
    │  ├─ mod.rs               API 服务器启动与路由
-   │  ├─ handlers.rs          端点处理函数
+   │  ├─ handlers.rs          端点处理函数（含代理组管理）
    │  └─ models.rs            Clash 兼容响应结构
    └─ app/
       ├─ mod.rs               App 组装（含 API 启动）
       ├─ dispatcher.rs        路由调度 + 连接跟踪
       ├─ inbound_manager.rs   TCP 监听 + CancellationToken
-      ├─ outbound_manager.rs  出站注册表
+      ├─ outbound_manager.rs  出站注册表 + 代理组管理
       └─ tracker.rs           [Phase 3A] 连接跟踪器
 ```
 
@@ -187,11 +195,12 @@ openworld/
 
 ```text
 tests/
-├─ phase3_baseline.rs          基础架构测试（163 项中的核心）
+├─ phase3_baseline.rs          基础架构测试
 ├─ phase3_e2e.rs               端到端集成测试
 ├─ phase4_protocol_e2e.rs      协议层端到端测试
 ├─ phase5_api.rs               [Phase 3B] API 端点测试
-└─ phase5_routing.rs           [Phase 3C] DNS + 路由增强测试
+├─ phase5_routing.rs           [Phase 3C] DNS + 路由增强测试
+└─ phase6_proxy_groups.rs      [Phase 4A] 代理组 + API 测试
 ```
 
 ---
@@ -330,6 +339,8 @@ dns:
 | GET | /version | 版本信息 |
 | GET | /proxies | 出站列表 |
 | GET | /proxies/{name} | 单个出站详情 |
+| PUT | /proxies/{name} | 切换代理组选中节点 |
+| GET | /proxies/{name}/delay | 延迟测试 |
 | GET | /connections | 活跃连接列表 |
 | DELETE | /connections | 关闭所有连接 |
 | DELETE | /connections/{id} | 关闭指定连接 |
@@ -439,13 +450,24 @@ router:
 
 测试覆盖：163 项测试全部通过，0 警告。
 
+## 11.4 Phase 4A（已完成）
+
+- 代理组核心：SelectorGroup、UrlTestGroup、FallbackGroup、LoadBalanceGroup
+- HealthChecker 健康检查（HTTP GET 延迟测试）
+- OutboundHandler trait 扩展 as_any() 支持安全 downcasting
+- OutboundManager 代理组注册与管理
+- API 扩展：PUT /proxies/{name}（切换选中）、GET /proxies/{name}/delay（延迟测试）
+- Config 扩展：proxy-groups 配置 + 验证
+
+测试覆盖：191 项测试全部通过，0 警告。
+
 ---
 
 ## 12. Phase 4 规划（待启动）
 
 ### 目标：从"可用的代理工具"到"功能完备的代理客户端"
 
-### Phase 4A：代理组 + 自动选择
+### Phase 4A：代理组 + 自动选择（已完成）
 
 - **Proxy Group 抽象**：`selector`（手动选择）、`url-test`（延迟自动选择）、`fallback`（故障转移）、`load-balance`（负载均衡）
 - 配置格式扩展：`proxy-groups` 区块
@@ -492,7 +514,7 @@ router:
 ## 13.1 自动化测试
 
 ```powershell
-cargo test       # 163 项测试
+cargo test       # 191 项测试
 cargo check      # 编译检查
 cargo build      # 构建
 ```

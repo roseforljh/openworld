@@ -16,6 +16,7 @@ struct InboundEntry {
     handler: Arc<dyn InboundHandler>,
     listen: String,
     port: u16,
+    sniff: bool,
 }
 
 pub struct InboundManager {
@@ -42,6 +43,7 @@ impl InboundManager {
                 handler,
                 listen: config.listen.clone(),
                 port: config.port,
+                sniff: config.sniffing.enabled,
             });
         }
 
@@ -60,6 +62,7 @@ impl InboundManager {
             let handler = entry.handler.clone();
             let bind_addr = format!("{}:{}", entry.listen, entry.port);
             let cancel = self.cancel_token.clone();
+            let sniff = entry.sniff;
 
             let handle = tokio::spawn(async move {
                 let listener = match TcpListener::bind(&bind_addr).await {
@@ -93,7 +96,8 @@ impl InboundManager {
                             tokio::spawn(async move {
                                 let stream = Box::new(tcp_stream);
                                 match handler.handle(stream, source).await {
-                                    Ok(result) => {
+                                    Ok(mut result) => {
+                                        result.session.sniff = sniff;
                                         if let Err(e) = dispatcher.dispatch(result).await {
                                             error!(
                                                 source = %source,

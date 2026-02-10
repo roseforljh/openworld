@@ -56,6 +56,7 @@ fn test_session(target: Address, network: Network) -> Session {
         source: None,
         inbound_tag: "phase4-test".to_string(),
         network,
+        sniff: false,
     }
 }
 

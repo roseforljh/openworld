@@ -10,7 +10,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use openworld::config::types::{
-    Config, InboundConfig, LogConfig, OutboundConfig, OutboundSettings, RouterConfig,
+    Config, InboundConfig, LogConfig, OutboundConfig, OutboundSettings, RouterConfig, SniffingConfig,
 };
 use openworld::proxy::outbound::direct::DirectOutbound;
 use openworld::proxy::{InboundResult, Network, OutboundHandler, Session};
@@ -74,6 +74,7 @@ fn phase3_config_validate_baseline_ok() {
             protocol: "socks5".to_string(),
             listen: "127.0.0.1".to_string(),
             port: 1080,
+            sniffing: SniffingConfig::default(),
         }],
         outbounds: vec![OutboundConfig {
             tag: "direct".to_string(),
@@ -109,6 +110,7 @@ fn phase3_router_default_route_baseline() {
         source: None,
         inbound_tag: "test-in".to_string(),
         network: Network::Tcp,
+        sniff: false,
     };
 
     assert_eq!(router.route(&session), "direct");
@@ -136,6 +138,7 @@ async fn phase3_direct_udp_send_recv_loopback_baseline() {
         source: None,
         inbound_tag: "test-in".to_string(),
         network: Network::Udp,
+        sniff: false,
     };
 
     let transport = outbound.connect_udp(&session).await.unwrap();
@@ -187,6 +190,7 @@ async fn phase3_dispatcher_udp_requires_inbound_transport() {
         source: None,
         inbound_tag: "test-in".to_string(),
         network: Network::Udp,
+        sniff: false,
     };
 
     let inbound = InboundResult {
@@ -210,6 +214,7 @@ async fn phase3_outbound_default_udp_not_supported_returns_error() {
         source: None,
         inbound_tag: "test-in".to_string(),
         network: Network::Udp,
+        sniff: false,
     };
 
     let err_text = match outbound.connect_udp(&session).await {
@@ -229,6 +234,7 @@ fn phase3_inbound_result_udp_field_wiring_baseline() {
         source: None,
         inbound_tag: "test-in".to_string(),
         network: Network::Tcp,
+        sniff: false,
     };
 
     let stream: openworld::common::ProxyStream = Box::new(tokio::io::empty());

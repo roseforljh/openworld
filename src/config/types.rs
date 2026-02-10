@@ -85,6 +85,8 @@ pub struct InboundConfig {
     pub protocol: String,
     pub listen: String,
     pub port: u16,
+    #[serde(default)]
+    pub sniffing: SniffingConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -227,6 +229,19 @@ pub struct DnsServerConfig {
     pub domains: Vec<String>,
 }
 
+/// 协议嗅探配置
+#[derive(Debug, Deserialize, Clone)]
+pub struct SniffingConfig {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+impl Default for SniffingConfig {
+    fn default() -> Self {
+        Self { enabled: false }
+    }
+}
+
 /// 代理组配置
 #[derive(Debug, Deserialize, Clone)]
 pub struct ProxyGroupConfig {
@@ -297,6 +312,7 @@ mod tests {
                 protocol: "socks5".to_string(),
                 listen: "127.0.0.1".to_string(),
                 port: 1080,
+                sniffing: SniffingConfig::default(),
             }],
             outbounds: vec![OutboundConfig {
                 tag: "direct".to_string(),

@@ -117,6 +117,7 @@ fn router_geoip_rule_without_db_does_not_match() {
         source: None,
         inbound_tag: "test".to_string(),
         network: Network::Tcp,
+        sniff: false,
     };
     // 没有 GeoIP 数据库，规则不匹配，走默认
     assert_eq!(router.route(&session), "proxy");
@@ -141,6 +142,7 @@ fn router_geosite_rule_without_db_does_not_match() {
         source: None,
         inbound_tag: "test".to_string(),
         network: Network::Tcp,
+        sniff: false,
     };
     // 没有 GeoSite 数据库，规则不匹配，走默认
     assert_eq!(router.route(&session), "proxy");
@@ -173,6 +175,7 @@ fn router_mixed_rules_priority() {
         source: None,
         inbound_tag: "test".to_string(),
         network: Network::Tcp,
+        sniff: false,
     };
     assert_eq!(router.route(&session1), "direct");
 
@@ -182,6 +185,7 @@ fn router_mixed_rules_priority() {
         source: None,
         inbound_tag: "test".to_string(),
         network: Network::Tcp,
+        sniff: false,
     };
     assert_eq!(router.route(&session2), "proxy");
 
@@ -191,6 +195,7 @@ fn router_mixed_rules_priority() {
         source: None,
         inbound_tag: "test".to_string(),
         network: Network::Tcp,
+        sniff: false,
     };
     assert_eq!(router.route(&session3), "reject");
 }

@@ -2,6 +2,7 @@ pub mod group;
 pub mod inbound;
 pub mod outbound;
 pub mod relay;
+pub mod sniff;
 pub mod transport;
 
 use std::net::SocketAddr;
@@ -25,6 +26,9 @@ pub struct Session {
     pub source: Option<SocketAddr>,
     pub inbound_tag: String,
     pub network: Network,
+    /// 是否启用协议嗅探
+    #[allow(dead_code)]
+    pub sniff: bool,
 }
 
 /// 入站处理结果

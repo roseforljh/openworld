@@ -106,6 +106,7 @@ async fn e2e_direct_tcp_loopback() {
         source: None,
         inbound_tag: "test".to_string(),
         network: Network::Tcp,
+        sniff: false,
     };
 
     let mut stream = outbound.connect(&session).await.unwrap();
@@ -248,6 +249,7 @@ async fn e2e_dispatcher_tcp_relay() {
         source: Some("127.0.0.1:9999".parse().unwrap()),
         inbound_tag: "test-in".to_string(),
         network: Network::Tcp,
+        sniff: false,
     };
 
     // 创建一对 connected TCP streams 模拟入站
@@ -323,6 +325,7 @@ fn e2e_router_multi_rule_first_match() {
         source: None,
         inbound_tag: "test".to_string(),
         network: Network::Tcp,
+        sniff: false,
     };
 
     // domain-full 精确匹配
@@ -558,6 +561,7 @@ async fn e2e_concurrent_tcp_connections() {
                 source: None,
                 inbound_tag: format!("conn-{i}"),
                 network: Network::Tcp,
+                sniff: false,
             };
 
             let mut stream = outbound.connect(&session).await.unwrap();
@@ -592,6 +596,7 @@ async fn e2e_direct_udp_multi_target() {
         source: None,
         inbound_tag: "test".to_string(),
         network: Network::Udp,
+        sniff: false,
     };
 
     let transport = outbound.connect_udp(&session).await.unwrap();

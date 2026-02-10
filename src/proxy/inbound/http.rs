@@ -68,6 +68,7 @@ impl InboundHandler for HttpInbound {
             source: Some(source),
             inbound_tag: self.tag.clone(),
             network: Network::Tcp,
+            sniff: false,
         };
 
         Ok(InboundResult { session, stream, udp_transport: None })

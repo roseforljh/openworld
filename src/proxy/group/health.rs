@@ -53,6 +53,7 @@ impl HealthChecker {
             source: None,
             inbound_tag: "health-check".to_string(),
             network: Network::Tcp,
+            sniff: false,
         };
 
         let start = Instant::now();

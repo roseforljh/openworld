@@ -6,5 +6,5 @@ pub mod udp;
 
 pub use addr::Address;
 pub use error::Error;
-pub use stream::ProxyStream;
+pub use stream::{PrefixedStream, ProxyStream};
 pub use udp::{BoxUdpTransport, UdpPacket, UdpTransport};

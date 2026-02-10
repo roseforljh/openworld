@@ -72,6 +72,7 @@ impl InboundHandler for Socks5Inbound {
                     source: Some(source),
                     inbound_tag: self.tag.clone(),
                     network: Network::Tcp,
+                    sniff: false,
                 };
 
                 Ok(InboundResult {
@@ -119,6 +120,7 @@ impl InboundHandler for Socks5Inbound {
                     source: Some(source),
                     inbound_tag: self.tag.clone(),
                     network: Network::Udp,
+                    sniff: false,
                 };
 
                 Ok(InboundResult {

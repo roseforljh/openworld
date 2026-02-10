@@ -7,8 +7,8 @@ use anyhow::Result;
 use tokio::io::AsyncReadExt;
 use tracing::{debug, error, info};
 
-use crate::common::BoxUdpTransport;
-use crate::proxy::{relay::relay, InboundResult, Network, Session};
+use crate::common::{BoxUdpTransport, PrefixedStream};
+use crate::proxy::{relay::relay, sniff, InboundResult, Network, Session};
 use crate::router::Router;
 
 use super::outbound_manager::OutboundManager;
@@ -73,8 +73,8 @@ impl Dispatcher {
 
     pub async fn dispatch(&self, result: InboundResult) -> Result<()> {
         let InboundResult {
-            session,
-            stream: inbound_stream,
+            mut session,
+            stream: mut inbound_stream,
             udp_transport,
         } = result;
 
@@ -86,7 +86,26 @@ impl Dispatcher {
                 .await;
         }
 
-        // TCP 路径（原有逻辑）
+        // TCP 路径：可选协议嗅探
+        if session.sniff {
+            let mut peek_buf = vec![0u8; 4096];
+            let n = inbound_stream.read(&mut peek_buf).await?;
+            peek_buf.truncate(n);
+
+            if let Some(host) = sniff::sniff(&peek_buf) {
+                let port = session.target.port();
+                let original = format!("{}", session.target);
+                session.target = crate::common::Address::Domain(host.clone(), port);
+                debug!(
+                    original = original,
+                    sniffed = host,
+                    "protocol sniffing overrode destination"
+                );
+            }
+
+            inbound_stream = Box::new(PrefixedStream::new(peek_buf, inbound_stream));
+        }
+
         let outbound_tag = self.router.route(&session);
 
         let outbound = self
@@ -186,6 +205,7 @@ impl Dispatcher {
                             source: session_clone.source,
                             inbound_tag: session_clone.inbound_tag.clone(),
                             network: Network::Udp,
+                            sniff: false,
                         };
                         let outbound_tag = router.route(&temp_session).to_string();
 
