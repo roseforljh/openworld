@@ -256,6 +256,7 @@ fn config_validate_proxy_group_reference_ok() {
             default: "direct".to_string(),
             geoip_db: None,
             geosite_db: None,
+            rule_providers: Default::default(),
         },
         api: None,
         dns: None,
@@ -295,6 +296,7 @@ fn config_validate_proxy_group_unknown_proxy_fails() {
             default: "direct".to_string(),
             geoip_db: None,
             geosite_db: None,
+            rule_providers: Default::default(),
         },
         api: None,
         dns: None,
@@ -339,6 +341,7 @@ fn config_validate_router_default_can_be_group() {
             default: "my-group".to_string(),
             geoip_db: None,
             geosite_db: None,
+            rule_providers: Default::default(),
         },
         api: None,
         dns: None,
@@ -463,6 +466,7 @@ async fn start_test_api_with_group() -> String {
         default: "direct".to_string(),
         geoip_db: None,
         geosite_db: None,
+        rule_providers: Default::default(),
     };
     let router = Arc::new(Router::new(&router_cfg).unwrap());
 

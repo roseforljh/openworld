@@ -86,6 +86,7 @@ fn phase3_config_validate_baseline_ok() {
             default: "direct".to_string(),
             geoip_db: None,
             geosite_db: None,
+            rule_providers: Default::default(),
         },
         api: None,
         dns: None,
@@ -102,6 +103,7 @@ fn phase3_router_default_route_baseline() {
         default: "direct".to_string(),
         geoip_db: None,
         geosite_db: None,
+        rule_providers: Default::default(),
     };
     let router = Router::new(&router_cfg).unwrap();
 
@@ -173,6 +175,7 @@ async fn phase3_dispatcher_udp_requires_inbound_transport() {
         default: "direct".to_string(),
         geoip_db: None,
         geosite_db: None,
+        rule_providers: Default::default(),
     };
     let router = Arc::new(Router::new(&router_cfg).unwrap());
 
@@ -254,6 +257,7 @@ fn phase3_dispatcher_construction_baseline() {
         default: "direct".to_string(),
         geoip_db: None,
         geosite_db: None,
+        rule_providers: Default::default(),
     };
     let router = Arc::new(Router::new(&router_cfg).unwrap());
 

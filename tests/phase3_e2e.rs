@@ -77,6 +77,7 @@ fn make_dispatcher_with_rules(rules: Vec<RuleConfig>, default: &str) -> Dispatch
         default: default.to_string(),
         geoip_db: None,
         geosite_db: None,
+        rule_providers: Default::default(),
     };
     let router = Arc::new(Router::new(&router_cfg).unwrap());
 
@@ -317,6 +318,7 @@ fn e2e_router_multi_rule_first_match() {
         default: "direct".to_string(),
         geoip_db: None,
         geosite_db: None,
+        rule_providers: Default::default(),
     };
     let router = Router::new(&router_cfg).unwrap();
 

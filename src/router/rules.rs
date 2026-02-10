@@ -1,10 +1,13 @@
 use std::fmt;
+use std::sync::Arc;
 
 use anyhow::Result;
 use ipnet::IpNet;
 
 use crate::common::Address;
 use crate::config::types::RuleConfig;
+
+use super::provider::RuleSetData;
 
 /// 路由规则
 pub enum Rule {
@@ -20,6 +23,11 @@ pub enum Rule {
     GeoIp(Vec<String>),
     /// GeoSite 分类匹配
     GeoSite(Vec<String>),
+    /// 规则集匹配（引用规则提供者）
+    RuleSet {
+        name: String,
+        data: Arc<RuleSetData>,
+    },
 }
 
 impl Rule {
@@ -112,6 +120,10 @@ impl Rule {
                 }
                 false
             }
+            Rule::RuleSet { data, .. } => match addr {
+                Address::Domain(domain, _) => data.matches_domain(domain),
+                Address::Ip(sock_addr) => data.matches_ip(sock_addr.ip()),
+            },
         }
     }
 }
@@ -271,6 +283,7 @@ impl fmt::Display for Rule {
             }
             Rule::GeoIp(v) => write!(f, "geoip({})", v.join(",")),
             Rule::GeoSite(v) => write!(f, "geosite({})", v.join(",")),
+            Rule::RuleSet { name, .. } => write!(f, "rule-set({})", name),
         }
     }
 }

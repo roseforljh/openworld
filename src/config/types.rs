@@ -277,6 +277,8 @@ pub struct RouterConfig {
     pub default: String,
     pub geoip_db: Option<String>,
     pub geosite_db: Option<String>,
+    #[serde(default, rename = "rule-providers")]
+    pub rule_providers: HashMap<String, RuleProviderConfig>,
 }
 
 impl Default for RouterConfig {
@@ -286,6 +288,7 @@ impl Default for RouterConfig {
             default: "direct".to_string(),
             geoip_db: None,
             geosite_db: None,
+            rule_providers: HashMap::new(),
         }
     }
 }
@@ -300,6 +303,27 @@ pub struct RuleConfig {
     pub rule_type: String,
     pub values: Vec<String>,
     pub outbound: String,
+}
+
+/// 规则提供者配置（Clash 兼容）
+#[derive(Debug, Deserialize, Clone)]
+pub struct RuleProviderConfig {
+    /// 提供者类型: "file" | "http"
+    #[serde(rename = "type")]
+    pub provider_type: String,
+    /// 行为类型: "domain" | "ipcidr" | "classical"
+    pub behavior: String,
+    /// 本地文件路径（file 类型）或缓存路径（http 类型）
+    pub path: String,
+    /// 远程 URL（仅 http 类型）
+    pub url: Option<String>,
+    /// 更新间隔，秒（仅 http 类型）
+    #[serde(default = "default_provider_interval")]
+    pub interval: u64,
+}
+
+fn default_provider_interval() -> u64 {
+    86400
 }
 
 #[cfg(test)]
@@ -326,6 +350,7 @@ mod tests {
                 default: "direct".to_string(),
                 geoip_db: None,
                 geosite_db: None,
+                rule_providers: Default::default(),
             },
             api: None,
             dns: None,

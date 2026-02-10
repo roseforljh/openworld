@@ -15,6 +15,7 @@ async fn start_test_api() -> String {
         default: "direct".to_string(),
         geoip_db: None,
         geosite_db: None,
+        rule_providers: Default::default(),
     };
     let router = Arc::new(Router::new(&router_cfg).unwrap());
 

@@ -109,6 +109,7 @@ fn router_geoip_rule_without_db_does_not_match() {
         default: "proxy".to_string(),
         geoip_db: None,
         geosite_db: None,
+        rule_providers: Default::default(),
     };
     let router = Router::new(&router_cfg).unwrap();
 
@@ -134,6 +135,7 @@ fn router_geosite_rule_without_db_does_not_match() {
         default: "proxy".to_string(),
         geoip_db: None,
         geosite_db: None,
+        rule_providers: Default::default(),
     };
     let router = Router::new(&router_cfg).unwrap();
 
@@ -166,6 +168,7 @@ fn router_mixed_rules_priority() {
         default: "reject".to_string(),
         geoip_db: None,
         geosite_db: None,
+        rule_providers: Default::default(),
     };
     let router = Router::new(&router_cfg).unwrap();
 
@@ -211,6 +214,7 @@ fn router_api_accessors() {
         default: "proxy".to_string(),
         geoip_db: None,
         geosite_db: None,
+        rule_providers: Default::default(),
     };
     let router = Router::new(&router_cfg).unwrap();
 

@@ -308,6 +308,7 @@ fn rule_type_name(rule: &crate::router::rules::Rule) -> String {
         Rule::IpCidr(_) => "IPCIDR".to_string(),
         Rule::GeoIp(_) => "GeoIP".to_string(),
         Rule::GeoSite(_) => "GeoSite".to_string(),
+        Rule::RuleSet { .. } => "RuleSet".to_string(),
     }
 }
 

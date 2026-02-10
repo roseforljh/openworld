@@ -1,6 +1,10 @@
 pub mod geoip;
 pub mod geosite;
+pub mod provider;
 pub mod rules;
+
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use tracing::{debug, info};
 
@@ -8,6 +12,7 @@ use crate::config::types::RouterConfig;
 use crate::proxy::Session;
 use geoip::GeoIpDb;
 use geosite::GeoSiteDb;
+use provider::RuleSetData;
 use rules::Rule;
 
 pub struct Router {
@@ -15,6 +20,7 @@ pub struct Router {
     default: String,
     geoip_db: Option<GeoIpDb>,
     geosite_db: Option<GeoSiteDb>,
+    providers: HashMap<String, Arc<RuleSetData>>,
 }
 
 impl Router {
@@ -47,16 +53,34 @@ impl Router {
             None
         };
 
+        // 加载规则提供者
+        let providers = provider::load_all_providers(&config.rule_providers)?;
+
         let mut rules = Vec::new();
         for rule_config in &config.rules {
-            let rule = Rule::from_config(rule_config)?;
-            rules.push((rule, rule_config.outbound.clone()));
+            if rule_config.rule_type == "rule-set" {
+                // rule-set: values 中每个元素引用一个 provider
+                for provider_name in &rule_config.values {
+                    let data = providers.get(provider_name).ok_or_else(|| {
+                        anyhow::anyhow!("unknown rule-provider: '{}'", provider_name)
+                    })?;
+                    let rule = Rule::RuleSet {
+                        name: provider_name.clone(),
+                        data: data.clone(),
+                    };
+                    rules.push((rule, rule_config.outbound.clone()));
+                }
+            } else {
+                let rule = Rule::from_config(rule_config)?;
+                rules.push((rule, rule_config.outbound.clone()));
+            }
         }
         Ok(Self {
             rules,
             default: config.default.clone(),
             geoip_db,
             geosite_db,
+            providers,
         })
     }
 
@@ -97,5 +121,10 @@ impl Router {
     /// 获取默认出站 tag
     pub fn default_outbound(&self) -> &str {
         &self.default
+    }
+
+    /// 获取所有已加载的规则提供者
+    pub fn providers(&self) -> &HashMap<String, Arc<RuleSetData>> {
+        &self.providers
     }
 }
