@@ -158,16 +158,15 @@ impl VisionStream {
             && data[2] == 0x03
             && data[5] == 0x02
         {
-            self.remaining_server_hello =
-                ((data[3] as i32) << 8 | data[4] as i32) + 5;
+            self.remaining_server_hello = ((data[3] as i32) << 8 | data[4] as i32) + 5;
 
             // 解析密码套件
             if data.len() >= 79 && self.remaining_server_hello >= 79 {
                 let session_id_len = data[43] as usize;
                 let cipher_offset = 43 + session_id_len + 1;
                 if cipher_offset + 2 <= data.len() {
-                    self.cipher = (data[cipher_offset] as u16) << 8
-                        | data[cipher_offset + 1] as u16;
+                    self.cipher =
+                        (data[cipher_offset] as u16) << 8 | data[cipher_offset + 1] as u16;
                 }
             }
         }
@@ -182,7 +181,10 @@ impl VisionStream {
                     // 0x1305 = TLS_AES_128_CCM_8_SHA256 不支持
                     if self.cipher != 0 && self.cipher != 0x1305 {
                         self.enable_xtls = true;
-                        debug!(cipher = format!("0x{:04x}", self.cipher), "Vision: XTLS enabled");
+                        debug!(
+                            cipher = format!("0x{:04x}", self.cipher),
+                            "Vision: XTLS enabled"
+                        );
                     }
                 }
             }
@@ -441,7 +443,10 @@ mod tests {
     fn test_contains_bytes() {
         assert!(contains_bytes(&[1, 2, 3, 4, 5], &[2, 3, 4]));
         assert!(!contains_bytes(&[1, 2, 3, 4, 5], &[2, 4]));
-        assert!(contains_bytes(&[0x00, 0x2b, 0x00, 0x02, 0x03, 0x04], &[0x00, 0x2b, 0x00, 0x02, 0x03, 0x04]));
+        assert!(contains_bytes(
+            &[0x00, 0x2b, 0x00, 0x02, 0x03, 0x04],
+            &[0x00, 0x2b, 0x00, 0x02, 0x03, 0x04]
+        ));
     }
 
     #[test]
@@ -487,7 +492,10 @@ mod tests {
         // Content
         assert_eq!(&frame[UUID_SIZE + 5..UUID_SIZE + 5 + 5], b"hello");
         // Total size
-        assert_eq!(frame.len(), UUID_SIZE + PADDING_HEADER_SIZE + 5 + padding_len as usize);
+        assert_eq!(
+            frame.len(),
+            UUID_SIZE + PADDING_HEADER_SIZE + 5 + padding_len as usize
+        );
     }
 
     #[test]

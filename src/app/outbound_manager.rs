@@ -6,15 +6,19 @@ use tracing::info;
 
 use crate::config::types::{OutboundConfig, ProxyGroupConfig};
 use crate::proxy::group;
-use crate::proxy::group::selector::SelectorGroup;
-use crate::proxy::group::urltest::UrlTestGroup;
 use crate::proxy::group::fallback::FallbackGroup;
 use crate::proxy::group::health::HealthChecker;
+use crate::proxy::group::selector::SelectorGroup;
+use crate::proxy::group::urltest::UrlTestGroup;
 use crate::proxy::outbound::direct::DirectOutbound;
 use crate::proxy::outbound::hysteria2::Hysteria2Outbound;
-use crate::proxy::outbound::vless::VlessOutbound;
 use crate::proxy::outbound::shadowsocks::ShadowsocksOutbound;
 use crate::proxy::outbound::trojan::TrojanOutbound;
+use crate::proxy::outbound::vless::VlessOutbound;
+use crate::proxy::outbound::vmess::VmessOutbound;
+use crate::proxy::outbound::wireguard::WireGuardOutbound;
+use crate::proxy::outbound::http::HttpOutbound;
+use crate::proxy::outbound::tor::TorOutbound;
 use crate::proxy::OutboundHandler;
 
 /// 代理组元数据
@@ -30,10 +34,7 @@ pub struct OutboundManager {
 }
 
 impl OutboundManager {
-    pub fn new(
-        configs: &[OutboundConfig],
-        group_configs: &[ProxyGroupConfig],
-    ) -> Result<Self> {
+    pub fn new(configs: &[OutboundConfig], group_configs: &[ProxyGroupConfig]) -> Result<Self> {
         let mut handlers: HashMap<String, Arc<dyn OutboundHandler>> = HashMap::new();
         let mut group_metas: HashMap<String, GroupMeta> = HashMap::new();
 
@@ -45,9 +46,17 @@ impl OutboundManager {
                 "hysteria2" => Arc::new(Hysteria2Outbound::new(config)?),
                 "shadowsocks" | "ss" => Arc::new(ShadowsocksOutbound::new(config)?),
                 "trojan" => Arc::new(TrojanOutbound::new(config)?),
+                "vmess" => Arc::new(VmessOutbound::new(config)?),
+                "wireguard" | "wg" => Arc::new(WireGuardOutbound::new(config)?),
+                "http" | "https" => Arc::new(HttpOutbound::new(config)?),
+                "tor" => Arc::new(TorOutbound::new(config)?),
                 other => anyhow::bail!("unsupported outbound protocol: {}", other),
             };
-            info!(tag = config.tag, protocol = config.protocol, "outbound registered");
+            info!(
+                tag = config.tag,
+                protocol = config.protocol,
+                "outbound registered"
+            );
             handlers.insert(config.tag.clone(), handler);
         }
 
@@ -125,12 +134,7 @@ impl OutboundManager {
     }
 
     /// 测试代理延迟
-    pub async fn test_delay(
-        &self,
-        proxy_name: &str,
-        url: &str,
-        timeout_ms: u64,
-    ) -> Option<u64> {
+    pub async fn test_delay(&self, proxy_name: &str, url: &str, timeout_ms: u64) -> Option<u64> {
         let handler = self.handlers.get(proxy_name)?;
         let timeout = std::time::Duration::from_millis(timeout_ms);
         HealthChecker::test_proxy(handler.as_ref(), url, timeout).await

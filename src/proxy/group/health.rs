@@ -46,7 +46,7 @@ impl HealthChecker {
         url: &str,
         timeout: Duration,
     ) -> Option<u64> {
-        let (host, port, path) = parse_url(url);
+        let (host, port, path) = parse_url(url)?;
 
         let session = Session {
             target: Address::Domain(host.clone(), port),
@@ -133,34 +133,30 @@ impl HealthChecker {
 }
 
 /// 解析 URL 为 (host, port, path)
-fn parse_url(url: &str) -> (String, u16, String) {
+fn parse_url(url: &str) -> Option<(String, u16, String)> {
     let full = if url.starts_with("http://") || url.starts_with("https://") {
         url.to_string()
     } else {
         format!("http://{}", url)
     };
 
-    match reqwest::Url::parse(&full) {
-        Ok(parsed) => {
-            let mut host = parsed.host_str().unwrap_or("localhost").to_string();
-            if host.starts_with('[') && host.ends_with(']') && host.len() > 2 {
-                host = host[1..host.len() - 1].to_string();
-            }
-            let port = parsed
-                .port_or_known_default()
-                .unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
-            let mut path = parsed.path().to_string();
-            if path.is_empty() {
-                path = "/".to_string();
-            }
-            if let Some(q) = parsed.query() {
-                path.push('?');
-                path.push_str(q);
-            }
-            (host, port, path)
-        }
-        Err(_) => ("localhost".to_string(), 80, "/".to_string()),
+    let parsed = reqwest::Url::parse(&full).ok()?;
+    let mut host = parsed.host_str()?.to_string();
+    if host.starts_with('[') && host.ends_with(']') && host.len() > 2 {
+        host = host[1..host.len() - 1].to_string();
     }
+    let port = parsed
+        .port_or_known_default()
+        .unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
+    let mut path = parsed.path().to_string();
+    if path.is_empty() {
+        path = "/".to_string();
+    }
+    if let Some(q) = parsed.query() {
+        path.push('?');
+        path.push_str(q);
+    }
+    Some((host, port, path))
 }
 
 #[cfg(test)]
@@ -169,7 +165,7 @@ mod tests {
 
     #[test]
     fn parse_url_http() {
-        let (host, port, path) = parse_url("http://www.gstatic.com/generate_204");
+        let (host, port, path) = parse_url("http://www.gstatic.com/generate_204").unwrap();
         assert_eq!(host, "www.gstatic.com");
         assert_eq!(port, 80);
         assert_eq!(path, "/generate_204");
@@ -177,7 +173,7 @@ mod tests {
 
     #[test]
     fn parse_url_https() {
-        let (host, port, path) = parse_url("https://example.com/test");
+        let (host, port, path) = parse_url("https://example.com/test").unwrap();
         assert_eq!(host, "example.com");
         assert_eq!(port, 443);
         assert_eq!(path, "/test");
@@ -185,7 +181,7 @@ mod tests {
 
     #[test]
     fn parse_url_with_port() {
-        let (host, port, path) = parse_url("http://localhost:8080/health");
+        let (host, port, path) = parse_url("http://localhost:8080/health").unwrap();
         assert_eq!(host, "localhost");
         assert_eq!(port, 8080);
         assert_eq!(path, "/health");
@@ -193,7 +189,7 @@ mod tests {
 
     #[test]
     fn parse_url_no_path() {
-        let (host, port, path) = parse_url("http://example.com");
+        let (host, port, path) = parse_url("http://example.com").unwrap();
         assert_eq!(host, "example.com");
         assert_eq!(port, 80);
         assert_eq!(path, "/");
@@ -201,7 +197,7 @@ mod tests {
 
     #[test]
     fn parse_url_ipv6_with_port() {
-        let (host, port, path) = parse_url("http://[::1]:8080/health");
+        let (host, port, path) = parse_url("http://[::1]:8080/health").unwrap();
         assert_eq!(host, "::1");
         assert_eq!(port, 8080);
         assert_eq!(path, "/health");
@@ -209,9 +205,14 @@ mod tests {
 
     #[test]
     fn parse_url_with_query() {
-        let (host, port, path) = parse_url("https://example.com/ping?a=1");
+        let (host, port, path) = parse_url("https://example.com/ping?a=1").unwrap();
         assert_eq!(host, "example.com");
         assert_eq!(port, 443);
         assert_eq!(path, "/ping?a=1");
+    }
+
+    #[test]
+    fn parse_url_invalid_returns_none() {
+        assert!(parse_url("http://:bad").is_none());
     }
 }

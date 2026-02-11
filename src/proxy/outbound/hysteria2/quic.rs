@@ -129,17 +129,11 @@ impl AsyncWrite for QuicBiStream {
         tokio::io::AsyncWrite::poll_write(Pin::new(&mut self.send), cx, buf)
     }
 
-    fn poll_flush(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<std::io::Result<()>> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         tokio::io::AsyncWrite::poll_flush(Pin::new(&mut self.send), cx)
     }
 
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<std::io::Result<()>> {
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         tokio::io::AsyncWrite::poll_shutdown(Pin::new(&mut self.send), cx)
     }
 }

@@ -1,7 +1,10 @@
 pub mod fallback;
 pub mod health;
+pub mod latency_weighted;
 pub mod loadbalance;
+pub mod persistence;
 pub mod selector;
+pub mod sticky;
 pub mod urltest;
 
 use std::collections::HashMap;
@@ -60,9 +63,10 @@ pub fn build_proxy_groups(
                 config.name.clone(),
                 proxies,
                 proxy_names,
-                config.url.clone().unwrap_or_else(|| {
-                    "http://www.gstatic.com/generate_204".to_string()
-                }),
+                config
+                    .url
+                    .clone()
+                    .unwrap_or_else(|| "http://www.gstatic.com/generate_204".to_string()),
                 config.interval,
                 config.tolerance,
             )),
@@ -70,9 +74,10 @@ pub fn build_proxy_groups(
                 config.name.clone(),
                 proxies,
                 proxy_names,
-                config.url.clone().unwrap_or_else(|| {
-                    "http://www.gstatic.com/generate_204".to_string()
-                }),
+                config
+                    .url
+                    .clone()
+                    .unwrap_or_else(|| "http://www.gstatic.com/generate_204".to_string()),
                 config.interval,
             )),
             "load-balance" => Arc::new(loadbalance::LoadBalanceGroup::new(

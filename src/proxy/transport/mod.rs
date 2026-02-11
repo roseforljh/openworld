@@ -1,3 +1,5 @@
+pub mod ech;
+pub mod fingerprint;
 pub mod grpc;
 pub mod h2;
 pub mod reality;
@@ -49,10 +51,7 @@ pub fn build_transport(
                     }
                 }
             } else {
-                let transport = tcp::TcpTransport::new(
-                    server_addr.to_string(),
-                    server_port,
-                );
+                let transport = tcp::TcpTransport::new(server_addr.to_string(), server_port);
                 Ok(Box::new(transport))
             }
         }
@@ -62,12 +61,8 @@ pub fn build_transport(
             } else {
                 None
             };
-            let transport = ws::WsTransport::new(
-                server_addr.to_string(),
-                server_port,
-                transport_config,
-                tls,
-            );
+            let transport =
+                ws::WsTransport::new(server_addr.to_string(), server_port, transport_config, tls);
             Ok(Box::new(transport))
         }
         "h2" => {

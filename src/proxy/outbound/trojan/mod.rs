@@ -2,18 +2,22 @@ pub mod protocol;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::debug;
 
 use crate::common::{Address, BoxUdpTransport, ProxyStream, UdpPacket, UdpTransport};
 use crate::config::types::OutboundConfig;
+use crate::proxy::mux::{MuxManager, MuxTransport, StreamConnector};
+use crate::proxy::transport::StreamTransport;
 use crate::proxy::{OutboundHandler, Session};
 
 pub struct TrojanOutbound {
     tag: String,
     server_addr: Address,
     password_hash: String,
-    transport: Box<dyn crate::proxy::transport::StreamTransport>,
+    transport: Arc<dyn StreamTransport>,
+    mux: Option<Arc<MuxManager>>,
 }
 
 impl TrojanOutbound {
@@ -48,20 +52,32 @@ impl TrojanOutbound {
         }
 
         let transport_config = settings.effective_transport();
-        let transport = crate::proxy::transport::build_transport(
+        let transport: Arc<dyn StreamTransport> = crate::proxy::transport::build_transport(
             address,
             port,
             &transport_config,
             &tls_config,
-        )?;
+        )?
+        .into();
 
         let server_addr = Address::Domain(address.clone(), port);
+        let mux = settings.mux.clone().map(|mux_config| {
+            let transport = transport.clone();
+            let server_addr = server_addr.clone();
+            let connector: StreamConnector = Arc::new(move || {
+                let transport = transport.clone();
+                let server_addr = server_addr.clone();
+                Box::pin(async move { transport.connect(&server_addr).await })
+            });
+            Arc::new(MuxManager::new(mux_config, connector))
+        });
 
         Ok(Self {
             tag: config.tag.clone(),
             server_addr,
             password_hash,
             transport,
+            mux,
         })
     }
 }
@@ -79,7 +95,11 @@ impl OutboundHandler for TrojanOutbound {
     async fn connect(&self, session: &Session) -> Result<ProxyStream> {
         debug!(server = %self.server_addr, "Trojan connecting to server");
 
-        let mut stream = self.transport.connect(&self.server_addr).await?;
+        let mut stream = if let Some(mux) = &self.mux {
+            mux.open_stream().await?
+        } else {
+            self.transport.connect(&self.server_addr).await?
+        };
 
         protocol::write_request(
             &mut stream,
@@ -132,6 +152,9 @@ impl UdpTransport for TrojanUdpTransport {
     async fn recv(&self) -> Result<UdpPacket> {
         let mut stream = self.stream.lock().await;
         let (addr, data) = protocol::read_udp_frame(&mut stream).await?;
-        Ok(UdpPacket { addr, data: data.into() })
+        Ok(UdpPacket {
+            addr,
+            data: data.into(),
+        })
     }
 }

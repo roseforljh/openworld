@@ -5,11 +5,14 @@ pub mod vision;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::debug;
 
 use crate::common::{Address, BoxUdpTransport, ProxyStream, UdpPacket, UdpTransport};
 use crate::config::types::OutboundConfig;
+use crate::proxy::mux::{MuxManager, MuxTransport, StreamConnector};
+use crate::proxy::transport::StreamTransport;
 use crate::proxy::{OutboundHandler, Session};
 
 /// VLESS flow 常量
@@ -19,7 +22,8 @@ pub struct VlessOutbound {
     tag: String,
     server_addr: Address,
     uuid: uuid::Uuid,
-    transport: Box<dyn crate::proxy::transport::StreamTransport>,
+    transport: Arc<dyn StreamTransport>,
+    mux: Option<Arc<MuxManager>>,
     flow: Option<String>,
 }
 
@@ -46,10 +50,6 @@ impl VlessOutbound {
             }
         }
 
-        if settings.fingerprint.is_some() {
-            tracing::warn!("vless: 'fingerprint' is configured but not yet implemented");
-        }
-
         // 构建有效的 TLS 配置
         let mut tls_config = settings.effective_tls();
         // 如果没有显式设置 tls，但有 security 字段，则启用 TLS
@@ -66,20 +66,32 @@ impl VlessOutbound {
         }
 
         let transport_config = settings.effective_transport();
-        let transport = crate::proxy::transport::build_transport(
+        let transport: Arc<dyn StreamTransport> = crate::proxy::transport::build_transport(
             address,
             port,
             &transport_config,
             &tls_config,
-        )?;
+        )?
+        .into();
 
         let server_addr = Address::Domain(address.clone(), port);
+        let mux = settings.mux.clone().map(|mux_config| {
+            let transport = transport.clone();
+            let server_addr = server_addr.clone();
+            let connector: StreamConnector = Arc::new(move || {
+                let transport = transport.clone();
+                let server_addr = server_addr.clone();
+                Box::pin(async move { transport.connect(&server_addr).await })
+            });
+            Arc::new(MuxManager::new(mux_config, connector))
+        });
 
         Ok(Self {
             tag: config.tag.clone(),
             server_addr,
             uuid,
             transport,
+            mux,
             flow,
         })
     }
@@ -98,7 +110,11 @@ impl OutboundHandler for VlessOutbound {
     async fn connect(&self, session: &Session) -> Result<ProxyStream> {
         debug!(server = %self.server_addr, "VLESS connecting to server");
 
-        let mut stream = self.transport.connect(&self.server_addr).await?;
+        let mut stream = if let Some(mux) = &self.mux {
+            mux.open_stream().await?
+        } else {
+            self.transport.connect(&self.server_addr).await?
+        };
 
         protocol::write_request(
             &mut stream,

@@ -13,7 +13,7 @@ use tracing::debug;
 use crate::common::{Address, ProxyStream};
 use crate::config::types::TlsConfig;
 
-use super::StreamTransport;
+use super::{ech, fingerprint, StreamTransport};
 
 const DEFAULT_SERVICE_NAME: &str = "GunService";
 
@@ -58,8 +58,22 @@ impl StreamTransport for GrpcTransport {
         let stream: ProxyStream = if let Some(ref tls_cfg) = self.tls_config {
             let sni = tls_cfg.sni.as_deref().unwrap_or(&self.server_addr);
             let alpn: Vec<&str> = vec!["h2"];
+            let fp = tls_cfg
+                .fingerprint
+                .as_deref()
+                .map(fingerprint::FingerprintType::from_str)
+                .unwrap_or(fingerprint::FingerprintType::None);
+            let ech_settings = ech::EchSettings {
+                config_list: tls_cfg
+                    .ech_config
+                    .as_deref()
+                    .map(ech::parse_ech_config_base64)
+                    .transpose()?,
+                grease: tls_cfg.ech_grease,
+                outer_sni: tls_cfg.ech_outer_sni.clone(),
+            };
             let rustls_config =
-                crate::common::tls::build_tls_config(tls_cfg.allow_insecure, Some(&alpn))?;
+                ech::build_ech_tls_config(&ech_settings, fp, tls_cfg.allow_insecure, Some(&alpn))?;
             let connector = tokio_rustls::TlsConnector::from(Arc::new(rustls_config));
             let server_name = rustls::pki_types::ServerName::try_from(sni.to_string())?;
             let tls = connector.connect(server_name, tcp).await?;
@@ -191,7 +205,7 @@ impl AsyncRead for GrpcStream {
                     self.recv_buf.extend_from_slice(&data);
                 }
                 Poll::Ready(Some(Err(e))) => {
-                    return Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e)));
+                    return Poll::Ready(Err(io::Error::other(e)));
                 }
                 Poll::Ready(None) => return Poll::Ready(Ok(())),
                 Poll::Pending => return Poll::Pending,
@@ -225,12 +239,10 @@ impl AsyncWrite for GrpcStream {
 
                 self.send
                     .send_data(frame.freeze(), false)
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                    .map_err(io::Error::other)?;
                 Poll::Ready(Ok(max_payload))
             }
-            Poll::Ready(Some(Err(e))) => {
-                Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e)))
-            }
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Err(io::Error::other(e))),
             Poll::Ready(None) => Poll::Ready(Err(io::Error::new(
                 io::ErrorKind::ConnectionReset,
                 "grpc stream closed",
@@ -263,7 +275,10 @@ mod tests {
 
         assert_eq!(frame.len(), 10);
         assert_eq!(frame[0], 0x00); // not compressed
-        assert_eq!(u32::from_be_bytes([frame[1], frame[2], frame[3], frame[4]]), 5);
+        assert_eq!(
+            u32::from_be_bytes([frame[1], frame[2], frame[3], frame[4]]),
+            5
+        );
         assert_eq!(&frame[5..], b"hello");
     }
 

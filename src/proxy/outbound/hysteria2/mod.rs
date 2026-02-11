@@ -39,16 +39,8 @@ impl Hysteria2Outbound {
         let sni = settings.sni.clone().unwrap_or_else(|| address.clone());
         let allow_insecure = settings.allow_insecure;
 
-        if settings.fingerprint.is_some() {
-            tracing::warn!("hysteria2: 'fingerprint' is configured but not yet implemented");
-        }
-
-        let quic_manager = quic::QuicManager::new(
-            address.clone(),
-            port,
-            sni.clone(),
-            allow_insecure,
-        )?;
+        let quic_manager =
+            quic::QuicManager::new(address.clone(), port, sni.clone(), allow_insecure)?;
 
         Ok(Self {
             tag: config.tag.clone(),
@@ -126,12 +118,7 @@ impl UdpTransport for Hysteria2UdpTransport {
     async fn send(&self, packet: UdpPacket) -> Result<()> {
         let pid = self.packet_id.fetch_add(1, Ordering::Relaxed);
         let addr_str = packet.addr.to_hysteria2_addr_string();
-        let msg = protocol::encode_udp_message(
-            self.session_id,
-            pid,
-            &addr_str,
-            &packet.data,
-        );
+        let msg = protocol::encode_udp_message(self.session_id, pid, &addr_str, &packet.data);
         self.connection.send_datagram(Bytes::from(msg))?;
         Ok(())
     }

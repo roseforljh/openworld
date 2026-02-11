@@ -1,9 +1,9 @@
-use anyhow::{bail, Result};
 use aes_gcm::aead::generic_array::GenericArray;
-use aes_gcm::{Aes128Gcm, Aes256Gcm, AeadInPlace, KeyInit};
+use aes_gcm::{AeadInPlace, Aes128Gcm, Aes256Gcm, KeyInit};
+use anyhow::{bail, Result};
 use chacha20poly1305::ChaCha20Poly1305;
 use hkdf::Hkdf;
-use md5::{Md5, Digest as Md5Digest};
+use md5::{Digest as Md5Digest, Md5};
 use sha1::Sha1;
 
 /// Shadowsocks AEAD cipher kinds
@@ -12,15 +12,21 @@ pub enum CipherKind {
     Aes128Gcm,
     Aes256Gcm,
     ChaCha20Poly1305,
+    Aes128Gcm2022,
+    Aes256Gcm2022,
+    ChaCha20Poly1305_2022,
 }
 
 impl CipherKind {
     /// Parse cipher method name string
-    pub fn from_str(s: &str) -> Result<Self> {
+    pub fn parse(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
             "aes-128-gcm" => Ok(CipherKind::Aes128Gcm),
             "aes-256-gcm" => Ok(CipherKind::Aes256Gcm),
             "chacha20-ietf-poly1305" | "chacha20-poly1305" => Ok(CipherKind::ChaCha20Poly1305),
+            "2022-blake3-aes-128-gcm" | "aes-128-gcm-2022" => Ok(CipherKind::Aes128Gcm2022),
+            "2022-blake3-aes-256-gcm" | "aes-256-gcm-2022" => Ok(CipherKind::Aes256Gcm2022),
+            "2022-blake3-chacha20-poly1305" | "chacha20-poly1305-2022" => Ok(CipherKind::ChaCha20Poly1305_2022),
             other => bail!("unsupported shadowsocks cipher: {}", other),
         }
     }
@@ -31,6 +37,9 @@ impl CipherKind {
             CipherKind::Aes128Gcm => 16,
             CipherKind::Aes256Gcm => 32,
             CipherKind::ChaCha20Poly1305 => 32,
+            CipherKind::Aes128Gcm2022 => 16,
+            CipherKind::Aes256Gcm2022 => 32,
+            CipherKind::ChaCha20Poly1305_2022 => 32,
         }
     }
 
@@ -81,6 +90,22 @@ pub fn derive_subkey(key: &[u8], salt: &[u8], key_len: usize) -> Result<Vec<u8>>
     Ok(subkey)
 }
 
+/// Derive Shadowsocks 2022 key from configured password field.
+///
+/// For this codebase, we accept the configured value as plain text bytes,
+/// trimming URL-safe/base64 paddings if present is deferred to future parser improvements.
+pub fn ss2022_password_to_key(password: &str, key_len: usize) -> Result<Vec<u8>> {
+    let raw = password.as_bytes().to_vec();
+    if raw.len() != key_len {
+        bail!(
+            "invalid shadowsocks 2022 key length: expected {}, got {}",
+            key_len,
+            raw.len()
+        );
+    }
+    Ok(raw)
+}
+
 /// AEAD cipher with nonce counter for Shadowsocks stream encryption.
 pub struct AeadCipher {
     cipher_kind: CipherKind,
@@ -118,21 +143,21 @@ impl AeadCipher {
         let mut buf = plaintext.to_vec();
 
         match self.cipher_kind {
-            CipherKind::Aes128Gcm => {
+            CipherKind::Aes128Gcm | CipherKind::Aes128Gcm2022 => {
                 let cipher = Aes128Gcm::new(GenericArray::from_slice(&self.key));
                 let tag = cipher
                     .encrypt_in_place_detached(GenericArray::from_slice(&nonce), b"", &mut buf)
                     .map_err(|e| anyhow::anyhow!("AES-128-GCM encrypt failed: {}", e))?;
                 buf.extend_from_slice(&tag);
             }
-            CipherKind::Aes256Gcm => {
+            CipherKind::Aes256Gcm | CipherKind::Aes256Gcm2022 => {
                 let cipher = Aes256Gcm::new(GenericArray::from_slice(&self.key));
                 let tag = cipher
                     .encrypt_in_place_detached(GenericArray::from_slice(&nonce), b"", &mut buf)
                     .map_err(|e| anyhow::anyhow!("AES-256-GCM encrypt failed: {}", e))?;
                 buf.extend_from_slice(&tag);
             }
-            CipherKind::ChaCha20Poly1305 => {
+            CipherKind::ChaCha20Poly1305 | CipherKind::ChaCha20Poly1305_2022 => {
                 let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(&self.key));
                 let tag = cipher
                     .encrypt_in_place_detached(GenericArray::from_slice(&nonce), b"", &mut buf)
@@ -148,8 +173,11 @@ impl AeadCipher {
     pub fn decrypt(&mut self, ciphertext_with_tag: &[u8]) -> Result<Vec<u8>> {
         let tag_len = self.cipher_kind.tag_len();
         if ciphertext_with_tag.len() < tag_len {
-            bail!("ciphertext too short: {} bytes, need at least {} for tag",
-                ciphertext_with_tag.len(), tag_len);
+            bail!(
+                "ciphertext too short: {} bytes, need at least {} for tag",
+                ciphertext_with_tag.len(),
+                tag_len
+            );
         }
 
         let nonce = self.nonce_bytes_and_increment();
@@ -158,7 +186,7 @@ impl AeadCipher {
         let tag = &ciphertext_with_tag[ct_len..];
 
         match self.cipher_kind {
-            CipherKind::Aes128Gcm => {
+            CipherKind::Aes128Gcm | CipherKind::Aes128Gcm2022 => {
                 let cipher = Aes128Gcm::new(GenericArray::from_slice(&self.key));
                 cipher
                     .decrypt_in_place_detached(
@@ -169,7 +197,7 @@ impl AeadCipher {
                     )
                     .map_err(|e| anyhow::anyhow!("AES-128-GCM decrypt failed: {}", e))?;
             }
-            CipherKind::Aes256Gcm => {
+            CipherKind::Aes256Gcm | CipherKind::Aes256Gcm2022 => {
                 let cipher = Aes256Gcm::new(GenericArray::from_slice(&self.key));
                 cipher
                     .decrypt_in_place_detached(
@@ -180,7 +208,7 @@ impl AeadCipher {
                     )
                     .map_err(|e| anyhow::anyhow!("AES-256-GCM decrypt failed: {}", e))?;
             }
-            CipherKind::ChaCha20Poly1305 => {
+            CipherKind::ChaCha20Poly1305 | CipherKind::ChaCha20Poly1305_2022 => {
                 let cipher = ChaCha20Poly1305::new(GenericArray::from_slice(&self.key));
                 cipher
                     .decrypt_in_place_detached(
@@ -203,17 +231,35 @@ mod tests {
 
     #[test]
     fn cipher_kind_parse() {
-        assert_eq!(CipherKind::from_str("aes-128-gcm").unwrap(), CipherKind::Aes128Gcm);
-        assert_eq!(CipherKind::from_str("aes-256-gcm").unwrap(), CipherKind::Aes256Gcm);
         assert_eq!(
-            CipherKind::from_str("chacha20-ietf-poly1305").unwrap(),
+            CipherKind::parse("aes-128-gcm").unwrap(),
+            CipherKind::Aes128Gcm
+        );
+        assert_eq!(
+            CipherKind::parse("aes-256-gcm").unwrap(),
+            CipherKind::Aes256Gcm
+        );
+        assert_eq!(
+            CipherKind::parse("chacha20-ietf-poly1305").unwrap(),
             CipherKind::ChaCha20Poly1305
         );
         assert_eq!(
-            CipherKind::from_str("chacha20-poly1305").unwrap(),
+            CipherKind::parse("chacha20-poly1305").unwrap(),
             CipherKind::ChaCha20Poly1305
         );
-        assert!(CipherKind::from_str("unknown").is_err());
+        assert_eq!(
+            CipherKind::parse("aes-128-gcm-2022").unwrap(),
+            CipherKind::Aes128Gcm2022
+        );
+        assert_eq!(
+            CipherKind::parse("aes-256-gcm-2022").unwrap(),
+            CipherKind::Aes256Gcm2022
+        );
+        assert_eq!(
+            CipherKind::parse("chacha20-poly1305-2022").unwrap(),
+            CipherKind::ChaCha20Poly1305_2022
+        );
+        assert!(CipherKind::parse("unknown").is_err());
     }
 
     #[test]
@@ -221,6 +267,9 @@ mod tests {
         assert_eq!(CipherKind::Aes128Gcm.key_len(), 16);
         assert_eq!(CipherKind::Aes256Gcm.key_len(), 32);
         assert_eq!(CipherKind::ChaCha20Poly1305.key_len(), 32);
+        assert_eq!(CipherKind::Aes128Gcm2022.key_len(), 16);
+        assert_eq!(CipherKind::Aes256Gcm2022.key_len(), 32);
+        assert_eq!(CipherKind::ChaCha20Poly1305_2022.key_len(), 32);
 
         assert_eq!(CipherKind::Aes128Gcm.salt_len(), 16);
         assert_eq!(CipherKind::Aes256Gcm.salt_len(), 32);
@@ -228,6 +277,7 @@ mod tests {
         assert_eq!(CipherKind::Aes128Gcm.tag_len(), 16);
         assert_eq!(CipherKind::Aes256Gcm.tag_len(), 16);
         assert_eq!(CipherKind::ChaCha20Poly1305.tag_len(), 16);
+        assert_eq!(CipherKind::Aes128Gcm2022.tag_len(), 16);
     }
 
     #[test]
@@ -238,8 +288,10 @@ mod tests {
         // MD5("test") = 098f6bcd4621d373cade4e832627b4f6
         assert_eq!(
             key,
-            [0x09, 0x8f, 0x6b, 0xcd, 0x46, 0x21, 0xd3, 0x73,
-             0xca, 0xde, 0x4e, 0x83, 0x26, 0x27, 0xb4, 0xf6]
+            [
+                0x09, 0x8f, 0x6b, 0xcd, 0x46, 0x21, 0xd3, 0x73, 0xca, 0xde, 0x4e, 0x83, 0x26, 0x27,
+                0xb4, 0xf6
+            ]
         );
     }
 
@@ -313,5 +365,19 @@ mod tests {
         let subkey = vec![0x42u8; 16];
         let mut cipher = AeadCipher::new(CipherKind::Aes128Gcm, subkey);
         assert!(cipher.decrypt(&[0u8; 10]).is_err());
+    }
+
+    #[test]
+    fn ss2022_password_to_key_valid_len() {
+        let k16 = ss2022_password_to_key("1234567890abcdef", 16).unwrap();
+        assert_eq!(k16.len(), 16);
+
+        let k32 = ss2022_password_to_key("1234567890abcdef1234567890abcdef", 32).unwrap();
+        assert_eq!(k32.len(), 32);
+    }
+
+    #[test]
+    fn ss2022_password_to_key_invalid_len() {
+        assert!(ss2022_password_to_key("short", 16).is_err());
     }
 }

@@ -8,7 +8,7 @@ use tracing::debug;
 use crate::common::{Address, ProxyStream};
 use crate::config::types::TlsConfig;
 
-use super::StreamTransport;
+use super::{ech, fingerprint, StreamTransport};
 
 /// TLS 传输
 pub struct TlsTransport {
@@ -20,16 +20,32 @@ pub struct TlsTransport {
 
 impl TlsTransport {
     pub fn new(server_addr: String, server_port: u16, config: &TlsConfig) -> Result<Self> {
-        let sni = config
-            .sni
-            .clone()
-            .unwrap_or_else(|| server_addr.clone());
+        let sni = config.sni.clone().unwrap_or_else(|| server_addr.clone());
 
-        let alpn: Option<Vec<&str>> = config.alpn.as_ref().map(|v| {
-            v.iter().map(|s| s.as_str()).collect()
-        });
+        let alpn: Option<Vec<&str>> = config
+            .alpn
+            .as_ref()
+            .map(|v| v.iter().map(|s| s.as_str()).collect());
 
-        let tls_config = crate::common::tls::build_tls_config(
+        let fingerprint = config
+            .fingerprint
+            .as_deref()
+            .map(fingerprint::FingerprintType::from_str)
+            .unwrap_or(fingerprint::FingerprintType::None);
+
+        let ech_settings = ech::EchSettings {
+            config_list: config
+                .ech_config
+                .as_deref()
+                .map(ech::parse_ech_config_base64)
+                .transpose()?,
+            grease: config.ech_grease,
+            outer_sni: config.ech_outer_sni.clone(),
+        };
+
+        let tls_config = ech::build_ech_tls_config(
+            &ech_settings,
+            fingerprint,
             config.allow_insecure,
             alpn.as_deref(),
         )?;

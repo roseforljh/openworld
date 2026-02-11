@@ -33,7 +33,11 @@ impl SelectorGroup {
     pub async fn select(&self, name: &str) -> bool {
         if let Some(idx) = self.proxy_names.iter().position(|n| n == name) {
             *self.selected.write().await = idx;
-            info!(group = self.name, selected = name, "proxy group selection changed");
+            info!(
+                group = self.name,
+                selected = name,
+                "proxy group selection changed"
+            );
             true
         } else {
             false

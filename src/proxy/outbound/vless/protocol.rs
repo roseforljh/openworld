@@ -94,6 +94,7 @@ fn encode_addons(flow: Option<&str>) -> Vec<u8> {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use tokio::io::AsyncReadExt;
@@ -106,7 +107,9 @@ mod tests {
         let uuid = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
         let target = Address::Ip("1.2.3.4:443".parse().unwrap());
 
-        write_request(&mut stream, &uuid, &target, None, CMD_TCP).await.unwrap();
+        write_request(&mut stream, &uuid, &target, None, CMD_TCP)
+            .await
+            .unwrap();
         drop(stream);
 
         let mut buf = Vec::new();
@@ -129,7 +132,9 @@ mod tests {
         let uuid = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
         let target = Address::Ip("8.8.8.8:53".parse().unwrap());
 
-        write_request(&mut stream, &uuid, &target, None, CMD_UDP).await.unwrap();
+        write_request(&mut stream, &uuid, &target, None, CMD_UDP)
+            .await
+            .unwrap();
         drop(stream);
 
         let mut buf = Vec::new();
@@ -146,7 +151,9 @@ mod tests {
         let uuid = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
         let target = Address::Domain("example.com".to_string(), 443);
 
-        write_request(&mut stream, &uuid, &target, None, CMD_TCP).await.unwrap();
+        write_request(&mut stream, &uuid, &target, None, CMD_TCP)
+            .await
+            .unwrap();
         drop(stream);
 
         let mut buf = Vec::new();
@@ -164,7 +171,9 @@ mod tests {
         let uuid = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
         let target = Address::Ip("[::1]:443".parse().unwrap());
 
-        write_request(&mut stream, &uuid, &target, None, CMD_TCP).await.unwrap();
+        write_request(&mut stream, &uuid, &target, None, CMD_TCP)
+            .await
+            .unwrap();
         drop(stream);
 
         let mut buf = Vec::new();
@@ -183,7 +192,9 @@ mod tests {
         let target = Address::Ip("1.2.3.4:443".parse().unwrap());
         let flow = "xtls-rprx-vision";
 
-        write_request(&mut stream, &uuid, &target, Some(flow), CMD_TCP).await.unwrap();
+        write_request(&mut stream, &uuid, &target, Some(flow), CMD_TCP)
+            .await
+            .unwrap();
         drop(stream);
 
         let mut buf = Vec::new();
@@ -213,7 +224,7 @@ mod tests {
     fn encode_addons_vision() {
         let result = encode_addons(Some("xtls-rprx-vision"));
         assert_eq!(result[0], 0x0A); // protobuf tag
-        assert_eq!(result[1], 16);   // string length
+        assert_eq!(result[1], 16); // string length
         assert_eq!(&result[2..], b"xtls-rprx-vision");
     }
 
@@ -247,7 +258,10 @@ mod tests {
         let mut stream: ProxyStream = Box::new(server);
 
         use tokio::io::AsyncWriteExt;
-        client.write_all(&[0x00, 0x03, 0xAA, 0xBB, 0xCC]).await.unwrap();
+        client
+            .write_all(&[0x00, 0x03, 0xAA, 0xBB, 0xCC])
+            .await
+            .unwrap();
         drop(client);
 
         read_response(&mut stream).await.unwrap();

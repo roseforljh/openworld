@@ -69,10 +69,7 @@ pub fn decode_varint_from_buf(buf: &[u8]) -> Result<(u64, usize)> {
 /// [bytes: addr_string "host:port"]
 /// [varint: padding_len]
 /// [bytes: random_padding]
-pub async fn write_tcp_request(
-    send: &mut quinn::SendStream,
-    addr: &str,
-) -> Result<()> {
+pub async fn write_tcp_request(send: &mut quinn::SendStream, addr: &str) -> Result<()> {
     // 在 await 之前构建完整的缓冲区（避免 rng 跨 await 的 Send 问题）
     let buf = {
         let mut buf = Vec::new();
@@ -108,20 +105,21 @@ pub async fn write_tcp_request(
 /// [bytes: msg_string]
 /// [varint: padding_len]
 /// [bytes: padding]
-pub async fn read_tcp_response(
-    recv: &mut quinn::RecvStream,
-) -> Result<()> {
+pub async fn read_tcp_response(recv: &mut quinn::RecvStream) -> Result<()> {
     // 读取足够的数据来解析响应
     // 先读取 status (1 byte) + 最多 8 bytes varint
-    let mut header_buf = vec![0u8; 9];
+    let mut header_buf = [0u8; 9];
     // 读取 status byte
-    let _chunk = recv.read(&mut header_buf[..1]).await?
+    let _chunk = recv
+        .read(&mut header_buf[..1])
+        .await?
         .ok_or_else(|| anyhow::anyhow!("stream closed before hysteria2 response"))?;
 
     let status = header_buf[0];
 
     // 读取 msg_len varint - 先读 1 byte 判断长度
-    recv.read(&mut header_buf[0..1]).await?
+    recv.read(&mut header_buf[0..1])
+        .await?
         .ok_or_else(|| anyhow::anyhow!("stream closed reading msg_len"))?;
     let first_byte = header_buf[0];
     let varint_len = match first_byte >> 6 {
@@ -179,13 +177,18 @@ pub async fn read_tcp_response(
 
     if status != 0x00 {
         let msg = String::from_utf8_lossy(&msg_buf);
-        anyhow::bail!("hysteria2 TCP request failed: status=0x{:02x}, msg={}", status, msg);
+        anyhow::bail!(
+            "hysteria2 TCP request failed: status=0x{:02x}, msg={}",
+            status,
+            msg
+        );
     }
 
     Ok(())
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
@@ -246,7 +249,17 @@ mod tests {
 
     #[test]
     fn varint_roundtrip() {
-        let values = [0, 1, 63, 64, 16383, 16384, 1073741823, 1073741824, 4611686018427387903];
+        let values = [
+            0,
+            1,
+            63,
+            64,
+            16383,
+            16384,
+            1073741823,
+            1073741824,
+            4611686018427387903,
+        ];
         for &val in &values {
             let encoded = encode_varint(val);
             let (decoded, consumed) = decode_varint_from_buf(&encoded).unwrap();
@@ -319,7 +332,9 @@ mod tests {
 async fn read_exact_quinn(recv: &mut quinn::RecvStream, buf: &mut [u8]) -> Result<()> {
     let mut offset = 0;
     while offset < buf.len() {
-        let n = recv.read(&mut buf[offset..]).await?
+        let n = recv
+            .read(&mut buf[offset..])
+            .await?
             .ok_or_else(|| anyhow::anyhow!("stream closed unexpectedly"))?;
         offset += n;
     }
@@ -336,12 +351,7 @@ async fn read_exact_quinn(recv: &mut quinn::RecvStream, buf: &mut [u8]) -> Resul
 /// [Address Length: varint]
 /// [Address: bytes "host:port"]
 /// [Payload: bytes]
-pub fn encode_udp_message(
-    session_id: u32,
-    packet_id: u16,
-    addr: &str,
-    data: &[u8],
-) -> Vec<u8> {
+pub fn encode_udp_message(session_id: u32, packet_id: u16, addr: &str, data: &[u8]) -> Vec<u8> {
     let addr_bytes = addr.as_bytes();
     let mut buf = Vec::with_capacity(4 + 2 + 1 + 1 + 8 + addr_bytes.len() + data.len());
 

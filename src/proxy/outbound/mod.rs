@@ -1,5 +1,13 @@
+pub mod chain;
 pub mod direct;
-pub mod vless;
+pub mod http;
 pub mod hysteria2;
+pub mod pool;
 pub mod shadowsocks;
+pub mod ssh;
+pub mod tor;
 pub mod trojan;
+pub mod tuic;
+pub mod vless;
+pub mod vmess;
+pub mod wireguard;

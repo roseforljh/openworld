@@ -9,6 +9,9 @@ where
     B: AsyncRead + AsyncWrite + Unpin,
 {
     let (a_to_b, b_to_a) = tokio::io::copy_bidirectional(&mut a, &mut b).await?;
-    debug!("relay finished: client->remote {}B, remote->client {}B", a_to_b, b_to_a);
+    debug!(
+        "relay finished: client->remote {}B, remote->client {}B",
+        a_to_b, b_to_a
+    );
     Ok((a_to_b, b_to_a))
 }

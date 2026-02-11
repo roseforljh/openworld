@@ -71,7 +71,9 @@ impl RealityHandshakeContext {
 /// 构建 Reality TLS ClientConfig 与握手上下文。
 ///
 /// 每次连接都需要调用此函数，因为 random / session_id / ECDHE 密钥对每次都不同。
-pub fn build_reality_config(config: &RealityConfig) -> Result<(ClientConfig, RealityHandshakeContext)> {
+pub fn build_reality_config(
+    config: &RealityConfig,
+) -> Result<(ClientConfig, RealityHandshakeContext)> {
     build_reality_config_with_roots(config, None)
 }
 
@@ -381,7 +383,8 @@ impl RealityVerifier {
 
         let (_, _, _, first_end) = Self::parse_der_tlv(cert_der, outer_value_start)?;
         let (_, _, _, second_end) = Self::parse_der_tlv(cert_der, first_end)?;
-        let (sig_tag, sig_value_start, sig_len, sig_end) = Self::parse_der_tlv(cert_der, second_end)?;
+        let (sig_tag, sig_value_start, sig_len, sig_end) =
+            Self::parse_der_tlv(cert_der, second_end)?;
 
         if sig_tag != 0x03 || sig_end != outer_end || sig_len < 1 {
             return None;
@@ -434,7 +437,7 @@ impl RealityVerifier {
 
 /// 解析 hex 字符串为字节数组
 pub fn parse_hex(hex: &str) -> Result<Vec<u8>> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         anyhow::bail!("invalid hex string length");
     }
     (0..hex.len())
@@ -683,7 +686,10 @@ mod tests {
             .unwrap();
 
         let ca_der = CertificateDer::from(ca_cert.der().to_vec());
-        let chain = vec![CertificateDer::from(server_cert.der().to_vec()), ca_der.clone()];
+        let chain = vec![
+            CertificateDer::from(server_cert.der().to_vec()),
+            ca_der.clone(),
+        ];
         let key = rustls::pki_types::PrivateKeyDer::from(PrivatePkcs8KeyDer::from(
             server_key.serialize_der(),
         ));
@@ -868,10 +874,7 @@ mod tests {
 
         // signatureValue BIT STRING 的第一个内容字节是 unused bits，改成 1 应被拒绝
         // 定位最后一个 BIT STRING 头（03 41）后一个字节
-        let pos = cert
-            .windows(2)
-            .rposition(|w| w == [0x03, 0x41])
-            .unwrap();
+        let pos = cert.windows(2).rposition(|w| w == [0x03, 0x41]).unwrap();
         cert[pos + 2] = 0x01;
 
         assert!(RealityVerifier::extract_certificate_signature(&cert).is_none());

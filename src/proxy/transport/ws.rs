@@ -15,7 +15,7 @@ use tracing::debug;
 use crate::common::{Address, ProxyStream};
 use crate::config::types::{TlsConfig, TransportConfig};
 
-use super::StreamTransport;
+use super::{ech, fingerprint, StreamTransport};
 
 /// WebSocket 传输
 pub struct WsTransport {
@@ -69,10 +69,23 @@ impl StreamTransport for WsTransport {
                 .alpn
                 .as_ref()
                 .map(|v| v.iter().map(|s| s.as_str()).collect());
+            let fp = tls_cfg
+                .fingerprint
+                .as_deref()
+                .map(fingerprint::FingerprintType::from_str)
+                .unwrap_or(fingerprint::FingerprintType::None);
+            let ech_settings = ech::EchSettings {
+                config_list: tls_cfg
+                    .ech_config
+                    .as_deref()
+                    .map(ech::parse_ech_config_base64)
+                    .transpose()?,
+                grease: tls_cfg.ech_grease,
+                outer_sni: tls_cfg.ech_outer_sni.clone(),
+            };
             let rustls_config =
-                crate::common::tls::build_tls_config(tls_cfg.allow_insecure, alpn.as_deref())?;
-            let connector =
-                tokio_rustls::TlsConnector::from(std::sync::Arc::new(rustls_config));
+                ech::build_ech_tls_config(&ech_settings, fp, tls_cfg.allow_insecure, alpn.as_deref())?;
+            let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(rustls_config));
             let server_name = rustls::pki_types::ServerName::try_from(sni.to_string())?;
             let tls_stream = connector.connect(server_name, tcp_stream).await?;
             Box::new(tls_stream)
@@ -151,40 +164,34 @@ impl AsyncRead for WsStream {
         }
 
         // 从 WebSocket 读取下一帧
-        match Pin::new(&mut self.inner).poll_next(cx) {
-            Poll::Ready(Some(Ok(msg))) => match msg {
-                Message::Binary(data) => {
-                    let bytes: &[u8] = &data;
-                    let to_copy = bytes.len().min(buf.remaining());
-                    buf.put_slice(&bytes[..to_copy]);
-                    if to_copy < bytes.len() {
-                        self.read_buf = bytes[to_copy..].to_vec();
-                        self.read_pos = 0;
+        loop {
+            match Pin::new(&mut self.inner).poll_next(cx) {
+                Poll::Ready(Some(Ok(msg))) => match msg {
+                    Message::Binary(data) => {
+                        let bytes: &[u8] = &data;
+                        let to_copy = bytes.len().min(buf.remaining());
+                        buf.put_slice(&bytes[..to_copy]);
+                        if to_copy < bytes.len() {
+                            self.read_buf = bytes[to_copy..].to_vec();
+                            self.read_pos = 0;
+                        }
+                        return Poll::Ready(Ok(()));
                     }
-                    Poll::Ready(Ok(()))
-                }
-                Message::Text(text) => {
-                    let bytes: &[u8] = text.as_ref();
-                    let to_copy = bytes.len().min(buf.remaining());
-                    buf.put_slice(&bytes[..to_copy]);
-                    if to_copy < bytes.len() {
-                        self.read_buf = bytes[to_copy..].to_vec();
-                        self.read_pos = 0;
+                    Message::Text(_) => {
+                        debug!("ignoring unexpected text frame in ws stream");
+                        continue;
                     }
-                    Poll::Ready(Ok(()))
+                    Message::Close(_) => return Poll::Ready(Ok(())),
+                    Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {
+                        continue;
+                    }
+                },
+                Poll::Ready(Some(Err(e))) => {
+                    return Poll::Ready(Err(io::Error::other(e)));
                 }
-                Message::Close(_) => Poll::Ready(Ok(())),
-                Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {
-                    // 忽略控制帧，继续读取
-                    cx.waker().wake_by_ref();
-                    Poll::Pending
-                }
-            },
-            Poll::Ready(Some(Err(e))) => {
-                Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e)))
+                Poll::Ready(None) => return Poll::Ready(Ok(())),
+                Poll::Pending => return Poll::Pending,
             }
-            Poll::Ready(None) => Poll::Ready(Ok(())),
-            Poll::Pending => Poll::Pending,
         }
     }
 }
@@ -199,9 +206,9 @@ impl AsyncWrite for WsStream {
         match Pin::new(&mut self.inner).poll_ready(cx) {
             Poll::Ready(Ok(())) => match Pin::new(&mut self.inner).start_send(msg) {
                 Ok(()) => Poll::Ready(Ok(buf.len())),
-                Err(e) => Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e))),
+                Err(e) => Poll::Ready(Err(io::Error::other(e))),
             },
-            Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e))),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::other(e))),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -209,7 +216,7 @@ impl AsyncWrite for WsStream {
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match Pin::new(&mut self.inner).poll_flush(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e))),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::other(e))),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -217,7 +224,7 @@ impl AsyncWrite for WsStream {
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         match Pin::new(&mut self.inner).poll_close(cx) {
             Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-            Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e))),
+            Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::other(e))),
             Poll::Pending => Poll::Pending,
         }
     }

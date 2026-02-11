@@ -1,8 +1,10 @@
 pub mod crypto;
 
 use std::pin::Pin;
-use std::sync::Arc;
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 use anyhow::{bail, Result};
 use async_trait::async_trait;
@@ -16,10 +18,15 @@ use crate::common::{Address, BoxUdpTransport, ProxyStream, UdpPacket, UdpTranspo
 use crate::config::types::OutboundConfig;
 use crate::proxy::{OutboundHandler, Session};
 
-use crypto::{AeadCipher, CipherKind, derive_subkey, evp_bytes_to_key};
+use crypto::{derive_subkey, evp_bytes_to_key, ss2022_password_to_key, AeadCipher, CipherKind};
 
 /// Maximum payload size per AEAD frame (0x3FFF = 16383)
 const MAX_PAYLOAD_SIZE: usize = 0x3FFF;
+
+struct Sip003Runtime {
+    child: Child,
+    local_addr: String,
+}
 
 pub struct ShadowsocksOutbound {
     tag: String,
@@ -27,6 +34,9 @@ pub struct ShadowsocksOutbound {
     server_port: u16,
     cipher_kind: CipherKind,
     key: Vec<u8>,
+    plugin: Option<String>,
+    plugin_opts: Option<String>,
+    plugin_runtime: Option<Arc<Mutex<Sip003Runtime>>>,
 }
 
 impl ShadowsocksOutbound {
@@ -36,31 +46,63 @@ impl ShadowsocksOutbound {
         let address = settings
             .address
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("shadowsocks outbound '{}' missing 'address'", config.tag))?
+            .ok_or_else(|| {
+                anyhow::anyhow!("shadowsocks outbound '{}' missing 'address'", config.tag)
+            })?
             .clone();
 
-        let port = settings
-            .port
-            .ok_or_else(|| anyhow::anyhow!("shadowsocks outbound '{}' missing 'port'", config.tag))?;
+        let port = settings.port.ok_or_else(|| {
+            anyhow::anyhow!("shadowsocks outbound '{}' missing 'port'", config.tag)
+        })?;
 
-        let password = settings
-            .password
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("shadowsocks outbound '{}' missing 'password'", config.tag))?;
+        let password = settings.password.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("shadowsocks outbound '{}' missing 'password'", config.tag)
+        })?;
 
-        let method = settings
-            .method
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("shadowsocks outbound '{}' missing 'method'", config.tag))?;
+        let method = settings.method.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("shadowsocks outbound '{}' missing 'method'", config.tag)
+        })?;
 
-        let cipher_kind = CipherKind::from_str(method)?;
-        let key = evp_bytes_to_key(password.as_bytes(), cipher_kind.key_len());
+        let cipher_kind = CipherKind::parse(method)?;
+        let key = match cipher_kind {
+            CipherKind::Aes128Gcm2022
+            | CipherKind::Aes256Gcm2022
+            | CipherKind::ChaCha20Poly1305_2022 => {
+                ss2022_password_to_key(password, cipher_kind.key_len())?
+            }
+            _ => evp_bytes_to_key(password.as_bytes(), cipher_kind.key_len()),
+        };
+
+        let plugin = settings.plugin.clone();
+        let plugin_opts = settings.plugin_opts.clone();
+        let plugin_runtime = if let Some(plugin_bin) = plugin.as_ref() {
+            let runtime = spawn_sip003_runtime(
+                plugin_bin,
+                plugin_opts.as_deref(),
+                &address,
+                port,
+            )?;
+
+            let remote_addr = format!("{}:{}", address, port);
+            debug!(
+                tag = config.tag,
+                plugin = plugin_bin,
+                local_addr = %runtime.local_addr,
+                remote_addr = %remote_addr,
+                "shadowsocks SIP003 plugin started"
+            );
+
+            Some(Arc::new(Mutex::new(runtime)))
+        } else {
+            None
+        };
 
         debug!(
             tag = config.tag,
             server = %address,
             port = port,
             method = method,
+            plugin = ?plugin,
             "shadowsocks outbound created"
         );
 
@@ -70,8 +112,117 @@ impl ShadowsocksOutbound {
             server_port: port,
             cipher_kind,
             key,
+            plugin,
+            plugin_opts,
+            plugin_runtime,
         })
     }
+}
+
+impl Drop for ShadowsocksOutbound {
+    fn drop(&mut self) {
+        if let Some(runtime) = &self.plugin_runtime {
+            if let Ok(mut guard) = runtime.lock() {
+                let _ = guard.child.kill();
+                let _ = guard.child.wait();
+            }
+        }
+    }
+}
+
+fn pick_free_local_port() -> Result<u16> {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+    let port = listener.local_addr()?.port();
+    drop(listener);
+    Ok(port)
+}
+
+fn build_sip003_command(
+    plugin_bin: &str,
+    plugin_opts: Option<&str>,
+    remote_host: &str,
+    remote_port: u16,
+    local_host: &str,
+    local_port: u16,
+) -> Command {
+    let mut cmd = Command::new(plugin_bin);
+    let args = parse_plugin_options(plugin_opts);
+    cmd.args(args)
+        .env("SS_REMOTE_HOST", remote_host)
+        .env("SS_REMOTE_PORT", remote_port.to_string())
+        .env("SS_LOCAL_HOST", local_host)
+        .env("SS_LOCAL_PORT", local_port.to_string())
+        .env("SS_PLUGIN_OPTIONS", plugin_opts.unwrap_or(""))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    cmd
+}
+
+fn spawn_sip003_runtime(
+    plugin_bin: &str,
+    plugin_opts: Option<&str>,
+    remote_host: &str,
+    remote_port: u16,
+) -> Result<Sip003Runtime> {
+    let local_port = pick_free_local_port()?;
+    let local_host = "127.0.0.1";
+    let local_addr = format!("{}:{}", local_host, local_port);
+
+    let mut cmd = build_sip003_command(
+        plugin_bin,
+        plugin_opts,
+        remote_host,
+        remote_port,
+        local_host,
+        local_port,
+    );
+
+    let mut child = cmd.spawn().map_err(|e| {
+        anyhow::anyhow!(
+            "failed to spawn SIP003 plugin '{}': {}",
+            plugin_bin,
+            e
+        )
+    })?;
+
+    std::thread::sleep(Duration::from_millis(80));
+    if let Some(status) = child.try_wait()? {
+        anyhow::bail!(
+            "SIP003 plugin '{}' exited early with status {}",
+            plugin_bin,
+            status
+        );
+    }
+
+    Ok(Sip003Runtime { child, local_addr })
+}
+
+fn parse_plugin_options(plugin_opts: Option<&str>) -> Vec<String> {
+    plugin_opts
+        .unwrap_or("")
+        .split_whitespace()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+fn ensure_plugin_runtime_alive(
+    runtime: &Arc<Mutex<Sip003Runtime>>,
+    plugin_bin: &str,
+    plugin_opts: Option<&str>,
+    remote_host: &str,
+    remote_port: u16,
+) -> Result<String> {
+    let mut guard = runtime
+        .lock()
+        .map_err(|_| anyhow::anyhow!("failed to lock SIP003 plugin runtime"))?;
+
+    if let Some(status) = guard.child.try_wait()? {
+        debug!(status = %status, plugin = plugin_bin, "SIP003 plugin exited, respawning");
+        *guard = spawn_sip003_runtime(plugin_bin, plugin_opts, remote_host, remote_port)?;
+    }
+
+    Ok(guard.local_addr.clone())
 }
 
 #[async_trait]
@@ -85,7 +236,19 @@ impl OutboundHandler for ShadowsocksOutbound {
     }
 
     async fn connect(&self, session: &Session) -> Result<ProxyStream> {
-        let server = format!("{}:{}", self.server_addr, self.server_port);
+        let server = if let (Some(plugin), Some(runtime)) = (&self.plugin, &self.plugin_runtime) {
+            let addr = ensure_plugin_runtime_alive(
+                runtime,
+                plugin,
+                self.plugin_opts.as_deref(),
+                &self.server_addr,
+                self.server_port,
+            )?;
+            debug!(plugin = plugin, plugin_opts = ?self.plugin_opts, proxy = %addr, "shadowsocks plugin active");
+            addr
+        } else {
+            format!("{}:{}", self.server_addr, self.server_port)
+        };
         debug!(target = %session.target, server = %server, "shadowsocks connecting");
 
         let mut stream = TcpStream::connect(&server).await?;
@@ -157,17 +320,11 @@ async fn write_aead_frame(
 /// Read state machine for AEAD stream decryption.
 enum ReadState {
     /// Need to read the server salt (decoder not initialized yet)
-    ReadSalt {
-        salt_buf: Vec<u8>,
-        salt_read: usize,
-    },
+    Salt { salt_buf: Vec<u8>, salt_read: usize },
     /// Need to read encrypted length frame (2 + tag_len bytes)
-    ReadLength {
-        len_buf: Vec<u8>,
-        len_read: usize,
-    },
+    Length { len_buf: Vec<u8>, len_read: usize },
     /// Need to read encrypted payload frame (payload_len + tag_len bytes)
-    ReadPayload {
+    Payload {
         payload_buf: Vec<u8>,
         payload_read: usize,
     },
@@ -203,12 +360,7 @@ pub struct AeadStream {
 }
 
 impl AeadStream {
-    fn new(
-        inner: TcpStream,
-        encoder: AeadCipher,
-        cipher_kind: CipherKind,
-        key: Vec<u8>,
-    ) -> Self {
+    fn new(inner: TcpStream, encoder: AeadCipher, cipher_kind: CipherKind, key: Vec<u8>) -> Self {
         let salt_len = cipher_kind.salt_len();
         Self {
             inner,
@@ -218,7 +370,7 @@ impl AeadStream {
             key,
             read_buf: Vec::new(),
             read_pos: 0,
-            read_state: ReadState::ReadSalt {
+            read_state: ReadState::Salt {
                 salt_buf: vec![0u8; salt_len],
                 salt_read: 0,
             },
@@ -250,7 +402,10 @@ impl AsyncRead for AeadStream {
             }
 
             match &mut this.read_state {
-                ReadState::ReadSalt { salt_buf, salt_read } => {
+                ReadState::Salt {
+                    salt_buf,
+                    salt_read,
+                } => {
                     // Read salt bytes from the stream
                     while *salt_read < salt_buf.len() {
                         let mut read_buf = ReadBuf::new(&mut salt_buf[*salt_read..]);
@@ -272,18 +427,18 @@ impl AsyncRead for AeadStream {
 
                     // Salt fully read, derive subkey and initialize decoder
                     let subkey = derive_subkey(&this.key, salt_buf, this.cipher_kind.key_len())
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                        .map_err(|e| std::io::Error::other(e.to_string()))?;
                     this.decoder = Some(AeadCipher::new(this.cipher_kind, subkey));
 
                     // Transition to reading length
                     let tag_len = this.cipher_kind.tag_len();
-                    this.read_state = ReadState::ReadLength {
+                    this.read_state = ReadState::Length {
                         len_buf: vec![0u8; 2 + tag_len],
                         len_read: 0,
                     };
                 }
 
-                ReadState::ReadLength { len_buf, len_read } => {
+                ReadState::Length { len_buf, len_read } => {
                     // Read encrypted length frame
                     while *len_read < len_buf.len() {
                         let mut read_buf = ReadBuf::new(&mut len_buf[*len_read..]);
@@ -304,31 +459,38 @@ impl AsyncRead for AeadStream {
                     }
 
                     // Decrypt length
-                    let decoder = this.decoder.as_mut().ok_or_else(|| {
-                        std::io::Error::new(std::io::ErrorKind::Other, "decoder not initialized")
-                    })?;
+                    let decoder = this
+                        .decoder
+                        .as_mut()
+                        .ok_or_else(|| std::io::Error::other("decoder not initialized"))?;
 
-                    let len_plain = decoder.decrypt(len_buf).map_err(|e| {
-                        std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-                    })?;
+                    let len_plain = decoder
+                        .decrypt(len_buf)
+                        .map_err(|e| std::io::Error::other(e.to_string()))?;
 
                     let payload_len = u16::from_be_bytes([len_plain[0], len_plain[1]]) as usize;
                     if payload_len > MAX_PAYLOAD_SIZE {
                         return Poll::Ready(Err(std::io::Error::new(
                             std::io::ErrorKind::InvalidData,
-                            format!("payload length {} exceeds maximum {}", payload_len, MAX_PAYLOAD_SIZE),
+                            format!(
+                                "payload length {} exceeds maximum {}",
+                                payload_len, MAX_PAYLOAD_SIZE
+                            ),
                         )));
                     }
 
                     // Transition to reading payload
                     let tag_len = this.cipher_kind.tag_len();
-                    this.read_state = ReadState::ReadPayload {
+                    this.read_state = ReadState::Payload {
                         payload_buf: vec![0u8; payload_len + tag_len],
                         payload_read: 0,
                     };
                 }
 
-                ReadState::ReadPayload { payload_buf, payload_read } => {
+                ReadState::Payload {
+                    payload_buf,
+                    payload_read,
+                } => {
                     // Read encrypted payload frame
                     while *payload_read < payload_buf.len() {
                         let mut read_buf = ReadBuf::new(&mut payload_buf[*payload_read..]);
@@ -349,13 +511,14 @@ impl AsyncRead for AeadStream {
                     }
 
                     // Decrypt payload
-                    let decoder = this.decoder.as_mut().ok_or_else(|| {
-                        std::io::Error::new(std::io::ErrorKind::Other, "decoder not initialized")
-                    })?;
+                    let decoder = this
+                        .decoder
+                        .as_mut()
+                        .ok_or_else(|| std::io::Error::other("decoder not initialized"))?;
 
-                    let payload = decoder.decrypt(payload_buf).map_err(|e| {
-                        std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-                    })?;
+                    let payload = decoder
+                        .decrypt(payload_buf)
+                        .map_err(|e| std::io::Error::other(e.to_string()))?;
 
                     // Store decrypted data and transition to HasData
                     this.read_buf = payload;
@@ -363,7 +526,7 @@ impl AsyncRead for AeadStream {
 
                     // Transition to reading next length frame
                     let tag_len = this.cipher_kind.tag_len();
-                    this.read_state = ReadState::ReadLength {
+                    this.read_state = ReadState::Length {
                         len_buf: vec![0u8; 2 + tag_len],
                         len_read: 0,
                     };
@@ -396,17 +559,20 @@ impl AsyncWrite for AeadStream {
 
                     // Encrypt length
                     let len_bytes = (chunk_len as u16).to_be_bytes();
-                    let encrypted_len = this.encoder.encrypt(&len_bytes).map_err(|e| {
-                        std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-                    })?;
+                    let encrypted_len = this
+                        .encoder
+                        .encrypt(&len_bytes)
+                        .map_err(|e| std::io::Error::other(e.to_string()))?;
 
                     // Encrypt payload
-                    let encrypted_payload = this.encoder.encrypt(chunk).map_err(|e| {
-                        std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-                    })?;
+                    let encrypted_payload = this
+                        .encoder
+                        .encrypt(chunk)
+                        .map_err(|e| std::io::Error::other(e.to_string()))?;
 
                     // Combine into a single write buffer
-                    let mut data = Vec::with_capacity(encrypted_len.len() + encrypted_payload.len());
+                    let mut data =
+                        Vec::with_capacity(encrypted_len.len() + encrypted_payload.len());
                     data.extend_from_slice(&encrypted_len);
                     data.extend_from_slice(&encrypted_payload);
 
@@ -417,7 +583,11 @@ impl AsyncWrite for AeadStream {
                     };
                 }
 
-                WriteState::Writing { data, written, original_len } => {
+                WriteState::Writing {
+                    data,
+                    written,
+                    original_len,
+                } => {
                     while *written < data.len() {
                         match Pin::new(&mut this.inner).poll_write(cx, &data[*written..]) {
                             Poll::Ready(Ok(n)) => {
@@ -493,7 +663,9 @@ impl UdpTransport for ShadowsocksUdpTransport {
         let addr: std::net::SocketAddr = tokio::net::lookup_host(&self.server_addr)
             .await?
             .next()
-            .ok_or_else(|| anyhow::anyhow!("failed to resolve server address: {}", self.server_addr))?;
+            .ok_or_else(|| {
+            anyhow::anyhow!("failed to resolve server address: {}", self.server_addr)
+        })?;
 
         self.socket.send_to(&out, addr).await?;
         Ok(())
@@ -525,5 +697,89 @@ impl UdpTransport for ShadowsocksUdpTransport {
             addr,
             data: Bytes::from(data),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sip003_command_sets_required_envs() {
+        let cmd = build_sip003_command(
+            "plugin-bin",
+            Some("mode=websocket;host=example.com"),
+            "1.2.3.4",
+            8388,
+            "127.0.0.1",
+            32001,
+        );
+
+        let envs: std::collections::HashMap<String, String> = cmd
+            .get_envs()
+            .filter_map(|(k, v)| {
+                Some((
+                    k.to_string_lossy().to_string(),
+                    v?.to_string_lossy().to_string(),
+                ))
+            })
+            .collect();
+
+        assert_eq!(envs.get("SS_REMOTE_HOST").map(String::as_str), Some("1.2.3.4"));
+        assert_eq!(envs.get("SS_REMOTE_PORT").map(String::as_str), Some("8388"));
+        assert_eq!(envs.get("SS_LOCAL_HOST").map(String::as_str), Some("127.0.0.1"));
+        assert_eq!(envs.get("SS_LOCAL_PORT").map(String::as_str), Some("32001"));
+        assert_eq!(
+            envs.get("SS_PLUGIN_OPTIONS").map(String::as_str),
+            Some("mode=websocket;host=example.com")
+        );
+    }
+
+    #[test]
+    fn sip003_command_defaults_empty_plugin_options() {
+        let cmd = build_sip003_command("plugin-bin", None, "1.1.1.1", 443, "127.0.0.1", 10000);
+
+        let envs: std::collections::HashMap<String, String> = cmd
+            .get_envs()
+            .filter_map(|(k, v)| {
+                Some((
+                    k.to_string_lossy().to_string(),
+                    v?.to_string_lossy().to_string(),
+                ))
+            })
+            .collect();
+
+        assert_eq!(envs.get("SS_PLUGIN_OPTIONS").map(String::as_str), Some(""));
+    }
+
+    #[test]
+    fn sip003_command_parses_plugin_options_into_args() {
+        let cmd = build_sip003_command(
+            "plugin-bin",
+            Some("--fast-open --mode websocket"),
+            "8.8.8.8",
+            8388,
+            "127.0.0.1",
+            20000,
+        );
+
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+
+        assert_eq!(args, vec!["--fast-open", "--mode", "websocket"]);
+    }
+
+    #[test]
+    fn parse_plugin_options_empty() {
+        assert!(parse_plugin_options(None).is_empty());
+        assert!(parse_plugin_options(Some("   ")).is_empty());
+    }
+
+    #[test]
+    fn pick_free_local_port_returns_non_zero() {
+        let port = pick_free_local_port().unwrap();
+        assert_ne!(port, 0);
     }
 }

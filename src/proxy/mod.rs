@@ -1,5 +1,6 @@
 pub mod group;
 pub mod inbound;
+pub mod mux;
 pub mod outbound;
 pub mod relay;
 pub mod sniff;
