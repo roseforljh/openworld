@@ -1,15 +1,17 @@
 use std::collections::HashMap;
 use std::fs;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::Result;
 use ipnet::IpNet;
+use reqwest::header::{IF_MODIFIED_SINCE, LAST_MODIFIED};
 use tracing::info;
 
 use crate::config::types::RuleProviderConfig;
 
 /// 规则集中的域名规则
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DomainRule {
     Full(String),
     Suffix(String),
@@ -19,7 +21,7 @@ pub enum DomainRule {
 /// 规则集数据
 ///
 /// 包含域名规则和 IP CIDR 规则，由 Rule::RuleSet 引用。
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RuleSetData {
     pub domain_rules: Vec<DomainRule>,
     pub ip_cidrs: Vec<IpNet>,
@@ -44,116 +46,300 @@ impl RuleSetData {
     }
 }
 
-/// 下载规则提供者到本地文件
-fn download_provider(url: &str, path: &str) -> Result<()> {
-    let response = reqwest::blocking::get(url)
-        .map_err(|e| anyhow::anyhow!("HTTP request failed: {}", e))?;
-
-    if !response.status().is_success() {
-        anyhow::bail!("HTTP {} for {}", response.status(), url);
-    }
-
-    let content = response
-        .text()
-        .map_err(|e| anyhow::anyhow!("failed to read response body: {}", e))?;
-
-    // 确保父目录存在
-    if let Some(parent) = std::path::Path::new(path).parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    fs::write(path, &content)?;
-    Ok(())
+pub struct RuleProvider {
+    name: String,
+    config: RuleProviderConfig,
+    rules: Arc<RwLock<RuleSetData>>,
+    loaded: AtomicBool,
+    last_modified: RwLock<Option<String>>,
+    load_lock: Mutex<()>,
 }
 
-/// 从配置加载单个规则提供者
-pub fn load_provider(name: &str, config: &RuleProviderConfig) -> Result<Arc<RuleSetData>> {
-    // 如果是 http 类型，尝试下载
-    if config.provider_type == "http" {
-        if let Some(ref url) = config.url {
-            // 检查本地缓存是否过期
-            let needs_update = match fs::metadata(&config.path) {
-                Ok(meta) => match meta.modified() {
-                    Ok(modified) => {
-                        let elapsed = modified.elapsed().unwrap_or_default();
-                        elapsed.as_secs() > config.interval
-                    }
-                    Err(_) => true,
-                },
-                Err(_) => true, // 文件不存在
-            };
+impl RuleProvider {
+    pub fn new(name: String, config: RuleProviderConfig) -> Self {
+        Self {
+            name,
+            config,
+            rules: Arc::new(RwLock::new(RuleSetData {
+                domain_rules: Vec::new(),
+                ip_cidrs: Vec::new(),
+            })),
+            loaded: AtomicBool::new(false),
+            last_modified: RwLock::new(None),
+            load_lock: Mutex::new(()),
+        }
+    }
 
-            if needs_update {
-                info!(name = name, url = url.as_str(), "downloading rule-provider");
-                match download_provider(url, &config.path) {
-                    Ok(_) => {
-                        info!(
-                            name = name,
-                            path = config.path.as_str(),
-                            "rule-provider downloaded and cached"
-                        );
-                    }
-                    Err(e) => {
-                        // 下载失败，检查是否有本地缓存
-                        if fs::metadata(&config.path).is_ok() {
-                            tracing::warn!(
-                                name = name,
-                                error = %e,
-                                "rule-provider download failed, using cached version"
-                            );
-                        } else {
-                            return Err(anyhow::anyhow!(
-                                "rule-provider '{}' download failed and no cache available: {}",
-                                name,
-                                e
-                            ));
-                        }
-                    }
-                }
-            }
-        } else {
-            anyhow::bail!(
-                "rule-provider '{}' is type 'http' but no 'url' is configured",
-                name
+    pub fn provider_type(&self) -> &str {
+        &self.config.provider_type
+    }
+
+    pub fn behavior(&self) -> &str {
+        &self.config.behavior
+    }
+
+    pub fn interval_secs(&self) -> u64 {
+        self.config.interval
+    }
+
+    pub fn lazy(&self) -> bool {
+        self.config.lazy
+    }
+
+    pub fn is_loaded(&self) -> bool {
+        self.loaded.load(Ordering::Acquire)
+    }
+
+    pub fn should_periodic_refresh(&self) -> bool {
+        self.provider_type() == "http" && self.interval_secs() > 0
+    }
+
+    pub fn snapshot(&self) -> RuleSetData {
+        match self.rules.read() {
+            Ok(guard) => guard.clone(),
+            Err(_) => RuleSetData {
+                domain_rules: Vec::new(),
+                ip_cidrs: Vec::new(),
+            },
+        }
+    }
+
+    pub fn matches_domain(&self, domain: &str) -> bool {
+        self.ensure_loaded_for_match();
+        match self.rules.read() {
+            Ok(guard) => guard.matches_domain(domain),
+            Err(_) => false,
+        }
+    }
+
+    pub fn matches_ip(&self, ip: std::net::IpAddr) -> bool {
+        self.ensure_loaded_for_match();
+        match self.rules.read() {
+            Ok(guard) => guard.matches_ip(ip),
+            Err(_) => false,
+        }
+    }
+
+    pub fn init_load_if_needed(&self) -> Result<()> {
+        if self.config.lazy {
+            return Ok(());
+        }
+        self.load_once()
+    }
+
+    pub fn refresh_http_provider(&self) -> Result<bool> {
+        if self.provider_type() != "http" {
+            return Ok(false);
+        }
+
+        let url = self
+            .config
+            .url
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("rule-provider '{}' missing url", self.name))?;
+
+        let client = reqwest::blocking::Client::new();
+        let mut request = client.get(url);
+        if let Some(last_modified) = self
+            .last_modified
+            .read()
+            .map_err(|_| {
+                anyhow::anyhow!("rule-provider '{}' last_modified lock poisoned", self.name)
+            })?
+            .clone()
+        {
+            request = request.header(IF_MODIFIED_SINCE, last_modified);
+        }
+
+        let response = request
+            .send()
+            .map_err(|e| anyhow::anyhow!("HTTP request failed: {}", e))?;
+
+        if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+            return Ok(false);
+        }
+
+        if !response.status().is_success() {
+            anyhow::bail!("HTTP {} for {}", response.status(), url);
+        }
+
+        let remote_last_modified = response
+            .headers()
+            .get(LAST_MODIFIED)
+            .and_then(|v| v.to_str().ok())
+            .map(ToOwned::to_owned);
+
+        let content = response
+            .text()
+            .map_err(|e| anyhow::anyhow!("failed to read response body: {}", e))?;
+
+        // 确保父目录存在
+        if let Some(parent) = std::path::Path::new(&self.config.path).parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&self.config.path, &content)?;
+
+        let parsed = self.parse_content(&content)?;
+        let changed = self.replace_rules(parsed)?;
+
+        if let Some(lm) = remote_last_modified {
+            let mut guard = self.last_modified.write().map_err(|_| {
+                anyhow::anyhow!("rule-provider '{}' last_modified lock poisoned", self.name)
+            })?;
+            *guard = Some(lm);
+        }
+        self.loaded.store(true, Ordering::Release);
+
+        Ok(changed)
+    }
+
+    fn ensure_loaded_for_match(&self) {
+        if !self.config.lazy || self.is_loaded() {
+            return;
+        }
+
+        if let Err(e) = self.load_once() {
+            tracing::warn!(
+                name = self.name.as_str(),
+                error = %e,
+                "lazy rule-provider load failed"
             );
         }
     }
 
-    // 从本地文件读取
-    let content = fs::read_to_string(&config.path).map_err(|e| {
-        anyhow::anyhow!(
-            "failed to read rule-provider '{}' from '{}': {}",
-            name,
-            config.path,
-            e
-        )
-    })?;
+    fn load_once(&self) -> Result<()> {
+        if self.is_loaded() {
+            return Ok(());
+        }
 
-    let data = match config.behavior.as_str() {
-        "domain" => parse_domain_rules(&content)?,
-        "ipcidr" => parse_ipcidr_rules(&content)?,
-        "classical" => parse_classical_rules(&content)?,
-        other => anyhow::bail!(
-            "unsupported rule-provider behavior '{}' for '{}'",
-            other,
-            name
-        ),
-    };
+        let _guard = self
+            .load_lock
+            .lock()
+            .map_err(|_| anyhow::anyhow!("rule-provider '{}' load lock poisoned", self.name))?;
 
-    info!(
-        name = name,
-        behavior = config.behavior.as_str(),
-        domains = data.domain_rules.len(),
-        cidrs = data.ip_cidrs.len(),
-        "rule-provider loaded"
-    );
-    Ok(Arc::new(data))
+        if self.is_loaded() {
+            return Ok(());
+        }
+
+        let changed = if self.provider_type() == "http" {
+            self.load_http_with_cache_fallback()?
+        } else {
+            self.load_from_local_file()?
+        };
+
+        self.loaded.store(true, Ordering::Release);
+
+        let snapshot = self.snapshot();
+        info!(
+            name = self.name.as_str(),
+            behavior = self.config.behavior.as_str(),
+            domains = snapshot.domain_rules.len(),
+            cidrs = snapshot.ip_cidrs.len(),
+            changed = changed,
+            "rule-provider loaded"
+        );
+
+        Ok(())
+    }
+
+    fn load_http_with_cache_fallback(&self) -> Result<bool> {
+        let url = self.config.url.as_deref().ok_or_else(|| {
+            anyhow::anyhow!("rule-provider '{}' is type 'http' but no 'url'", self.name)
+        })?;
+
+        let has_cache = fs::metadata(&self.config.path).is_ok();
+        let should_update = self.should_update_cache();
+
+        if should_update {
+            info!(
+                name = self.name.as_str(),
+                url = url,
+                "downloading rule-provider"
+            );
+            match self.refresh_http_provider() {
+                Ok(changed) => return Ok(changed),
+                Err(e) => {
+                    if has_cache {
+                        tracing::warn!(
+                            name = self.name.as_str(),
+                            error = %e,
+                            "rule-provider refresh failed, using cached version"
+                        );
+                    } else {
+                        return Err(anyhow::anyhow!(
+                            "rule-provider '{}' download failed and no cache available: {}",
+                            self.name,
+                            e
+                        ));
+                    }
+                }
+            }
+        }
+
+        self.load_from_local_file()
+    }
+
+    fn should_update_cache(&self) -> bool {
+        match fs::metadata(&self.config.path) {
+            Ok(meta) => match meta.modified() {
+                Ok(modified) => {
+                    let elapsed = modified.elapsed().unwrap_or_default();
+                    elapsed.as_secs() > self.config.interval
+                }
+                Err(_) => true,
+            },
+            Err(_) => true,
+        }
+    }
+
+    fn load_from_local_file(&self) -> Result<bool> {
+        let content = fs::read_to_string(&self.config.path).map_err(|e| {
+            anyhow::anyhow!(
+                "failed to read rule-provider '{}' from '{}': {}",
+                self.name,
+                self.config.path,
+                e
+            )
+        })?;
+        let parsed = self.parse_content(&content)?;
+        self.replace_rules(parsed)
+    }
+
+    fn parse_content(&self, content: &str) -> Result<RuleSetData> {
+        match self.config.behavior.as_str() {
+            "domain" => parse_domain_rules(content),
+            "ipcidr" => parse_ipcidr_rules(content),
+            "classical" => parse_classical_rules(content),
+            other => anyhow::bail!(
+                "unsupported rule-provider behavior '{}' for '{}'",
+                other,
+                self.name
+            ),
+        }
+    }
+
+    fn replace_rules(&self, parsed: RuleSetData) -> Result<bool> {
+        let mut guard = self
+            .rules
+            .write()
+            .map_err(|_| anyhow::anyhow!("rule-provider '{}' rules lock poisoned", self.name))?;
+        let changed = *guard != parsed;
+        *guard = parsed;
+        Ok(changed)
+    }
+}
+
+/// 从配置加载单个规则提供者
+pub fn load_provider(name: &str, config: &RuleProviderConfig) -> Result<Arc<RuleProvider>> {
+    let provider = Arc::new(RuleProvider::new(name.to_string(), config.clone()));
+    provider.init_load_if_needed()?;
+    Ok(provider)
 }
 
 /// 从所有配置加载规则提供者
 pub fn load_all_providers(
     configs: &HashMap<String, RuleProviderConfig>,
-) -> Result<HashMap<String, Arc<RuleSetData>>> {
+) -> Result<HashMap<String, Arc<RuleProvider>>> {
     let mut providers = HashMap::new();
     for (name, config) in configs {
         let data = load_provider(name, config)?;

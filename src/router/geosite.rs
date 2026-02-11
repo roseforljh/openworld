@@ -39,7 +39,12 @@ impl GeoSiteDb {
         let mut categories = HashMap::new();
         categories.insert(category.to_lowercase(), rules);
 
-        info!(path = path, category = category, count = count, "GeoSite database loaded");
+        info!(
+            path = path,
+            category = category,
+            count = count,
+            "GeoSite database loaded"
+        );
         Ok(Self { categories })
     }
 
@@ -51,7 +56,12 @@ impl GeoSiteDb {
                 .map_err(|e| anyhow::anyhow!("failed to read geosite file '{}': {}", path, e))?;
             let rules = Self::parse_rules(&content)?;
             let count = rules.len();
-            info!(path = path.as_str(), category = category.as_str(), count = count, "GeoSite category loaded");
+            info!(
+                path = path.as_str(),
+                category = category.as_str(),
+                count = count,
+                "GeoSite category loaded"
+            );
             categories.insert(category.to_lowercase(), rules);
         }
         Ok(Self { categories })
