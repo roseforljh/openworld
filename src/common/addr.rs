@@ -5,6 +5,8 @@ use anyhow::Result;
 use bytes::{BufMut, BytesMut};
 use serde::Deserialize;
 
+use crate::dns::DnsResolver;
+
 /// 代理目标地址
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Address {
@@ -127,18 +129,31 @@ impl Address {
 
     /// DNS 解析为 SocketAddr
     pub async fn resolve(&self) -> Result<SocketAddr> {
+        self.resolve_with(None).await
+    }
+
+    pub async fn resolve_with(&self, resolver: Option<&dyn DnsResolver>) -> Result<SocketAddr> {
         match self {
             Address::Ip(addr) => Ok(*addr),
             Address::Domain(domain, port) => {
-                let addr_str = format!("{}:{}", domain, port);
                 let port = *port;
-                let resolved = tokio::task::spawn_blocking(move || {
-                    addr_str.to_socket_addrs()
-                })
-                .await??
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("DNS resolution failed for {}:{}", domain, port))?;
-                Ok(resolved)
+                if let Some(custom_resolver) = resolver {
+                    let ip = custom_resolver
+                        .resolve(domain)
+                        .await?
+                        .into_iter()
+                        .next()
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("DNS resolution failed for {}:{}", domain, port)
+                        })?;
+                    return Ok(SocketAddr::new(ip, port));
+                }
+
+                let addr_str = format!("{}:{}", domain, port);
+                tokio::task::spawn_blocking(move || addr_str.to_socket_addrs())
+                    .await??
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("DNS resolution failed for {}:{}", domain, port))
             }
         }
     }
@@ -182,20 +197,30 @@ impl fmt::Display for Address {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
     #[test]
     fn from_socks5_ipv4() {
         let addr = Address::from_socks5(0x01, &[127, 0, 0, 1], 8080).unwrap();
-        assert_eq!(addr, Address::Ip(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080)));
+        assert_eq!(
+            addr,
+            Address::Ip(SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                8080
+            ))
+        );
     }
 
     #[test]
     fn from_socks5_ipv6() {
         let data = [0u8; 16];
         let addr = Address::from_socks5(0x04, &data, 443).unwrap();
-        assert_eq!(addr, Address::Ip(SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 443)));
+        assert_eq!(
+            addr,
+            Address::Ip(SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 443))
+        );
     }
 
     #[test]
@@ -311,7 +336,10 @@ mod tests {
     fn parse_socks5_udp_addr_ipv4() {
         let data = [0x01, 127, 0, 0, 1, 0x00, 0x50]; // 127.0.0.1:80
         let (addr, consumed) = Address::parse_socks5_udp_addr(&data).unwrap();
-        assert_eq!(addr, Address::Ip(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 80)));
+        assert_eq!(
+            addr,
+            Address::Ip(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 80))
+        );
         assert_eq!(consumed, 7);
     }
 
@@ -321,7 +349,10 @@ mod tests {
         data.extend_from_slice(&[0u8; 16]); // ::0
         data.extend_from_slice(&[0x01, 0xBB]); // port 443
         let (addr, consumed) = Address::parse_socks5_udp_addr(&data).unwrap();
-        assert_eq!(addr, Address::Ip(SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 443)));
+        assert_eq!(
+            addr,
+            Address::Ip(SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 443))
+        );
         assert_eq!(consumed, 19);
     }
 
@@ -348,7 +379,10 @@ mod tests {
     #[test]
     fn encode_parse_socks5_roundtrip() {
         let addrs = vec![
-            Address::Ip(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 8080)),
+            Address::Ip(SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+                8080,
+            )),
             Address::Ip(SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), 443)),
             Address::Domain("example.com".to_string(), 80),
         ];

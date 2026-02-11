@@ -1,4 +1,6 @@
 pub mod cache;
+pub mod fakeip;
+pub mod hosts;
 pub mod resolver;
 
 use std::net::IpAddr;

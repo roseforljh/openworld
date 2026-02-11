@@ -1,17 +1,20 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use tokio::io::AsyncReadExt;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, Instrument};
 
-use crate::common::{BoxUdpTransport, PrefixedStream};
+use crate::common::{Address, BoxUdpTransport, PrefixedStream};
+use crate::dns::DnsResolver;
 use crate::proxy::{relay::relay, sniff, InboundResult, Network, Session};
+use crate::proxy::outbound::direct::DirectOutbound;
 use crate::router::Router;
 
 use super::outbound_manager::OutboundManager;
+use super::resilience::{self, CircuitBreaker, CircuitBreakerConfig, RetryPolicy};
 use super::tracker::ConnectionTracker;
 
 /// NAT 表条目超时时间
@@ -53,9 +56,12 @@ impl NatEntry {
 }
 
 pub struct Dispatcher {
-    router: RwLock<Arc<Router>>,
-    outbound_manager: RwLock<Arc<OutboundManager>>,
+    router: tokio::sync::RwLock<Arc<Router>>,
+    outbound_manager: tokio::sync::RwLock<Arc<OutboundManager>>,
     tracker: Arc<ConnectionTracker>,
+    resolver: Arc<dyn DnsResolver>,
+    retry_policy: RetryPolicy,
+    circuit_breakers: tokio::sync::RwLock<HashMap<String, Arc<CircuitBreaker>>>,
 }
 
 impl Dispatcher {
@@ -63,22 +69,42 @@ impl Dispatcher {
         router: Arc<Router>,
         outbound_manager: Arc<OutboundManager>,
         tracker: Arc<ConnectionTracker>,
+        resolver: Arc<dyn DnsResolver>,
     ) -> Self {
         Self {
-            router: RwLock::new(router),
-            outbound_manager: RwLock::new(outbound_manager),
+            router: tokio::sync::RwLock::new(router),
+            outbound_manager: tokio::sync::RwLock::new(outbound_manager),
             tracker,
+            resolver,
+            retry_policy: RetryPolicy::default(),
+            circuit_breakers: tokio::sync::RwLock::new(HashMap::new()),
         }
     }
 
+    async fn circuit_breaker_for(&self, tag: &str) -> Arc<CircuitBreaker> {
+        if let Some(cb) = self.circuit_breakers.read().await.get(tag).cloned() {
+            return cb;
+        }
+        let mut guard = self.circuit_breakers.write().await;
+        guard
+            .entry(tag.to_string())
+            .or_insert_with(|| {
+                Arc::new(CircuitBreaker::new(
+                    tag.to_string(),
+                    CircuitBreakerConfig::default(),
+                ))
+            })
+            .clone()
+    }
+
     /// 获取当前 Router 快照
-    pub fn router(&self) -> Arc<Router> {
-        self.router.read().unwrap().clone()
+    pub async fn router(&self) -> Arc<Router> {
+        self.router.read().await.clone()
     }
 
     /// 获取当前 OutboundManager 快照
-    pub fn outbound_manager(&self) -> Arc<OutboundManager> {
-        self.outbound_manager.read().unwrap().clone()
+    pub async fn outbound_manager(&self) -> Arc<OutboundManager> {
+        self.outbound_manager.read().await.clone()
     }
 
     /// 获取 ConnectionTracker
@@ -87,13 +113,13 @@ impl Dispatcher {
     }
 
     /// 热更新 Router
-    pub fn update_router(&self, new_router: Arc<Router>) {
-        *self.router.write().unwrap() = new_router;
+    pub async fn update_router(&self, new_router: Arc<Router>) {
+        *self.router.write().await = new_router;
     }
 
     /// 热更新 OutboundManager
-    pub fn update_outbound_manager(&self, new_om: Arc<OutboundManager>) {
-        *self.outbound_manager.write().unwrap() = new_om;
+    pub async fn update_outbound_manager(&self, new_om: Arc<OutboundManager>) {
+        *self.outbound_manager.write().await = new_om;
     }
 
     pub async fn dispatch(&self, result: InboundResult) -> Result<()> {
@@ -132,29 +158,118 @@ impl Dispatcher {
         }
 
         // 快照当前 router/outbound_manager（热重载安全）
-        let router = self.router();
-        let outbound_manager = self.outbound_manager();
+        let router = self.router().await;
+        let outbound_manager = self.outbound_manager().await;
 
-        let outbound_tag = router.route(&session);
+        let (outbound_tag, matched_rule) = router.route_with_rule(&session);
+        let route_tag = matched_rule.as_deref().unwrap_or("MATCH").to_string();
 
-        let outbound = outbound_manager
-            .get(outbound_tag)
-            .ok_or_else(|| anyhow::anyhow!("outbound '{}' not found", outbound_tag))?;
+        let outbound = match outbound_manager.get(outbound_tag) {
+            Some(o) => o,
+            None => {
+                self.tracker.record_error("OUTBOUND_NOT_FOUND");
+                error!(error_code = "OUTBOUND_NOT_FOUND", outbound_tag = outbound_tag, "outbound not found");
+                return Err(anyhow::anyhow!("outbound '{}' not found", outbound_tag));
+            }
+        };
+
+        let guard = self
+            .tracker
+            .track(&session, outbound.tag(), &route_tag, matched_rule.as_deref())
+            .await;
+        let circuit_breaker = self.circuit_breaker_for(outbound.tag()).await;
 
         info!(
+            conn_id = guard.id(),
             dest = %session.target,
             inbound = session.inbound_tag,
             outbound = outbound.tag(),
+            route_tag = %route_tag,
             "dispatching TCP"
         );
 
-        let guard = self.tracker.track(&session, outbound.tag()).await;
-        let outbound_stream = outbound.connect(&session).await?;
-        let (up, down) = relay(inbound_stream, outbound_stream).await?;
-        guard.add_upload(up);
-        guard.add_download(down);
+        // Create tracing context for this connection
+        let tracing_ctx = TracingContext::new(
+            guard.id(),
+            &session,
+            outbound.tag(),
+            matched_rule.as_deref(),
+        );
+        let span = tracing_ctx.span();
 
-        Ok(())
+        // Instrument the connect + relay with the connection span
+        let result = async {
+            let connect_session = if matches!(session.target, Address::Domain(_, _))
+                && outbound.as_any().is::<DirectOutbound>()
+            {
+                let resolved = session.target.resolve_with(Some(self.resolver.as_ref())).await?;
+                let mut s = session.clone();
+                s.target = Address::Ip(resolved);
+                debug!(
+                    conn_id = guard.id(),
+                    original = %session.target,
+                    resolved = %s.target,
+                    "resolved domain target with configured DNS"
+                );
+                s
+            } else {
+                session.clone()
+            };
+
+            if !circuit_breaker.allow_request() {
+                self.tracker.record_error("OUTBOUND_CIRCUIT_OPEN");
+                error!(
+                    conn_id = guard.id(),
+                    error_code = "OUTBOUND_CIRCUIT_OPEN",
+                    outbound_tag = outbound.tag(),
+                    "circuit breaker open, request rejected"
+                );
+                return Err(anyhow::anyhow!(
+                    "outbound '{}' circuit is open",
+                    outbound.tag()
+                ));
+            }
+
+            let connect_outbound = outbound.clone();
+            let outbound_stream = match resilience::retry_with_backoff(&self.retry_policy, move |_| {
+                let outbound = connect_outbound.clone();
+                let session = connect_session.clone();
+                async move { outbound.connect(&session).await }
+            }).await {
+                Ok(s) => s,
+                Err(e) => {
+                    circuit_breaker.record_failure();
+                    self.tracker.record_error("OUTBOUND_CONNECT_FAILED");
+                    error!(conn_id = guard.id(), error_code = "OUTBOUND_CONNECT_FAILED", outbound_tag = outbound.tag(), error = %e, "outbound connect failed");
+                    return Err(e);
+                }
+            };
+
+            circuit_breaker.record_success();
+
+            let (up, down) = match relay(inbound_stream, outbound_stream).await {
+                Ok(v) => v,
+                Err(e) => {
+                    self.tracker.record_error("RELAY_FAILED");
+                    error!(conn_id = guard.id(), error_code = "RELAY_FAILED", outbound_tag = outbound.tag(), error = %e, "relay failed");
+                    return Err(e);
+                }
+            };
+
+            self.tracker
+                .record_latency_ms(tracing_ctx.elapsed_ms());
+            guard.add_upload(up);
+            guard.add_download(down);
+
+            Ok(())
+        }
+        .instrument(span)
+        .await;
+
+        // tracing_ctx is dropped here, logging connection close + duration
+        drop(tracing_ctx);
+
+        result
     }
 
     async fn dispatch_udp(
@@ -163,10 +278,7 @@ impl Dispatcher {
         mut tcp_control: crate::common::ProxyStream,
         inbound_udp: BoxUdpTransport,
     ) -> Result<()> {
-        info!(
-            inbound = session.inbound_tag,
-            "dispatching UDP session"
-        );
+        info!(inbound = session.inbound_tag, "dispatching UDP session");
 
         let inbound_udp = Arc::new(inbound_udp);
         // NAT 表: outbound_tag -> NatEntry (transport + last_active)
@@ -178,11 +290,12 @@ impl Dispatcher {
 
         // 入站 -> 出站 转发任务
         let inbound_udp_recv = inbound_udp.clone();
-        let router = self.router();
-        let outbound_manager = self.outbound_manager();
+        let router = self.router().await;
+        let outbound_manager = self.outbound_manager().await;
         let nat_table_clone = nat_table.clone();
         let inbound_udp_send = inbound_udp.clone();
         let session_clone = session.clone();
+        let tracker = self.tracker.clone();
         let mut shutdown_rx = shutdown_tx.subscribe();
         let shutdown_tx_forward = shutdown_tx.clone();
 
@@ -190,7 +303,8 @@ impl Dispatcher {
         let nat_table_cleanup = nat_table.clone();
         let mut cleanup_shutdown_rx = shutdown_tx.subscribe();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(NAT_CLEANUP_INTERVAL_SECS));
+            let mut interval =
+                tokio::time::interval(Duration::from_secs(NAT_CLEANUP_INTERVAL_SECS));
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
@@ -222,7 +336,8 @@ impl Dispatcher {
                         let packet = match result {
                             Ok(p) => p,
                             Err(e) => {
-                                debug!(error = %e, "UDP inbound recv error");
+                                tracker.record_error("UDP_INBOUND_RECV_FAILED");
+                                debug!(error_code = "UDP_INBOUND_RECV_FAILED", error = %e, "UDP inbound recv error");
                                 break;
                             }
                         };
@@ -235,7 +350,13 @@ impl Dispatcher {
                             network: Network::Udp,
                             sniff: false,
                         };
-                        let outbound_tag = router.route(&temp_session).to_string();
+                        let (outbound_tag_ref, matched_rule) = router.route_with_rule(&temp_session);
+                        let outbound_tag = outbound_tag_ref.to_string();
+                        let route_tag = matched_rule
+                            .as_deref()
+                            .unwrap_or("MATCH")
+                            .to_string();
+                        tracker.record_route_hit(&route_tag);
 
                         // 查找或创建出站 UDP transport（避免在持锁时 await）
                         let existing = {
@@ -249,7 +370,8 @@ impl Dispatcher {
                             let outbound = match outbound_manager.get(&outbound_tag) {
                                 Some(o) => o,
                                 None => {
-                                    error!(tag = outbound_tag, "outbound not found for UDP");
+                                    tracker.record_error("UDP_OUTBOUND_NOT_FOUND");
+                                    error!(error_code = "UDP_OUTBOUND_NOT_FOUND", tag = outbound_tag, route_tag = route_tag, "outbound not found for UDP");
                                     continue;
                                 }
                             };
@@ -257,7 +379,8 @@ impl Dispatcher {
                             let transport = match outbound.connect_udp(&temp_session).await {
                                 Ok(t) => Arc::new(t),
                                 Err(e) => {
-                                    error!(tag = outbound_tag, error = %e, "UDP outbound connect failed");
+                                    tracker.record_error("UDP_OUTBOUND_CONNECT_FAILED");
+                                    error!(error_code = "UDP_OUTBOUND_CONNECT_FAILED", tag = outbound_tag, route_tag = route_tag, error = %e, "UDP outbound connect failed");
                                     continue;
                                 }
                             };
@@ -279,6 +402,7 @@ impl Dispatcher {
                                 let inbound_udp_reply = inbound_udp_send.clone();
                                 let tag = outbound_tag.clone();
                                 let reverse_entry = selected_entry.clone();
+                                let reverse_tracker = tracker.clone();
                                 let mut reverse_shutdown_rx = shutdown_tx_forward.subscribe();
                                 tokio::spawn(async move {
                                     loop {
@@ -287,13 +411,15 @@ impl Dispatcher {
                                                 match result {
                                                     Ok(reply) => {
                                                         if let Err(e) = inbound_udp_reply.send(reply).await {
-                                                            debug!(error = %e, tag = tag, "UDP reply send failed");
+                                                            reverse_tracker.record_error("UDP_INBOUND_SEND_FAILED");
+                                                            debug!(error_code = "UDP_INBOUND_SEND_FAILED", error = %e, tag = tag, "UDP reply send failed");
                                                             break;
                                                         }
                                                         reverse_entry.touch();
                                                     }
                                                     Err(e) => {
-                                                        debug!(error = %e, tag = tag, "UDP outbound recv error");
+                                                        reverse_tracker.record_error("UDP_OUTBOUND_RECV_FAILED");
+                                                        debug!(error_code = "UDP_OUTBOUND_RECV_FAILED", error = %e, tag = tag, "UDP outbound recv error");
                                                         break;
                                                     }
                                                 }
@@ -312,12 +438,14 @@ impl Dispatcher {
                         debug!(
                             dest = %packet.addr,
                             outbound = outbound_tag,
+                            route_tag = route_tag,
                             len = packet.data.len(),
                             "UDP packet forwarding"
                         );
 
                         if let Err(e) = outbound_udp.send(packet).await {
-                            debug!(error = %e, outbound = outbound_tag, "UDP outbound send failed");
+                            tracker.record_error("UDP_OUTBOUND_SEND_FAILED");
+                            debug!(error_code = "UDP_OUTBOUND_SEND_FAILED", error = %e, outbound = outbound_tag, route_tag = route_tag, "UDP outbound send failed");
                         } else {
                             nat_entry.touch();
                         }
@@ -339,5 +467,65 @@ impl Dispatcher {
         forward_task.abort();
 
         Ok(())
+    }
+}
+
+/// Connection-level tracing context.
+///
+/// Creates a `tracing::Span` with connection metadata and logs
+/// connection close + duration on drop.
+pub struct TracingContext {
+    pub conn_id: u64,
+    pub target: String,
+    pub inbound_tag: String,
+    pub outbound_tag: String,
+    pub matched_rule: Option<String>,
+    pub start_time: Instant,
+}
+
+impl TracingContext {
+    pub fn new(
+        conn_id: u64,
+        session: &Session,
+        outbound_tag: &str,
+        matched_rule: Option<&str>,
+    ) -> Self {
+        Self {
+            conn_id,
+            target: format!("{}", session.target),
+            inbound_tag: session.inbound_tag.clone(),
+            outbound_tag: outbound_tag.to_string(),
+            matched_rule: matched_rule.map(|s| s.to_string()),
+            start_time: Instant::now(),
+        }
+    }
+
+    /// Create an `info_span!` carrying connection metadata.
+    pub fn span(&self) -> tracing::Span {
+        tracing::info_span!(
+            "connection",
+            conn_id = self.conn_id,
+            target = %self.target,
+            inbound = %self.inbound_tag,
+            outbound = %self.outbound_tag,
+            matched_rule = self.matched_rule.as_deref().unwrap_or("MATCH"),
+        )
+    }
+
+    /// Elapsed milliseconds since context creation.
+    pub fn elapsed_ms(&self) -> u64 {
+        self.start_time.elapsed().as_millis() as u64
+    }
+}
+
+impl Drop for TracingContext {
+    fn drop(&mut self) {
+        debug!(
+            conn_id = self.conn_id,
+            target = %self.target,
+            outbound = %self.outbound_tag,
+            duration_ms = self.elapsed_ms(),
+            "connection closed"
+        );
     }
 }
