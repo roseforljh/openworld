@@ -13,6 +13,8 @@ use crate::proxy::group::health::HealthChecker;
 use crate::proxy::outbound::direct::DirectOutbound;
 use crate::proxy::outbound::hysteria2::Hysteria2Outbound;
 use crate::proxy::outbound::vless::VlessOutbound;
+use crate::proxy::outbound::shadowsocks::ShadowsocksOutbound;
+use crate::proxy::outbound::trojan::TrojanOutbound;
 use crate::proxy::OutboundHandler;
 
 /// 代理组元数据
@@ -41,6 +43,8 @@ impl OutboundManager {
                 "direct" => Arc::new(DirectOutbound::new(config.tag.clone())),
                 "vless" => Arc::new(VlessOutbound::new(config)?),
                 "hysteria2" => Arc::new(Hysteria2Outbound::new(config)?),
+                "shadowsocks" | "ss" => Arc::new(ShadowsocksOutbound::new(config)?),
+                "trojan" => Arc::new(TrojanOutbound::new(config)?),
                 other => anyhow::bail!("unsupported outbound protocol: {}", other),
             };
             info!(tag = config.tag, protocol = config.protocol, "outbound registered");

@@ -132,35 +132,35 @@ impl HealthChecker {
     }
 }
 
-/// 解析简单 URL 为 (host, port, path)
+/// 解析 URL 为 (host, port, path)
 fn parse_url(url: &str) -> (String, u16, String) {
-    let (scheme, rest) = if let Some(r) = url.strip_prefix("https://") {
-        ("https", r)
-    } else if let Some(r) = url.strip_prefix("http://") {
-        ("http", r)
+    let full = if url.starts_with("http://") || url.starts_with("https://") {
+        url.to_string()
     } else {
-        ("http", url)
+        format!("http://{}", url)
     };
 
-    let (host_port, path) = match rest.find('/') {
-        Some(idx) => (&rest[..idx], &rest[idx..]),
-        None => (rest, "/"),
-    };
-
-    let default_port: u16 = if scheme == "https" { 443 } else { 80 };
-
-    let (host, port) = match host_port.rfind(':') {
-        Some(idx) => {
-            let port_str = &host_port[idx + 1..];
-            match port_str.parse::<u16>() {
-                Ok(p) => (host_port[..idx].to_string(), p),
-                Err(_) => (host_port.to_string(), default_port),
+    match reqwest::Url::parse(&full) {
+        Ok(parsed) => {
+            let mut host = parsed.host_str().unwrap_or("localhost").to_string();
+            if host.starts_with('[') && host.ends_with(']') && host.len() > 2 {
+                host = host[1..host.len() - 1].to_string();
             }
+            let port = parsed
+                .port_or_known_default()
+                .unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
+            let mut path = parsed.path().to_string();
+            if path.is_empty() {
+                path = "/".to_string();
+            }
+            if let Some(q) = parsed.query() {
+                path.push('?');
+                path.push_str(q);
+            }
+            (host, port, path)
         }
-        None => (host_port.to_string(), default_port),
-    };
-
-    (host, port, path.to_string())
+        Err(_) => ("localhost".to_string(), 80, "/".to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -197,5 +197,21 @@ mod tests {
         assert_eq!(host, "example.com");
         assert_eq!(port, 80);
         assert_eq!(path, "/");
+    }
+
+    #[test]
+    fn parse_url_ipv6_with_port() {
+        let (host, port, path) = parse_url("http://[::1]:8080/health");
+        assert_eq!(host, "::1");
+        assert_eq!(port, 8080);
+        assert_eq!(path, "/health");
+    }
+
+    #[test]
+    fn parse_url_with_query() {
+        let (host, port, path) = parse_url("https://example.com/ping?a=1");
+        assert_eq!(host, "example.com");
+        assert_eq!(port, 443);
+        assert_eq!(path, "/ping?a=1");
     }
 }

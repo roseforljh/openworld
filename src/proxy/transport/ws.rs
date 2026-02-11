@@ -60,7 +60,10 @@ impl StreamTransport for WsTransport {
         let tcp_stream = TcpStream::connect(&tcp_addr).await?;
 
         let stream: ProxyStream = if use_tls {
-            let tls_cfg = self.tls_config.as_ref().unwrap();
+            let tls_cfg = self
+                .tls_config
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("TLS enabled but tls_config missing"))?;
             let sni = tls_cfg.sni.as_deref().unwrap_or(&self.server_addr);
             let alpn: Option<Vec<&str>> = tls_cfg
                 .alpn

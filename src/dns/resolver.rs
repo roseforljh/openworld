@@ -182,43 +182,48 @@ fn parse_ip_port(s: &str, default_port: u16) -> Result<(IpAddr, u16)> {
 
 /// 根据配置构建 DNS 解析器
 pub fn build_resolver(config: &DnsConfig) -> Result<Box<dyn DnsResolver>> {
-    if config.servers.is_empty() {
+    let inner: Box<dyn DnsResolver> = if config.servers.is_empty() {
         info!("no DNS servers configured, using system resolver");
-        return Ok(Box::new(SystemResolver));
-    }
+        Box::new(SystemResolver)
+    } else if config.servers.len() == 1 && config.servers[0].domains.is_empty() {
+        // 只有一个无域名限制的服务器
+        Box::new(HickoryResolver::new(&config.servers[0].address)?)
+    } else {
+        // 构建 SplitResolver
+        let mut rules: Vec<(Vec<String>, Arc<dyn DnsResolver>)> = Vec::new();
+        let mut default: Option<Arc<dyn DnsResolver>> = None;
 
-    // 只有一个无域名限制的服务器
-    if config.servers.len() == 1 && config.servers[0].domains.is_empty() {
-        return Ok(Box::new(HickoryResolver::new(&config.servers[0].address)?));
-    }
+        for server in &config.servers {
+            let resolver: Arc<dyn DnsResolver> =
+                Arc::new(HickoryResolver::new(&server.address)?);
 
-    // 构建 SplitResolver
-    let mut rules: Vec<(Vec<String>, Arc<dyn DnsResolver>)> = Vec::new();
-    let mut default: Option<Arc<dyn DnsResolver>> = None;
-
-    for server in &config.servers {
-        let resolver: Arc<dyn DnsResolver> =
-            Arc::new(HickoryResolver::new(&server.address)?);
-
-        if server.domains.is_empty() {
-            if default.is_none() {
-                default = Some(resolver);
+            if server.domains.is_empty() {
+                if default.is_none() {
+                    default = Some(resolver);
+                }
+            } else {
+                rules.push((server.domains.clone(), resolver));
             }
-        } else {
-            rules.push((server.domains.clone(), resolver));
         }
-    }
 
-    let default = default.unwrap_or_else(|| {
-        // 如果没有无域名限制的服务器，用最后一个作为默认
-        if let Some((_, resolver)) = rules.last() {
-            resolver.clone()
-        } else {
-            Arc::new(SystemResolver)
-        }
-    });
+        let default = default.unwrap_or_else(|| {
+            // 如果没有无域名限制的服务器，用最后一个作为默认
+            if let Some((_, resolver)) = rules.last() {
+                resolver.clone()
+            } else {
+                Arc::new(SystemResolver)
+            }
+        });
 
-    Ok(Box::new(SplitResolver::new(rules, default)))
+        Box::new(SplitResolver::new(rules, default))
+    };
+
+    // 包装缓存层
+    Ok(Box::new(super::cache::CachedResolver::new(
+        inner,
+        config.cache_ttl,
+        config.cache_size,
+    )))
 }
 
 #[cfg(test)]
@@ -299,7 +304,11 @@ mod tests {
 
     #[test]
     fn build_resolver_empty_config() {
-        let config = DnsConfig { servers: vec![] };
+        let config = DnsConfig {
+            servers: vec![],
+            cache_size: 1024,
+            cache_ttl: 300,
+        };
         assert!(build_resolver(&config).is_ok());
     }
 }

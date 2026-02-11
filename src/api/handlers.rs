@@ -7,6 +7,7 @@ use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
+use tokio::sync::broadcast;
 use tokio::time::interval;
 use tracing::{debug, info};
 
@@ -25,6 +26,7 @@ pub struct AppState {
     pub dispatcher: Arc<Dispatcher>,
     pub secret: Option<String>,
     pub config_path: Option<String>,
+    pub log_broadcaster: crate::api::log_broadcast::LogBroadcaster,
 }
 
 /// GET /version
@@ -118,7 +120,10 @@ pub async fn get_proxy(
         Some(handler) => {
             let info =
                 build_proxy_info(&name, handler.as_ref(), &outbound_manager).await;
-            (StatusCode::OK, Json(serde_json::to_value(info).unwrap())).into_response()
+            match serde_json::to_value(info) {
+                Ok(v) => (StatusCode::OK, Json(v)).into_response(),
+                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            }
         }
         None => StatusCode::NOT_FOUND.into_response(),
     }
@@ -190,10 +195,10 @@ pub async fn get_connections(State(state): State<AppState>) -> Json<ConnectionsR
             ConnectionItem {
                 id: c.id.to_string(),
                 metadata: ConnectionMetadata {
-                    network: "tcp".to_string(),
+                    network: c.network.clone(),
                     conn_type: c.inbound_tag.clone(),
-                    source_ip: String::new(),
-                    source_port: String::new(),
+                    source_ip: c.source.map(|s| s.ip().to_string()).unwrap_or_default(),
+                    source_port: c.source.map(|s| s.port().to_string()).unwrap_or_default(),
                     destination_ip: String::new(),
                     destination_port: String::new(),
                     host: c.target.clone(),
@@ -268,7 +273,10 @@ async fn handle_traffic_ws(mut socket: WebSocket, state: AppState) {
         last_up = snap.total_up;
         last_down = snap.total_down;
 
-        let json = serde_json::to_string(&item).unwrap();
+        let json = match serde_json::to_string(&item) {
+            Ok(j) => j,
+            Err(_) => break,
+        };
         if socket.send(Message::Text(json.into())).await.is_err() {
             break;
         }
@@ -292,15 +300,66 @@ pub async fn get_rules(State(state): State<AppState>) -> Json<RulesResponse> {
     Json(RulesResponse { rules })
 }
 
-/// GET /logs (WebSocket) - 占位
-pub async fn logs_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
-    ws.on_upgrade(|mut socket: WebSocket| async move {
-        let _ = socket
-            .send(Message::Text(
-                r#"{"type":"info","payload":"log streaming not yet implemented"}"#.into(),
-            ))
-            .await;
-    })
+/// GET /logs (WebSocket) - 实时日志流
+pub async fn logs_ws(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    // WebSocket 认证检查
+    if let Some(ref secret) = state.secret {
+        let token = params.get("token").map(|s| s.as_str()).unwrap_or("");
+        if token != secret {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+    }
+
+    let level_filter = params
+        .get("level")
+        .cloned()
+        .unwrap_or_else(|| "info".to_string());
+    let broadcaster = state.log_broadcaster.clone();
+
+    ws.on_upgrade(move |socket| handle_logs_ws(socket, broadcaster, level_filter))
+        .into_response()
+}
+
+async fn handle_logs_ws(
+    mut socket: WebSocket,
+    broadcaster: crate::api::log_broadcast::LogBroadcaster,
+    level_filter: String,
+) {
+    let mut rx = broadcaster.subscribe();
+
+    loop {
+        match rx.recv().await {
+            Ok(entry) => {
+                if !should_include_level(&entry.level, &level_filter) {
+                    continue;
+                }
+                let json = match serde_json::to_string(&entry) {
+                    Ok(j) => j,
+                    Err(_) => continue,
+                };
+                if socket.send(Message::Text(json.into())).await.is_err() {
+                    break;
+                }
+            }
+            Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(broadcast::error::RecvError::Closed) => break,
+        }
+    }
+}
+
+fn should_include_level(entry_level: &str, filter: &str) -> bool {
+    let level_value = |l: &str| match l {
+        "error" => 0,
+        "warning" => 1,
+        "info" => 2,
+        "debug" => 3,
+        _ => 4,
+    };
+    level_value(entry_level) <= level_value(filter)
 }
 
 /// PATCH /configs - 热重载配置

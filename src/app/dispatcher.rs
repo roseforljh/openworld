@@ -237,37 +237,48 @@ impl Dispatcher {
                         };
                         let outbound_tag = router.route(&temp_session).to_string();
 
-                        // 查找或创建出站 UDP transport
-                        let (outbound_udp, nat_entry) = {
-                            let mut table = nat_table_clone.lock().await;
-                            if let Some(entry) = table.get(&outbound_tag) {
-                                (entry.transport.clone(), entry.clone())
-                            } else {
-                                let outbound = match outbound_manager.get(&outbound_tag) {
-                                    Some(o) => o,
-                                    None => {
-                                        error!(tag = outbound_tag, "outbound not found for UDP");
-                                        continue;
-                                    }
-                                };
+                        // 查找或创建出站 UDP transport（避免在持锁时 await）
+                        let existing = {
+                            let table = nat_table_clone.lock().await;
+                            table.get(&outbound_tag).cloned()
+                        };
 
-                                let transport = match outbound.connect_udp(&temp_session).await {
-                                    Ok(t) => t,
-                                    Err(e) => {
-                                        error!(tag = outbound_tag, error = %e, "UDP outbound connect failed");
-                                        continue;
-                                    }
-                                };
+                        let (outbound_udp, nat_entry) = if let Some(entry) = existing {
+                            (entry.transport.clone(), entry)
+                        } else {
+                            let outbound = match outbound_manager.get(&outbound_tag) {
+                                Some(o) => o,
+                                None => {
+                                    error!(tag = outbound_tag, "outbound not found for UDP");
+                                    continue;
+                                }
+                            };
 
-                                let transport = Arc::new(transport);
-                                let entry = NatEntry::new(transport.clone());
-                                table.insert(outbound_tag.clone(), entry.clone());
+                            let transport = match outbound.connect_udp(&temp_session).await {
+                                Ok(t) => Arc::new(t),
+                                Err(e) => {
+                                    error!(tag = outbound_tag, error = %e, "UDP outbound connect failed");
+                                    continue;
+                                }
+                            };
+                            let new_entry = NatEntry::new(transport.clone());
 
+                            let (selected_transport, selected_entry, should_spawn_reverse) = {
+                                let mut table = nat_table_clone.lock().await;
+                                if let Some(entry) = table.get(&outbound_tag) {
+                                    (entry.transport.clone(), entry.clone(), false)
+                                } else {
+                                    table.insert(outbound_tag.clone(), new_entry.clone());
+                                    (transport.clone(), new_entry.clone(), true)
+                                }
+                            };
+
+                            if should_spawn_reverse {
                                 // 启动反向转发任务: outbound -> inbound
-                                let outbound_udp_recv = transport.clone();
+                                let outbound_udp_recv = selected_transport.clone();
                                 let inbound_udp_reply = inbound_udp_send.clone();
                                 let tag = outbound_tag.clone();
-                                let reverse_entry = entry.clone();
+                                let reverse_entry = selected_entry.clone();
                                 let mut reverse_shutdown_rx = shutdown_tx_forward.subscribe();
                                 tokio::spawn(async move {
                                     loop {
@@ -293,9 +304,9 @@ impl Dispatcher {
                                         }
                                     }
                                 });
-
-                                (transport, entry)
                             }
+
+                            (selected_transport, selected_entry)
                         };
 
                         debug!(

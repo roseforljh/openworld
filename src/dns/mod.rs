@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod resolver;
 
 use std::net::IpAddr;

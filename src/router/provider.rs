@@ -44,8 +44,82 @@ impl RuleSetData {
     }
 }
 
+/// 下载规则提供者到本地文件
+fn download_provider(url: &str, path: &str) -> Result<()> {
+    let response = reqwest::blocking::get(url)
+        .map_err(|e| anyhow::anyhow!("HTTP request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        anyhow::bail!("HTTP {} for {}", response.status(), url);
+    }
+
+    let content = response
+        .text()
+        .map_err(|e| anyhow::anyhow!("failed to read response body: {}", e))?;
+
+    // 确保父目录存在
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    fs::write(path, &content)?;
+    Ok(())
+}
+
 /// 从配置加载单个规则提供者
 pub fn load_provider(name: &str, config: &RuleProviderConfig) -> Result<Arc<RuleSetData>> {
+    // 如果是 http 类型，尝试下载
+    if config.provider_type == "http" {
+        if let Some(ref url) = config.url {
+            // 检查本地缓存是否过期
+            let needs_update = match fs::metadata(&config.path) {
+                Ok(meta) => match meta.modified() {
+                    Ok(modified) => {
+                        let elapsed = modified.elapsed().unwrap_or_default();
+                        elapsed.as_secs() > config.interval
+                    }
+                    Err(_) => true,
+                },
+                Err(_) => true, // 文件不存在
+            };
+
+            if needs_update {
+                info!(name = name, url = url.as_str(), "downloading rule-provider");
+                match download_provider(url, &config.path) {
+                    Ok(_) => {
+                        info!(
+                            name = name,
+                            path = config.path.as_str(),
+                            "rule-provider downloaded and cached"
+                        );
+                    }
+                    Err(e) => {
+                        // 下载失败，检查是否有本地缓存
+                        if fs::metadata(&config.path).is_ok() {
+                            tracing::warn!(
+                                name = name,
+                                error = %e,
+                                "rule-provider download failed, using cached version"
+                            );
+                        } else {
+                            return Err(anyhow::anyhow!(
+                                "rule-provider '{}' download failed and no cache available: {}",
+                                name,
+                                e
+                            ));
+                        }
+                    }
+                }
+            }
+        } else {
+            anyhow::bail!(
+                "rule-provider '{}' is type 'http' but no 'url' is configured",
+                name
+            );
+        }
+    }
+
+    // 从本地文件读取
     let content = fs::read_to_string(&config.path).map_err(|e| {
         anyhow::anyhow!(
             "failed to read rule-provider '{}' from '{}': {}",

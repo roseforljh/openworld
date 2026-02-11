@@ -7,6 +7,7 @@ use tracing::{error, info};
 
 use crate::config::types::InboundConfig;
 use crate::proxy::inbound::http::HttpInbound;
+use crate::proxy::inbound::mixed::MixedInbound;
 use crate::proxy::inbound::socks5::Socks5Inbound;
 use crate::proxy::InboundHandler;
 
@@ -37,6 +38,7 @@ impl InboundManager {
             let handler: Arc<dyn InboundHandler> = match config.protocol.as_str() {
                 "socks5" => Arc::new(Socks5Inbound::new(config.tag.clone(), config.listen.clone())),
                 "http" => Arc::new(HttpInbound::new(config.tag.clone())),
+                "mixed" => Arc::new(MixedInbound::new(config.tag.clone(), config.listen.clone())),
                 other => anyhow::bail!("unsupported inbound protocol: {}", other),
             };
             entries.push(InboundEntry {

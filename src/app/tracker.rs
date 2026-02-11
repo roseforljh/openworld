@@ -20,6 +20,8 @@ pub struct ConnectionInfo {
     pub start_time: Instant,
     pub upload: u64,
     pub download: u64,
+    pub source: Option<std::net::SocketAddr>,
+    pub network: String,
 }
 
 /// 流量快照
@@ -66,6 +68,11 @@ impl ConnectionTracker {
             start_time: Instant::now(),
             upload: 0,
             download: 0,
+            source: session.source,
+            network: match session.network {
+                crate::proxy::Network::Tcp => "tcp".to_string(),
+                crate::proxy::Network::Udp => "udp".to_string(),
+            },
         };
 
         let tracked = TrackedConnection {

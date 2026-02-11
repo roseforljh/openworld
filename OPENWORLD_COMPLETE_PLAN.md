@@ -5,7 +5,7 @@
 - **项目名称**：OpenWorld
 - **文档类型**：完整实施计划（含已完成内容与后续规划）
 - **当前范围**：代理内核（Rust）
-- **当前状态**：Phase 1-3 + 4A/4B/4C 已完成；Phase 4D 待启动
+- **当前状态**：Phase 1-3 + 4A/4B/4C/4D/4E 已完成；Phase 5 开发中（Mixed 入站 / Shadowsocks 出站 / DNS Cache 等能力进入实现阶段）
 - **运行环境**：Windows / PowerShell（也兼容 Linux）
 
 ---
@@ -63,6 +63,8 @@
 | 协议嗅探（TLS SNI / HTTP Host） | 已完成 | 4B |
 | H2 传输层 | 已完成 | 4C |
 | gRPC 传输层（gun 模式） | 已完成 | 4C |
+| Rule Provider（文件/HTTP 规则集） | 已完成 | 4D |
+| 配置热重载（PATCH /configs） | 已完成 | 4E |
 
 ---
 
@@ -179,19 +181,20 @@ openworld/
    │     └─ health.rs          健康检查器
    ├─ router/
    │  ├─ mod.rs
-   │  ├─ rules.rs             含 GeoIp / GeoSite 规则
+   │  ├─ rules.rs             含 GeoIp / GeoSite / RuleSet 规则
    │  ├─ geoip.rs             [Phase 3C] mmdb 查询
-   │  └─ geosite.rs           [Phase 3C] 域名列表
+   │  ├─ geosite.rs           [Phase 3C] 域名列表
+   │  └─ provider.rs          [Phase 4D] 规则提供者（文件/HTTP）
    ├─ dns/                    [Phase 3C]
    │  ├─ mod.rs               DnsResolver trait
    │  └─ resolver.rs          System / Hickory / Split 解析器
    ├─ api/                    [Phase 3B]
    │  ├─ mod.rs               API 服务器启动与路由
-   │  ├─ handlers.rs          端点处理函数（含代理组管理）
+   │  ├─ handlers.rs          端点处理函数（含代理组管理 + 热重载）
    │  └─ models.rs            Clash 兼容响应结构
    └─ app/
       ├─ mod.rs               App 组装（含 API 启动）
-      ├─ dispatcher.rs        路由调度 + 连接跟踪
+      ├─ dispatcher.rs        路由调度 + 连接跟踪 + RwLock 热交换
       ├─ inbound_manager.rs   TCP 监听 + CancellationToken
       ├─ outbound_manager.rs  出站注册表 + 代理组管理
       └─ tracker.rs           [Phase 3A] 连接跟踪器
@@ -206,8 +209,10 @@ tests/
 ├─ phase4_protocol_e2e.rs      协议层端到端测试
 ├─ phase5_api.rs               [Phase 3B] API 端点测试
 ├─ phase5_routing.rs           [Phase 3C] DNS + 路由增强测试
-└─ phase6_proxy_groups.rs      [Phase 4A] 代理组 + API 测试
-└─ phase7_transport.rs         [Phase 4C] H2/gRPC 传输层测试
+├─ phase6_proxy_groups.rs      [Phase 4A] 代理组 + API 测试
+├─ phase7_transport.rs         [Phase 4C] H2/gRPC 传输层测试
+├─ phase8_rule_provider.rs     [Phase 4D] 规则提供者测试
+└─ phase9_hot_reload.rs        [Phase 4E] 配置热重载测试
 ```
 
 ---
@@ -313,10 +318,11 @@ QUIC 连接池 + HTTP/3 认证 + varint 帧编解码。保持内部 QuicManager 
 - `ip-cidr` — IP CIDR 范围匹配
 - `geoip` — 基于 mmdb 的国家级 IP 归属匹配
 - `geosite` — 基于域名列表的分类匹配
+- `rule-set` — 规则提供者引用（domain/ipcidr/classical 行为）
 
 匹配逻辑：配置顺序逐条匹配（first-match），全部不命中走 `router.default`。
 
-API 接口：`Router::route(&Session) -> &str` + `Router::rules()` + `Router::default_outbound()`
+API 接口：`Router::route(&Session) -> &str` + `Router::rules()` + `Router::default_outbound()` + `Router::providers()`
 
 ---
 
@@ -354,6 +360,7 @@ dns:
 | WS | /traffic | 实时流量推送（每秒） |
 | WS | /logs | 实时日志流（占位） |
 | GET | /rules | 路由规则列表 |
+| PATCH | /configs | 配置热重载 |
 
 认证：Bearer token middleware + WebSocket `?token=xxx` 查询参数。
 
@@ -405,7 +412,19 @@ outbounds:
 router:
   geoip_db: "GeoLite2-Country.mmdb"
   geosite_db: "geosite-cn.txt"
+  rule-providers:
+    reject-list:
+      type: file
+      behavior: domain
+      path: "rules/reject.txt"
+    cn-cidr:
+      type: file
+      behavior: ipcidr
+      path: "rules/cn-cidr.txt"
   rules:
+    - type: rule-set
+      values: ["reject-list"]
+      outbound: reject
     - type: geosite
       values: ["cn"]
       outbound: direct
@@ -487,11 +506,34 @@ router:
 
 测试覆盖：215 项测试全部通过，0 警告。
 
+## 11.7 Phase 4D（已完成）
+
+- Rule Provider 模块 `src/router/provider.rs`
+  - 支持 `file` 和 `http` 提供者类型
+  - 三种行为模式：`domain`、`ipcidr`、`classical`
+  - 格式兼容：纯文本、Clash YAML payload、前缀语法、classical 规则
+- `Rule::RuleSet` 变体：嵌入 `Arc<RuleSetData>` 实现零拷贝匹配
+- 配置扩展：`RouterConfig.rule_providers` (HashMap)，`rule-providers` YAML 区块
+- Router 构造时加载所有 provider，`rule-set` 规则类型按名称引用
+
+测试覆盖：241 项测试全部通过，0 警告。
+
+## 11.8 Phase 4E（已完成）
+
+- Dispatcher 热交换架构：`RwLock<Arc<Router>>` + `RwLock<Arc<OutboundManager>>`
+- 快照模式：dispatch() 开始时 clone Arc，保证单连接生命周期内状态一致
+- AppState 简化：持有 `Arc<Dispatcher>` 替代独立组件引用
+- `PATCH /configs` 端点：加载配置 → 重建 Router/OutboundManager → 原子替换
+- `App::new()` 接受 `config_path` 参数用于 reload 回退
+- ConnectionTracker 跨 reload 持久保持
+
+测试覆盖：249 项测试全部通过，0 警告。
+
 ---
 
-## 12. Phase 4 规划（待启动）
+## 12. Phase 4 总结（已完成）
 
-### 目标：从"可用的代理工具"到"功能完备的代理客户端"
+### 目标：从"可用的代理工具"到"功能完备的代理客户端" — 已达成
 
 ### Phase 4A：代理组 + 自动选择（已完成）
 
@@ -504,7 +546,7 @@ router:
 
 - 入站流量协议检测（TLS ClientHello SNI / HTTP Host）
 - 用检测到的域名覆盖 Session target（提高路由准确性）
-- 可配置开关：`sniffing: { enabled: true, destinations: ["http", "tls"] }`
+- 可配置开关：`sniffing: { enabled: true }`
 
 ### Phase 4C：更多传输层（已完成）
 
@@ -512,26 +554,19 @@ router:
 - HTTP/2 传输 (`h2`)
 - 传输层 TLS 组合（ws+tls / grpc+tls / h2+tls）
 
-### Phase 4D：规则提供者 (Rule Provider)
+### Phase 4D：规则提供者 (Rule Provider)（已完成）
 
-- 远程规则列表（HTTP 拉取 + 本地缓存）
-- 定时更新（interval 配置）
-- 格式支持：文本域名列表、YAML 规则集
+- 文件/HTTP 规则列表（file 直接读取，http 待实现实际拉取）
+- 三种行为模式：domain、ipcidr、classical
+- 格式兼容：纯文本、Clash YAML payload、前缀语法
+- 配置：`rule-providers` 区块 + `rule-set` 规则类型
 
-### Phase 4E：配置热重载
+### Phase 4E：配置热重载（已完成）
 
-- 文件监听（notify crate）或 API 触发 (`PATCH /configs`)
-- 支持出站/路由/DNS 配置热更新
-- 入站监听器的平滑迁移
-
-### Phase 4 执行顺序建议
-
-```
-4A (代理组) ──> 4B (嗅探) ──> 4C (传输层)
-                              4D (规则提供者) ──> 4E (热重载)
-```
-
-4A 优先级最高，因为代理组是客户端核心交互能力。
+- API 触发 (`PATCH /configs`)
+- Dispatcher RwLock 热交换（Router + OutboundManager）
+- 快照隔离保证运行中连接不受影响
+- ConnectionTracker 跨 reload 持久
 
 ---
 
@@ -540,7 +575,7 @@ router:
 ## 13.1 自动化测试
 
 ```powershell
-cargo test       # 215 项测试
+cargo test       # 249 项测试
 cargo check      # 编译检查
 cargo build      # 构建
 ```

@@ -26,7 +26,11 @@ async fn dns_system_resolver_resolves_localhost() {
 
 #[tokio::test]
 async fn dns_build_resolver_empty_servers() {
-    let config = DnsConfig { servers: vec![] };
+    let config = DnsConfig {
+        servers: vec![],
+        cache_size: 1024,
+        cache_ttl: 300,
+    };
     let resolver = build_resolver(&config).unwrap();
     // 空配置应使用系统解析器
     let addrs = resolver.resolve("localhost").await.unwrap();
@@ -40,6 +44,8 @@ async fn dns_build_resolver_single_udp() {
             address: "223.5.5.5".to_string(),
             domains: vec![],
         }],
+        cache_size: 1024,
+        cache_ttl: 300,
     };
     // 构建应成功
     let _resolver = build_resolver(&config).unwrap();
@@ -58,6 +64,8 @@ async fn dns_build_resolver_split() {
                 domains: vec![],
             },
         ],
+        cache_size: 1024,
+        cache_ttl: 300,
     };
     let _resolver = build_resolver(&config).unwrap();
 }

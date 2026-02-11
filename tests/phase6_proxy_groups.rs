@@ -500,6 +500,7 @@ async fn start_test_api_with_group() -> String {
         dispatcher,
         secret: None,
         config_path: None,
+        log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
     };
 
     let app = axum::Router::new()

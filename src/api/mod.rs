@@ -1,4 +1,5 @@
 pub mod handlers;
+pub mod log_broadcast;
 pub mod models;
 
 use std::sync::Arc;
@@ -23,11 +24,13 @@ pub fn start(
     config: &ApiConfig,
     dispatcher: Arc<Dispatcher>,
     config_path: Option<String>,
+    log_broadcaster: log_broadcast::LogBroadcaster,
 ) -> Result<JoinHandle<()>> {
     let state = AppState {
         dispatcher,
         secret: config.secret.clone(),
         config_path,
+        log_broadcaster,
     };
 
     let mut app = axum::Router::new()
@@ -50,8 +53,7 @@ pub fn start(
         .layer(CorsLayer::permissive());
 
     // 如果配置了 secret，添加认证中间件
-    if config.secret.is_some() {
-        let secret = config.secret.clone().unwrap();
+    if let Some(secret) = config.secret.clone() {
         app = app.layer(middleware::from_fn(move |req, next| {
             auth_middleware(req, next, secret.clone())
         }));

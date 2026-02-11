@@ -103,6 +103,7 @@ pub struct OutboundSettings {
     pub port: Option<u16>,
     pub uuid: Option<String>,
     pub password: Option<String>,
+    pub method: Option<String>,
     pub security: Option<String>,
     pub sni: Option<String>,
     #[serde(default)]
@@ -221,6 +222,18 @@ fn default_api_port() -> u16 {
 #[derive(Debug, Deserialize, Clone)]
 pub struct DnsConfig {
     pub servers: Vec<DnsServerConfig>,
+    #[serde(default = "default_cache_size")]
+    pub cache_size: usize,
+    #[serde(default = "default_cache_ttl")]
+    pub cache_ttl: u64,
+}
+
+fn default_cache_size() -> usize {
+    1024
+}
+
+fn default_cache_ttl() -> u64 {
+    300
 }
 
 /// DNS 服务器配置

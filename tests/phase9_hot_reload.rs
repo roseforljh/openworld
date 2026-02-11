@@ -184,6 +184,7 @@ router:
         dispatcher: dispatcher.clone(),
         secret: None,
         config_path: None,
+        log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
     };
 
     let app = axum::Router::new()
@@ -236,6 +237,7 @@ async fn api_reload_config_file_not_found() {
         dispatcher,
         secret: None,
         config_path: None,
+        log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
     };
 
     let app = axum::Router::new()
@@ -292,6 +294,7 @@ async fn api_reload_config_invalid_config() {
         dispatcher: dispatcher.clone(),
         secret: None,
         config_path: None,
+        log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
     };
 
     let app = axum::Router::new()
@@ -362,6 +365,7 @@ router:
         dispatcher: dispatcher.clone(),
         secret: None,
         config_path: Some(tmp.path().to_str().unwrap().to_string()),
+        log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
     };
 
     let app = axum::Router::new()

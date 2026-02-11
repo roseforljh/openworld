@@ -23,10 +23,15 @@ pub struct App {
     cancel_token: CancellationToken,
     api_config: Option<ApiConfig>,
     config_path: Option<String>,
+    log_broadcaster: Option<crate::api::log_broadcast::LogBroadcaster>,
 }
 
 impl App {
-    pub fn new(config: Config, config_path: Option<String>) -> Result<Self> {
+    pub fn new(
+        config: Config,
+        config_path: Option<String>,
+        log_broadcaster: Option<crate::api::log_broadcast::LogBroadcaster>,
+    ) -> Result<Self> {
         let cancel_token = CancellationToken::new();
         let router = Arc::new(Router::new(&config.router)?);
         let outbound_manager = Arc::new(OutboundManager::new(
@@ -51,6 +56,7 @@ impl App {
             cancel_token,
             api_config: config.api,
             config_path,
+            log_broadcaster,
         })
     }
 
@@ -59,10 +65,15 @@ impl App {
 
         // 启动 API 服务器（如果配置了）
         let _api_handle = if let Some(ref api_config) = self.api_config {
+            let broadcaster = self
+                .log_broadcaster
+                .clone()
+                .unwrap_or_else(|| crate::api::log_broadcast::LogBroadcaster::new(256));
             Some(crate::api::start(
                 api_config,
                 self.dispatcher.clone(),
                 self.config_path.clone(),
+                broadcaster,
             )?)
         } else {
             None
