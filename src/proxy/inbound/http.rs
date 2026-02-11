@@ -40,7 +40,10 @@ impl InboundHandler for HttpInbound {
 
         let method = parts[0];
         if method != "CONNECT" {
-            bail!("unsupported HTTP method: {}, only CONNECT is supported", method);
+            bail!(
+                "unsupported HTTP method: {}, only CONNECT is supported",
+                method
+            );
         }
 
         let target_str = parts[1];
@@ -71,11 +74,16 @@ impl InboundHandler for HttpInbound {
             sniff: false,
         };
 
-        Ok(InboundResult { session, stream, udp_transport: None })
+        Ok(InboundResult {
+            session,
+            stream,
+            udp_transport: None,
+        })
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 

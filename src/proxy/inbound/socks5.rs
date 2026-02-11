@@ -228,8 +228,8 @@ impl UdpTransport for Socks5UdpRelay {
 
     async fn send(&self, packet: UdpPacket) -> Result<()> {
         let client = self.client_addr.lock().await;
-        let client_addr = client
-            .ok_or_else(|| anyhow::anyhow!("SOCKS5 UDP: client address not yet known"))?;
+        let client_addr =
+            client.ok_or_else(|| anyhow::anyhow!("SOCKS5 UDP: client address not yet known"))?;
 
         // 封装 SOCKS5 UDP 头: [RSV: 2B=0][FRAG: 1B=0][ATYP+ADDR+PORT][DATA]
         let mut buf = BytesMut::with_capacity(3 + 32 + packet.data.len());
@@ -271,10 +271,7 @@ mod tests {
         assert_eq!(frag, 0);
 
         let (addr, addr_len) = Address::parse_socks5_udp_addr(&pkt[3..]).unwrap();
-        assert_eq!(
-            addr,
-            Address::Ip("8.8.8.8:53".parse().unwrap())
-        );
+        assert_eq!(addr, Address::Ip("8.8.8.8:53".parse().unwrap()));
         assert_eq!(addr_len, 7);
 
         let payload = &pkt[3 + addr_len..];
