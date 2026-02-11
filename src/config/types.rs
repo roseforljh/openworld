@@ -7,14 +7,36 @@ use serde::Deserialize;
 pub struct Config {
     #[serde(default)]
     pub log: LogConfig,
+    #[serde(default)]
+    pub profile: Option<String>,
     pub inbounds: Vec<InboundConfig>,
     pub outbounds: Vec<OutboundConfig>,
     #[serde(default, rename = "proxy-groups")]
     pub proxy_groups: Vec<ProxyGroupConfig>,
     #[serde(default)]
     pub router: RouterConfig,
+    #[serde(default)]
+    pub subscriptions: Vec<SubscriptionConfig>,
     pub api: Option<ApiConfig>,
     pub dns: Option<DnsConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct SubscriptionConfig {
+    pub name: String,
+    pub url: String,
+    #[serde(default = "default_subscription_interval")]
+    pub interval_secs: u64,
+    #[serde(default = "default_subscription_enabled")]
+    pub enabled: bool,
+}
+
+fn default_subscription_interval() -> u64 {
+    3600
+}
+
+fn default_subscription_enabled() -> bool {
+    true
 }
 
 impl Config {
@@ -79,7 +101,7 @@ fn default_log_level() -> String {
     "info".to_string()
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct InboundConfig {
     pub tag: String,
     pub protocol: String,
@@ -87,9 +109,37 @@ pub struct InboundConfig {
     pub port: u16,
     #[serde(default)]
     pub sniffing: SniffingConfig,
+    #[serde(default)]
+    pub settings: InboundSettings,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize, Clone)]
+pub struct InboundSettings {
+    pub method: Option<String>,
+    pub password: Option<String>,
+    #[serde(default)]
+    pub users: Option<Vec<ShadowsocksUserConfig>>,
+    pub uuid: Option<String>,
+    pub flow: Option<String>,
+    #[serde(default)]
+    pub clients: Option<Vec<VlessClientConfig>>,
+    /// 网络类型 (tcp/udp)，用于 TProxy 等入站
+    pub network: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ShadowsocksUserConfig {
+    pub password: String,
+    pub method: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct VlessClientConfig {
+    pub uuid: String,
+    pub flow: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct OutboundConfig {
     pub tag: String,
     pub protocol: String,
@@ -113,10 +163,39 @@ pub struct OutboundSettings {
     pub short_id: Option<String>,
     pub server_name: Option<String>,
     pub fingerprint: Option<String>,
+    /// SIP003 插件名（如 obfs-local / v2ray-plugin）
+    pub plugin: Option<String>,
+    /// SIP003 插件参数
+    pub plugin_opts: Option<String>,
+    /// WireGuard private key (base64)
+    pub private_key: Option<String>,
+    /// WireGuard peer public key (base64)
+    pub peer_public_key: Option<String>,
+    /// WireGuard preshared key (base64)
+    pub preshared_key: Option<String>,
+    /// WireGuard local address
+    pub local_address: Option<String>,
+    /// WireGuard MTU
+    pub mtu: Option<u16>,
+    /// WireGuard keepalive interval (seconds)
+    pub keepalive: Option<u16>,
+    /// SSH/认证用户名
+    pub username: Option<String>,
+    /// SSH 私钥密码
+    pub private_key_passphrase: Option<String>,
+    /// 拥塞控制算法 (cubic/bbr/new_reno)
+    pub congestion_control: Option<String>,
+    /// VMess AlterID (0 = AEAD, >0 = legacy MD5+Timestamp)
+    pub alter_id: Option<u16>,
+    /// WireGuard 多 Peer 配置
+    pub peers: Option<Vec<WireGuardPeerConfig>>,
+    /// Tor SOCKS5 端口
+    pub socks_port: Option<u16>,
     /// 传输层配置（新格式）
     pub transport: Option<TransportConfig>,
     /// TLS 配置（新格式）
     pub tls: Option<TlsConfig>,
+    pub mux: Option<MuxConfig>,
 }
 
 impl OutboundSettings {
@@ -135,7 +214,11 @@ impl OutboundSettings {
         let enabled = !security.is_empty() && security != "none";
         TlsConfig {
             enabled,
-            security: if security.is_empty() { "tls".to_string() } else { security },
+            security: if security.is_empty() {
+                "tls".to_string()
+            } else {
+                security
+            },
             sni: self.sni.clone(),
             allow_insecure: self.allow_insecure,
             alpn: None,
@@ -143,6 +226,9 @@ impl OutboundSettings {
             short_id: self.short_id.clone(),
             server_name: self.server_name.clone(),
             fingerprint: self.fingerprint.clone(),
+            ech_config: None,
+            ech_grease: false,
+            ech_outer_sni: None,
         }
     }
 }
@@ -153,6 +239,41 @@ fn default_tcp() -> String {
 
 fn default_tls_security() -> String {
     "tls".to_string()
+}
+
+fn default_mux_protocol() -> String {
+    "sing-mux".to_string()
+}
+
+fn default_mux_max_connections() -> usize {
+    4
+}
+
+fn default_mux_max_streams_per_connection() -> usize {
+    128
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct MuxConfig {
+    #[serde(default = "default_mux_protocol")]
+    pub protocol: String,
+    #[serde(default = "default_mux_max_connections")]
+    pub max_connections: usize,
+    #[serde(default = "default_mux_max_streams_per_connection")]
+    pub max_streams_per_connection: usize,
+    #[serde(default)]
+    pub padding: bool,
+}
+
+impl Default for MuxConfig {
+    fn default() -> Self {
+        Self {
+            protocol: default_mux_protocol(),
+            max_connections: default_mux_max_connections(),
+            max_streams_per_connection: default_mux_max_streams_per_connection(),
+            padding: false,
+        }
+    }
 }
 
 /// 传输层配置
@@ -182,6 +303,15 @@ pub struct TlsConfig {
     pub short_id: Option<String>,
     pub server_name: Option<String>,
     pub fingerprint: Option<String>,
+    /// ECHConfigList(base64)
+    #[serde(default, rename = "ech-config")]
+    pub ech_config: Option<String>,
+    /// 启用 ECH GREASE（无配置时发送占位扩展）
+    #[serde(default, rename = "ech-grease")]
+    pub ech_grease: bool,
+    /// ECH outer SNI（保留）
+    #[serde(default, rename = "ech-outer-sni")]
+    pub ech_outer_sni: Option<String>,
 }
 
 impl Default for TlsConfig {
@@ -196,6 +326,9 @@ impl Default for TlsConfig {
             short_id: None,
             server_name: None,
             fingerprint: None,
+            ech_config: None,
+            ech_grease: false,
+            ech_outer_sni: None,
         }
     }
 }
@@ -226,6 +359,56 @@ pub struct DnsConfig {
     pub cache_size: usize,
     #[serde(default = "default_cache_ttl")]
     pub cache_ttl: u64,
+    #[serde(default = "default_negative_cache_ttl")]
+    pub negative_cache_ttl: u64,
+    /// HOSTS 静态映射 (域名 → IP)
+    #[serde(default)]
+    pub hosts: HashMap<String, String>,
+    /// FakeIP 配置
+    #[serde(default)]
+    pub fake_ip: Option<FakeIpConfig>,
+    /// 并发查询模式: "split"(域名分流,默认) | "race"(竞速) | "fallback"(主备)
+    #[serde(default = "default_dns_mode")]
+    pub mode: String,
+    /// fallback 模式的备用 DNS 服务器
+    #[serde(default)]
+    pub fallback: Vec<DnsServerConfig>,
+    /// fallback 过滤: 当 nameserver 返回这些 IP 段时使用 fallback
+    #[serde(default)]
+    pub fallback_filter: Option<FallbackFilterConfig>,
+    /// EDNS Client Subnet (如 "1.2.3.0/24")
+    #[serde(default, rename = "edns-client-subnet")]
+    pub edns_client_subnet: Option<String>,
+}
+
+fn default_dns_mode() -> String {
+    "split".to_string()
+}
+
+/// FakeIP 配置
+#[derive(Debug, Deserialize, Clone)]
+pub struct FakeIpConfig {
+    #[serde(default = "default_fakeip_range")]
+    pub ipv4_range: String,
+    #[serde(default)]
+    pub ipv6_range: Option<String>,
+    #[serde(default)]
+    pub exclude: Vec<String>,
+}
+
+fn default_fakeip_range() -> String {
+    "198.18.0.0/15".to_string()
+}
+
+/// Fallback 过滤配置
+#[derive(Debug, Deserialize, Clone)]
+pub struct FallbackFilterConfig {
+    /// 当 nameserver 返回这些 CIDR 范围内的 IP 时，使用 fallback
+    #[serde(default)]
+    pub ip_cidr: Vec<String>,
+    /// 当查询这些域名时，使用 fallback
+    #[serde(default)]
+    pub domain: Vec<String>,
 }
 
 fn default_cache_size() -> usize {
@@ -234,6 +417,10 @@ fn default_cache_size() -> usize {
 
 fn default_cache_ttl() -> u64 {
     300
+}
+
+fn default_negative_cache_ttl() -> u64 {
+    30
 }
 
 /// DNS 服务器配置
@@ -245,16 +432,10 @@ pub struct DnsServerConfig {
 }
 
 /// 协议嗅探配置
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct SniffingConfig {
     #[serde(default)]
     pub enabled: bool,
-}
-
-impl Default for SniffingConfig {
-    fn default() -> Self {
-        Self { enabled: false }
-    }
 }
 
 /// 代理组配置
@@ -310,7 +491,7 @@ fn default_outbound() -> String {
     "direct".to_string()
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct RuleConfig {
     #[serde(rename = "type")]
     pub rule_type: String,
@@ -333,10 +514,24 @@ pub struct RuleProviderConfig {
     /// 更新间隔，秒（仅 http 类型）
     #[serde(default = "default_provider_interval")]
     pub interval: u64,
+    /// 惰性加载：首次匹配时才触发加载
+    #[serde(default)]
+    pub lazy: bool,
 }
 
 fn default_provider_interval() -> u64 {
     86400
+}
+
+/// WireGuard Peer 配置
+#[derive(Debug, Deserialize, Clone)]
+pub struct WireGuardPeerConfig {
+    pub public_key: String,
+    pub endpoint: Option<String>,
+    #[serde(default)]
+    pub allowed_ips: Vec<String>,
+    pub keepalive: Option<u16>,
+    pub preshared_key: Option<String>,
 }
 
 #[cfg(test)]
@@ -346,12 +541,14 @@ mod tests {
     fn minimal_config() -> Config {
         Config {
             log: LogConfig::default(),
+            profile: None,
             inbounds: vec![InboundConfig {
                 tag: "socks-in".to_string(),
                 protocol: "socks5".to_string(),
                 listen: "127.0.0.1".to_string(),
                 port: 1080,
                 sniffing: SniffingConfig::default(),
+                settings: InboundSettings::default(),
             }],
             outbounds: vec![OutboundConfig {
                 tag: "direct".to_string(),
@@ -365,6 +562,7 @@ mod tests {
                 geosite_db: None,
                 rule_providers: Default::default(),
             },
+            subscriptions: vec![],
             api: None,
             dns: None,
             proxy_groups: vec![],
@@ -429,6 +627,7 @@ inbounds:
     protocol: socks5
     listen: "127.0.0.1"
     port: 1080
+    settings: {}
 outbounds:
   - tag: direct
     protocol: direct
@@ -451,6 +650,7 @@ inbounds:
     protocol: socks5
     listen: "127.0.0.1"
     port: 1080
+    settings: {}
 outbounds:
   - tag: direct
     protocol: direct
@@ -469,6 +669,7 @@ inbounds:
     protocol: socks5
     listen: "127.0.0.1"
     port: 1080
+    settings: {}
 outbounds:
   - tag: my-vless
     protocol: vless
