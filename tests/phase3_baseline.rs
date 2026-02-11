@@ -5,16 +5,29 @@ use openworld::app::dispatcher::Dispatcher;
 use openworld::app::outbound_manager::OutboundManager;
 use openworld::app::tracker::ConnectionTracker;
 use openworld::common::{Address, UdpPacket};
-use std::io;
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use openworld::config::types::{
-    Config, InboundConfig, LogConfig, OutboundConfig, OutboundSettings, RouterConfig, SniffingConfig,
+    Config, InboundConfig, InboundSettings, LogConfig, OutboundConfig, OutboundSettings,
+    RouterConfig, SniffingConfig,
 };
+use openworld::dns::DnsResolver;
 use openworld::proxy::outbound::direct::DirectOutbound;
 use openworld::proxy::{InboundResult, Network, OutboundHandler, Session};
 use openworld::router::Router;
+use std::io;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+
+struct MockResolver;
+
+#[async_trait::async_trait]
+impl DnsResolver for MockResolver {
+    async fn resolve(&self, _host: &str) -> anyhow::Result<Vec<std::net::IpAddr>> {
+        Ok(vec![std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+            127, 0, 0, 1,
+        ))])
+    }
+}
 
 struct PendingStream;
 
@@ -69,12 +82,14 @@ fn phase3_config_validate_baseline_ok() {
         log: LogConfig {
             level: "info".to_string(),
         },
+        profile: None,
         inbounds: vec![InboundConfig {
             tag: "socks-in".to_string(),
             protocol: "socks5".to_string(),
             listen: "127.0.0.1".to_string(),
             port: 1080,
             sniffing: SniffingConfig::default(),
+            settings: InboundSettings::default(),
         }],
         outbounds: vec![OutboundConfig {
             tag: "direct".to_string(),
@@ -90,6 +105,7 @@ fn phase3_config_validate_baseline_ok() {
         },
         api: None,
         dns: None,
+        subscriptions: vec![],
         proxy_groups: vec![],
     };
 
@@ -186,7 +202,7 @@ async fn phase3_dispatcher_udp_requires_inbound_transport() {
     }];
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Dispatcher::new(router, outbound_manager, tracker);
+    let dispatcher = Dispatcher::new(router, outbound_manager, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>);
 
     let session = Session {
         target: Address::Domain("example.com".to_string(), 53),
@@ -204,7 +220,8 @@ async fn phase3_dispatcher_udp_requires_inbound_transport() {
 
     let err = dispatcher.dispatch(inbound).await.unwrap_err();
     assert!(
-        err.to_string().contains("udp session missing inbound transport"),
+        err.to_string()
+            .contains("udp session missing inbound transport"),
         "unexpected error: {err}"
     );
 }
@@ -269,5 +286,5 @@ fn phase3_dispatcher_construction_baseline() {
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
 
     let tracker = Arc::new(ConnectionTracker::new());
-    let _dispatcher = Dispatcher::new(router, outbound_manager, tracker);
+    let _dispatcher = Dispatcher::new(router, outbound_manager, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>);
 }

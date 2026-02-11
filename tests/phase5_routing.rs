@@ -5,12 +5,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use openworld::common::Address;
 use openworld::config::types::{DnsConfig, DnsServerConfig, RouterConfig, RuleConfig};
 use openworld::dns::resolver::{build_resolver, SystemResolver};
 use openworld::dns::DnsResolver;
-use openworld::router::Router;
-use openworld::common::Address;
 use openworld::proxy::{Network, Session};
+use openworld::router::Router;
 
 // ============================================================
 // DNS 测试
@@ -30,6 +30,13 @@ async fn dns_build_resolver_empty_servers() {
         servers: vec![],
         cache_size: 1024,
         cache_ttl: 300,
+        negative_cache_ttl: 30,
+        hosts: Default::default(),
+        fake_ip: None,
+        mode: "split".to_string(),
+        fallback: vec![],
+        fallback_filter: None,
+        edns_client_subnet: None,
     };
     let resolver = build_resolver(&config).unwrap();
     // 空配置应使用系统解析器
@@ -46,6 +53,13 @@ async fn dns_build_resolver_single_udp() {
         }],
         cache_size: 1024,
         cache_ttl: 300,
+        negative_cache_ttl: 30,
+        hosts: Default::default(),
+        fake_ip: None,
+        mode: "split".to_string(),
+        fallback: vec![],
+        fallback_filter: None,
+        edns_client_subnet: None,
     };
     // 构建应成功
     let _resolver = build_resolver(&config).unwrap();
@@ -66,6 +80,13 @@ async fn dns_build_resolver_split() {
         ],
         cache_size: 1024,
         cache_ttl: 300,
+        negative_cache_ttl: 30,
+        hosts: Default::default(),
+        fake_ip: None,
+        mode: "split".to_string(),
+        fallback: vec![],
+        fallback_filter: None,
+        edns_client_subnet: None,
     };
     let _resolver = build_resolver(&config).unwrap();
 }

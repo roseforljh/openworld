@@ -4,10 +4,22 @@ use std::sync::Arc;
 
 use openworld::app::outbound_manager::OutboundManager;
 use openworld::config::types::{OutboundConfig, OutboundSettings, ProxyGroupConfig};
+use openworld::dns::DnsResolver;
 use openworld::proxy::group::loadbalance::LoadBalanceGroup;
 use openworld::proxy::group::selector::SelectorGroup;
 use openworld::proxy::outbound::direct::DirectOutbound;
 use openworld::proxy::OutboundHandler;
+
+struct MockResolver;
+
+#[async_trait::async_trait]
+impl DnsResolver for MockResolver {
+    async fn resolve(&self, _host: &str) -> anyhow::Result<Vec<std::net::IpAddr>> {
+        Ok(vec![std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+            127, 0, 0, 1,
+        ))])
+    }
+}
 
 fn make_direct_proxies(count: usize) -> (Vec<Arc<dyn OutboundHandler>>, Vec<String>) {
     let mut proxies: Vec<Arc<dyn OutboundHandler>> = Vec::new();
@@ -239,12 +251,14 @@ fn config_validate_proxy_group_reference_ok() {
 
     let config = Config {
         log: LogConfig::default(),
+        profile: None,
         inbounds: vec![InboundConfig {
             tag: "socks-in".to_string(),
             protocol: "socks5".to_string(),
             listen: "127.0.0.1".to_string(),
             port: 1080,
             sniffing: SniffingConfig::default(),
+            settings: InboundSettings::default(),
         }],
         outbounds: vec![OutboundConfig {
             tag: "direct".to_string(),
@@ -260,6 +274,7 @@ fn config_validate_proxy_group_reference_ok() {
         },
         api: None,
         dns: None,
+        subscriptions: vec![],
         proxy_groups: vec![ProxyGroupConfig {
             name: "my-group".to_string(),
             group_type: "selector".to_string(),
@@ -279,12 +294,14 @@ fn config_validate_proxy_group_unknown_proxy_fails() {
 
     let config = Config {
         log: LogConfig::default(),
+        profile: None,
         inbounds: vec![InboundConfig {
             tag: "socks-in".to_string(),
             protocol: "socks5".to_string(),
             listen: "127.0.0.1".to_string(),
             port: 1080,
             sniffing: SniffingConfig::default(),
+            settings: InboundSettings::default(),
         }],
         outbounds: vec![OutboundConfig {
             tag: "direct".to_string(),
@@ -300,6 +317,7 @@ fn config_validate_proxy_group_unknown_proxy_fails() {
         },
         api: None,
         dns: None,
+        subscriptions: vec![],
         proxy_groups: vec![ProxyGroupConfig {
             name: "my-group".to_string(),
             group_type: "selector".to_string(),
@@ -324,12 +342,14 @@ fn config_validate_router_default_can_be_group() {
 
     let config = Config {
         log: LogConfig::default(),
+        profile: None,
         inbounds: vec![InboundConfig {
             tag: "socks-in".to_string(),
             protocol: "socks5".to_string(),
             listen: "127.0.0.1".to_string(),
             port: 1080,
             sniffing: SniffingConfig::default(),
+            settings: InboundSettings::default(),
         }],
         outbounds: vec![OutboundConfig {
             tag: "direct".to_string(),
@@ -345,6 +365,7 @@ fn config_validate_router_default_can_be_group() {
         },
         api: None,
         dns: None,
+        subscriptions: vec![],
         proxy_groups: vec![ProxyGroupConfig {
             name: "my-group".to_string(),
             group_type: "selector".to_string(),
@@ -494,13 +515,14 @@ async fn start_test_api_with_group() -> String {
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &groups).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
 
-    let dispatcher = Arc::new(Dispatcher::new(router, outbound_manager, tracker));
+    let dispatcher = Arc::new(Dispatcher::new(router, outbound_manager, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>));
 
     let state = api::handlers::AppState {
         dispatcher,
         secret: None,
         config_path: None,
         log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
+        start_time: std::time::Instant::now(),
     };
 
     let app = axum::Router::new()

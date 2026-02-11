@@ -9,7 +9,7 @@
 use openworld::app::outbound_manager::OutboundManager;
 use openworld::config::types::{OutboundConfig, OutboundSettings};
 use openworld::proxy::outbound::shadowsocks::crypto::{
-    AeadCipher, CipherKind, derive_subkey, evp_bytes_to_key,
+    derive_subkey, evp_bytes_to_key, AeadCipher, CipherKind,
 };
 use openworld::proxy::outbound::trojan::protocol::password_hash;
 
@@ -59,7 +59,10 @@ fn make_direct_config() -> OutboundConfig {
 /// Verify that protocol "shadowsocks" can be registered via OutboundManager.
 #[test]
 fn outbound_manager_register_shadowsocks() {
-    let configs = vec![make_direct_config(), make_ss_config("ss-out", "shadowsocks")];
+    let configs = vec![
+        make_direct_config(),
+        make_ss_config("ss-out", "shadowsocks"),
+    ];
     let mgr = OutboundManager::new(&configs, &[]).expect("should register shadowsocks");
     assert!(
         mgr.get("ss-out").is_some(),
@@ -213,7 +216,9 @@ fn ss_aead_max_length_frame() {
         let payload: Vec<u8> = (0..max_len).map(|i| (i % 256) as u8).collect();
         assert_eq!(payload.len(), max_len);
 
-        let ct = enc.encrypt(&payload).expect("encrypt max frame should succeed");
+        let ct = enc
+            .encrypt(&payload)
+            .expect("encrypt max frame should succeed");
         assert_eq!(
             ct.len(),
             max_len + kind.tag_len(),
@@ -245,16 +250,26 @@ fn ss_aead_max_length_frame() {
 #[test]
 fn ss_evp_bytes_to_key_empty_password() {
     let key16 = evp_bytes_to_key(b"", 16);
-    assert_eq!(key16.len(), 16, "key length should be 16 even for empty password");
+    assert_eq!(
+        key16.len(),
+        16,
+        "key length should be 16 even for empty password"
+    );
 
     let key32 = evp_bytes_to_key(b"", 32);
-    assert_eq!(key32.len(), 32, "key length should be 32 even for empty password");
+    assert_eq!(
+        key32.len(),
+        32,
+        "key length should be 32 even for empty password"
+    );
 
     // MD5("") = d41d8cd98f00b204e9800998ecf8427e, so the first 16 bytes are known
     assert_eq!(
         key16,
-        [0xd4, 0x1d, 0x8c, 0xd9, 0x8f, 0x00, 0xb2, 0x04,
-         0xe9, 0x80, 0x09, 0x98, 0xec, 0xf8, 0x42, 0x7e],
+        [
+            0xd4, 0x1d, 0x8c, 0xd9, 0x8f, 0x00, 0xb2, 0x04, 0xe9, 0x80, 0x09, 0x98, 0xec, 0xf8,
+            0x42, 0x7e
+        ],
         "EVP_BytesToKey with empty password should produce MD5 of empty string"
     );
 }

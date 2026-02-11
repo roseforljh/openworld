@@ -9,7 +9,9 @@ use tokio::net::TcpListener;
 
 use openworld::common::Address;
 use openworld::config::types::{TlsConfig, TransportConfig};
-use openworld::proxy::transport::{build_transport, h2::H2Transport, grpc::GrpcTransport, StreamTransport};
+use openworld::proxy::transport::{
+    build_transport, grpc::GrpcTransport, h2::H2Transport, StreamTransport,
+};
 
 /// 启动 plaintext H2 echo 服务器
 ///

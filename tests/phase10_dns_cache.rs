@@ -7,8 +7,8 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use openworld::dns::DnsResolver;
 use openworld::dns::cache::CachedResolver;
+use openworld::dns::DnsResolver;
 
 struct MockResolver {
     count: Arc<AtomicUsize>,
@@ -32,6 +32,7 @@ async fn dns_cache_prevents_duplicate_queries() {
             result: vec!["8.8.8.8".parse().unwrap()],
         }),
         300,
+        30,
         1024,
     );
 
@@ -54,6 +55,7 @@ async fn dns_cache_different_domains() {
             result: vec!["1.1.1.1".parse().unwrap()],
         }),
         300,
+        30,
         1024,
     );
 
@@ -79,6 +81,7 @@ async fn dns_cache_eviction_under_pressure() {
             result: vec!["10.0.0.1".parse().unwrap()],
         }),
         300,
+        30,
         3, // 非常小的缓存
     );
 
@@ -108,9 +111,32 @@ async fn dns_cache_resolver_trait_compatibility() {
             result: vec!["127.0.0.1".parse().unwrap()],
         }),
         300,
+        30,
         1024,
     ));
 
     let addrs = resolver.resolve("localhost").await.unwrap();
     assert_eq!(addrs.len(), 1);
+}
+
+#[tokio::test]
+async fn dns_cache_stats_are_recorded() {
+    let count = Arc::new(AtomicUsize::new(0));
+    let resolver = CachedResolver::new(
+        Box::new(MockResolver {
+            count: count.clone(),
+            result: vec!["9.9.9.9".parse().unwrap()],
+        }),
+        300,
+        30,
+        1024,
+    );
+
+    resolver.resolve("stats.example").await.unwrap(); // miss
+    resolver.resolve("stats.example").await.unwrap(); // hit
+
+    let stats = resolver.stats();
+    assert_eq!(stats.cache_miss, 1);
+    assert_eq!(stats.cache_hit, 1);
+    assert_eq!(stats.negative_hit, 0);
 }

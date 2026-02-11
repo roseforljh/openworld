@@ -18,17 +18,13 @@ use openworld::common::{Address, ProxyStream, UdpPacket};
 use openworld::config::types::{OutboundConfig, OutboundSettings};
 use openworld::proxy::outbound::hysteria2::{protocol as hy2_protocol, Hysteria2Outbound};
 use openworld::proxy::outbound::vless::protocol as vless_protocol;
-use openworld::proxy::outbound::vless::reality::{
-    build_reality_config_with_roots, RealityConfig,
-};
+use openworld::proxy::outbound::vless::reality::{build_reality_config_with_roots, RealityConfig};
 use openworld::proxy::outbound::vless::tls::build_tls_config_with_roots;
 use openworld::proxy::outbound::vless::vision::VisionStream;
 use openworld::proxy::outbound::vless::{VlessOutbound, XRV};
 use openworld::proxy::{Network, OutboundHandler, Session};
 use rand::RngCore;
-use rcgen::{
-    BasicConstraints, CertificateParams, IsCa, KeyPair, KeyUsagePurpose, PKCS_ED25519,
-};
+use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair, KeyUsagePurpose, PKCS_ED25519};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName};
 use rustls::ServerConfig;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -135,7 +131,10 @@ fn generate_test_tls_cert(
     let server_cert = server_params.signed_by(&server_key, &ca_cert, &ca_key)?;
 
     let ca_der = CertificateDer::from(ca_cert.der().to_vec());
-    let cert_chain = vec![CertificateDer::from(server_cert.der().to_vec()), ca_der.clone()];
+    let cert_chain = vec![
+        CertificateDer::from(server_cert.der().to_vec()),
+        ca_der.clone(),
+    ];
     let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(server_key.serialize_der()));
 
     Ok((cert_chain, key, ca_der))
@@ -302,9 +301,7 @@ async fn read_hy2_varint(recv: &mut quinn::RecvStream) -> Result<u64> {
 
 async fn handle_hysteria2_auth(conn: &quinn::Connection, password: &str) -> Result<()> {
     let h3_conn = h3_quinn::Connection::new(conn.clone());
-    let mut h3_server = h3::server::builder()
-        .build::<_, H3Bytes>(h3_conn)
-        .await?;
+    let mut h3_server = h3::server::builder().build::<_, H3Bytes>(h3_conn).await?;
 
     let resolver = tokio::time::timeout(Duration::from_secs(10), h3_server.accept())
         .await
@@ -383,9 +380,10 @@ async fn start_mock_hysteria2_server(
         let udp_conn = conn.clone();
 
         let mut tcp_task = tokio::spawn(async move {
-            let (mut send, mut recv) = tokio::time::timeout(Duration::from_secs(10), tcp_conn.accept_bi())
-                .await
-                .context("accept_bi timeout")??;
+            let (mut send, mut recv) =
+                tokio::time::timeout(Duration::from_secs(10), tcp_conn.accept_bi())
+                    .await
+                    .context("accept_bi timeout")??;
 
             let req_id = read_hy2_varint(&mut recv).await?;
             if req_id != 0x401 {
@@ -451,7 +449,10 @@ async fn e2e_vless_tls_tcp_echo() -> Result<()> {
     let (server_addr, server_task) = start_mock_vless_tls_server(cert_chain, key, false).await?;
 
     let outbound = VlessOutbound::new(&build_vless_config(server_addr, None))?;
-    let session = test_session(Address::Domain("example.com".to_string(), 443), Network::Tcp);
+    let session = test_session(
+        Address::Domain("example.com".to_string(), 443),
+        Network::Tcp,
+    );
 
     let mut stream = tokio::time::timeout(Duration::from_secs(10), outbound.connect(&session))
         .await
@@ -484,7 +485,10 @@ async fn e2e_vless_vision_tcp_echo() -> Result<()> {
     let (server_addr, server_task) = start_mock_vless_tls_server(cert_chain, key, true).await?;
 
     let outbound = VlessOutbound::new(&build_vless_config(server_addr, Some(XRV.to_string())))?;
-    let session = test_session(Address::Domain("vision.test".to_string(), 8443), Network::Tcp);
+    let session = test_session(
+        Address::Domain("vision.test".to_string(), 8443),
+        Network::Tcp,
+    );
 
     let mut stream = tokio::time::timeout(Duration::from_secs(10), outbound.connect(&session))
         .await
@@ -580,7 +584,10 @@ async fn e2e_hysteria2_tcp_echo() -> Result<()> {
         start_mock_hysteria2_server(cert_chain, key, password.clone()).await?;
 
     let outbound = Hysteria2Outbound::new(&build_hysteria2_config(server_addr, &password))?;
-    let session = test_session(Address::Domain("hy2-target.test".to_string(), 443), Network::Tcp);
+    let session = test_session(
+        Address::Domain("hy2-target.test".to_string(), 443),
+        Network::Tcp,
+    );
 
     let mut stream = tokio::time::timeout(Duration::from_secs(10), outbound.connect(&session))
         .await

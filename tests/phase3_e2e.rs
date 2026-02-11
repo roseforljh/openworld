@@ -14,14 +14,24 @@ use openworld::app::dispatcher::Dispatcher;
 use openworld::app::outbound_manager::OutboundManager;
 use openworld::app::tracker::ConnectionTracker;
 use openworld::common::{Address, UdpPacket};
-use openworld::config::types::{
-    OutboundConfig, OutboundSettings, RuleConfig, RouterConfig,
-};
+use openworld::config::types::{OutboundConfig, OutboundSettings, RouterConfig, RuleConfig};
+use openworld::dns::DnsResolver;
 use openworld::proxy::inbound::http::HttpInbound;
 use openworld::proxy::inbound::socks5::Socks5Inbound;
 use openworld::proxy::outbound::direct::DirectOutbound;
 use openworld::proxy::{InboundHandler, Network, OutboundHandler, Session};
 use openworld::router::Router;
+
+struct MockResolver;
+
+#[async_trait::async_trait]
+impl DnsResolver for MockResolver {
+    async fn resolve(&self, _host: &str) -> anyhow::Result<Vec<std::net::IpAddr>> {
+        Ok(vec![std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+            127, 0, 0, 1,
+        ))])
+    }
+}
 
 // ============================================================
 // 辅助函数
@@ -81,16 +91,15 @@ fn make_dispatcher_with_rules(rules: Vec<RuleConfig>, default: &str) -> Dispatch
     };
     let router = Arc::new(Router::new(&router_cfg).unwrap());
 
-    let outbounds = vec![
-        OutboundConfig {
-            tag: "direct".to_string(),
-            protocol: "direct".to_string(),
-            settings: OutboundSettings::default(),
-        },
-    ];
+    let outbounds = vec![OutboundConfig {
+        tag: "direct".to_string(),
+        protocol: "direct".to_string(),
+        settings: OutboundSettings::default(),
+    }];
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    Dispatcher::new(router, outbound_manager, tracker)
+    let resolver = Arc::new(MockResolver) as Arc<dyn DnsResolver>;
+    Dispatcher::new(router, outbound_manager, tracker, resolver)
 }
 
 // ============================================================
@@ -257,9 +266,7 @@ async fn e2e_dispatcher_tcp_relay() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let local_addr = listener.local_addr().unwrap();
 
-    let connect_task = tokio::spawn(async move {
-        TcpStream::connect(local_addr).await.unwrap()
-    });
+    let connect_task = tokio::spawn(async move { TcpStream::connect(local_addr).await.unwrap() });
 
     let (server_side, _) = listener.accept().await.unwrap();
     let mut client_side = connect_task.await.unwrap();
@@ -270,9 +277,7 @@ async fn e2e_dispatcher_tcp_relay() {
         udp_transport: None,
     };
 
-    let dispatch_task = tokio::spawn(async move {
-        dispatcher.dispatch(inbound_result).await
-    });
+    let dispatch_task = tokio::spawn(async move { dispatcher.dispatch(inbound_result).await });
 
     // 通过 client_side 发送数据，应该被 relay 到 echo server 并返回
     client_side.write_all(b"dispatcher-tcp-e2e").await.unwrap();
@@ -332,19 +337,28 @@ fn e2e_router_multi_rule_first_match() {
 
     // domain-full 精确匹配
     assert_eq!(
-        router.route(&make_session(Address::Domain("exact.example.com".to_string(), 443))),
+        router.route(&make_session(Address::Domain(
+            "exact.example.com".to_string(),
+            443
+        ))),
         "direct"
     );
 
     // domain-suffix 后缀匹配
     assert_eq!(
-        router.route(&make_session(Address::Domain("sub.example.com".to_string(), 443))),
+        router.route(&make_session(Address::Domain(
+            "sub.example.com".to_string(),
+            443
+        ))),
         "direct"
     );
 
     // domain-keyword 关键字匹配
     assert_eq!(
-        router.route(&make_session(Address::Domain("www.google.com".to_string(), 443))),
+        router.route(&make_session(Address::Domain(
+            "www.google.com".to_string(),
+            443
+        ))),
         "direct"
     );
 
@@ -356,7 +370,10 @@ fn e2e_router_multi_rule_first_match() {
 
     // 不匹配任何规则 -> default
     assert_eq!(
-        router.route(&make_session(Address::Domain("unknown.org".to_string(), 80))),
+        router.route(&make_session(Address::Domain(
+            "unknown.org".to_string(),
+            80
+        ))),
         "direct"
     );
     assert_eq!(
@@ -400,7 +417,10 @@ router:
     let vless = &config.outbounds[0].settings;
     assert_eq!(vless.security.as_deref(), Some("reality"));
     assert_eq!(vless.server_name.as_deref(), Some("www.microsoft.com"));
-    assert_eq!(vless.public_key.as_deref(), Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="));
+    assert_eq!(
+        vless.public_key.as_deref(),
+        Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+    );
     assert_eq!(vless.short_id.as_deref(), Some("aabbccdd"));
 }
 
@@ -443,7 +463,10 @@ router:
 async fn e2e_socks5_udp_associate() {
     let udp_echo_addr = start_udp_echo_server().await;
 
-    let socks5 = Arc::new(Socks5Inbound::new("socks-udp".to_string(), "127.0.0.1".to_string()));
+    let socks5 = Arc::new(Socks5Inbound::new(
+        "socks-udp".to_string(),
+        "127.0.0.1".to_string(),
+    ));
     let socks_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let socks_addr = socks_listener.local_addr().unwrap();
 
@@ -488,7 +511,10 @@ async fn e2e_socks5_udp_associate() {
             let mut port_buf = [0u8; 2];
             client.read_exact(&mut port_buf).await.unwrap();
             let port = u16::from_be_bytes(port_buf);
-            SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(addr[0], addr[1], addr[2], addr[3])), port)
+            SocketAddr::new(
+                std::net::IpAddr::V4(std::net::Ipv4Addr::new(addr[0], addr[1], addr[2], addr[3])),
+                port,
+            )
         }
         0x04 => {
             let mut addr = [0u8; 16];
@@ -636,7 +662,10 @@ async fn e2e_direct_udp_multi_target() {
 async fn e2e_socks5_tcp_connect_domain() {
     let echo_addr = start_echo_server().await;
 
-    let socks5 = Arc::new(Socks5Inbound::new("socks-domain".to_string(), "127.0.0.1".to_string()));
+    let socks5 = Arc::new(Socks5Inbound::new(
+        "socks-domain".to_string(),
+        "127.0.0.1".to_string(),
+    ));
     let socks_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let socks_addr = socks_listener.local_addr().unwrap();
 

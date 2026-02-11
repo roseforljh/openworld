@@ -6,7 +6,19 @@ use openworld::app::dispatcher::Dispatcher;
 use openworld::app::outbound_manager::OutboundManager;
 use openworld::app::tracker::ConnectionTracker;
 use openworld::config::types::{OutboundConfig, OutboundSettings, RouterConfig, RuleConfig};
+use openworld::dns::DnsResolver;
 use openworld::router::Router;
+
+struct MockResolver;
+
+#[async_trait::async_trait]
+impl DnsResolver for MockResolver {
+    async fn resolve(&self, _host: &str) -> anyhow::Result<Vec<std::net::IpAddr>> {
+        Ok(vec![std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+            127, 0, 0, 1,
+        ))])
+    }
+}
 
 /// 测试 Dispatcher 热更新 Router
 #[tokio::test]
@@ -26,10 +38,10 @@ async fn dispatcher_hot_swap_router() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Dispatcher::new(router, om, tracker);
+    let dispatcher = Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>);
 
     // 初始状态无规则
-    assert!(dispatcher.router().rules().is_empty());
+    assert!(dispatcher.router().await.rules().is_empty());
 
     // 创建带规则的新 Router
     let new_cfg = RouterConfig {
@@ -44,10 +56,10 @@ async fn dispatcher_hot_swap_router() {
         rule_providers: Default::default(),
     };
     let new_router = Arc::new(Router::new(&new_cfg).unwrap());
-    dispatcher.update_router(new_router);
+    dispatcher.update_router(new_router).await;
 
     // 验证规则已更新
-    assert_eq!(dispatcher.router().rules().len(), 1);
+    assert_eq!(dispatcher.router().await.rules().len(), 1);
 }
 
 /// 测试 Dispatcher 热更新 OutboundManager
@@ -68,11 +80,15 @@ async fn dispatcher_hot_swap_outbound_manager() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Dispatcher::new(router, om, tracker);
+    let dispatcher = Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>);
 
     // 初始只有 direct
-    assert!(dispatcher.outbound_manager().get("direct").is_some());
-    assert!(dispatcher.outbound_manager().get("direct-2").is_none());
+    assert!(dispatcher.outbound_manager().await.get("direct").is_some());
+    assert!(dispatcher
+        .outbound_manager()
+        .await
+        .get("direct-2")
+        .is_none());
 
     // 新增一个 outbound
     let new_outbounds = vec![
@@ -88,9 +104,13 @@ async fn dispatcher_hot_swap_outbound_manager() {
         },
     ];
     let new_om = Arc::new(OutboundManager::new(&new_outbounds, &[]).unwrap());
-    dispatcher.update_outbound_manager(new_om);
+    dispatcher.update_outbound_manager(new_om).await;
 
-    assert!(dispatcher.outbound_manager().get("direct-2").is_some());
+    assert!(dispatcher
+        .outbound_manager()
+        .await
+        .get("direct-2")
+        .is_some());
 }
 
 /// 测试快照模式：在 dispatch 期间 Router 更新不影响正在进行的连接
@@ -111,10 +131,10 @@ async fn dispatcher_snapshot_isolation() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Arc::new(Dispatcher::new(router, om, tracker));
+    let dispatcher = Arc::new(Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>));
 
     // 获取快照
-    let snapshot_router = dispatcher.router();
+    let snapshot_router = dispatcher.router().await;
     assert!(snapshot_router.rules().is_empty());
 
     // 更新 Dispatcher 中的 Router
@@ -129,12 +149,14 @@ async fn dispatcher_snapshot_isolation() {
         geosite_db: None,
         rule_providers: Default::default(),
     };
-    dispatcher.update_router(Arc::new(Router::new(&new_cfg).unwrap()));
+    dispatcher
+        .update_router(Arc::new(Router::new(&new_cfg).unwrap()))
+        .await;
 
     // 旧快照不受影响
     assert!(snapshot_router.rules().is_empty());
     // 新快照有规则
-    assert_eq!(dispatcher.router().rules().len(), 1);
+    assert_eq!(dispatcher.router().await.rules().len(), 1);
 }
 
 /// 测试 PATCH /configs 端点 - 成功重载
@@ -155,7 +177,7 @@ async fn api_reload_config_success() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Arc::new(Dispatcher::new(router, om, tracker));
+    let dispatcher = Arc::new(Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>));
 
     // 创建临时配置文件
     let tmp = tempfile::NamedTempFile::new().unwrap();
@@ -185,6 +207,7 @@ router:
         secret: None,
         config_path: None,
         log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
+        start_time: std::time::Instant::now(),
     };
 
     let app = axum::Router::new()
@@ -210,7 +233,7 @@ router:
     assert_eq!(resp.status(), 204);
 
     // 验证规则已更新
-    assert_eq!(dispatcher.router().rules().len(), 1);
+    assert_eq!(dispatcher.router().await.rules().len(), 1);
 }
 
 /// 测试 PATCH /configs 端点 - 配置文件不存在
@@ -231,13 +254,14 @@ async fn api_reload_config_file_not_found() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Arc::new(Dispatcher::new(router, om, tracker));
+    let dispatcher = Arc::new(Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>));
 
     let state = openworld::api::handlers::AppState {
         dispatcher,
         secret: None,
         config_path: None,
         log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
+        start_time: std::time::Instant::now(),
     };
 
     let app = axum::Router::new()
@@ -263,7 +287,10 @@ async fn api_reload_config_file_not_found() {
     assert_eq!(resp.status(), 400);
 
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert!(body["message"].as_str().unwrap().contains("failed to load config"));
+    assert!(body["message"]
+        .as_str()
+        .unwrap()
+        .contains("failed to load config"));
 }
 
 /// 测试 PATCH /configs 端点 - 无效配置内容
@@ -284,7 +311,7 @@ async fn api_reload_config_invalid_config() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Arc::new(Dispatcher::new(router, om, tracker));
+    let dispatcher = Arc::new(Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>));
 
     // 创建无效配置
     let tmp = tempfile::NamedTempFile::new().unwrap();
@@ -295,6 +322,7 @@ async fn api_reload_config_invalid_config() {
         secret: None,
         config_path: None,
         log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
+        start_time: std::time::Instant::now(),
     };
 
     let app = axum::Router::new()
@@ -320,7 +348,7 @@ async fn api_reload_config_invalid_config() {
     assert_eq!(resp.status(), 400);
 
     // 验证原始状态未被改变
-    assert!(dispatcher.router().rules().is_empty());
+    assert!(dispatcher.router().await.rules().is_empty());
 }
 
 /// 测试使用 config_path 回退
@@ -341,7 +369,7 @@ async fn api_reload_config_uses_default_path() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Arc::new(Dispatcher::new(router, om, tracker));
+    let dispatcher = Arc::new(Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>));
 
     let tmp = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(
@@ -366,6 +394,7 @@ router:
         secret: None,
         config_path: Some(tmp.path().to_str().unwrap().to_string()),
         log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
+        start_time: std::time::Instant::now(),
     };
 
     let app = axum::Router::new()
@@ -410,7 +439,7 @@ async fn dispatcher_tracker_persists_across_reload() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Dispatcher::new(router, om, tracker);
+    let dispatcher = Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>);
 
     // 获取 tracker 引用
     let tracker_before = Arc::as_ptr(dispatcher.tracker());
@@ -423,8 +452,12 @@ async fn dispatcher_tracker_persists_across_reload() {
         geosite_db: None,
         rule_providers: Default::default(),
     };
-    dispatcher.update_router(Arc::new(Router::new(&new_cfg).unwrap()));
-    dispatcher.update_outbound_manager(Arc::new(OutboundManager::new(&outbounds, &[]).unwrap()));
+    dispatcher
+        .update_router(Arc::new(Router::new(&new_cfg).unwrap()))
+        .await;
+    dispatcher
+        .update_outbound_manager(Arc::new(OutboundManager::new(&outbounds, &[]).unwrap()))
+        .await;
 
     // Tracker 是同一个实例
     let tracker_after = Arc::as_ptr(dispatcher.tracker());

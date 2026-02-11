@@ -31,6 +31,7 @@ fn rule_provider_domain_plain_text() {
             path: file.path().to_str().unwrap().to_string(),
             url: None,
             interval: 86400,
+            lazy: false,
         },
     );
 
@@ -65,9 +66,8 @@ fn rule_provider_domain_plain_text() {
 
 #[test]
 fn rule_provider_domain_clash_yaml() {
-    let file = create_rule_file(
-        "payload:\n  - '+.google.com'\n  - '+.twitter.com'\n  - 'facebook.com'\n",
-    );
+    let file =
+        create_rule_file("payload:\n  - '+.google.com'\n  - '+.twitter.com'\n  - 'facebook.com'\n");
 
     let mut providers = HashMap::new();
     providers.insert(
@@ -78,6 +78,7 @@ fn rule_provider_domain_clash_yaml() {
             path: file.path().to_str().unwrap().to_string(),
             url: None,
             interval: 86400,
+            lazy: false,
         },
     );
 
@@ -123,6 +124,7 @@ fn rule_provider_domain_with_prefix_syntax() {
             path: file.path().to_str().unwrap().to_string(),
             url: None,
             interval: 86400,
+            lazy: false,
         },
     );
 
@@ -171,6 +173,7 @@ fn rule_provider_ipcidr() {
             path: file.path().to_str().unwrap().to_string(),
             url: None,
             interval: 86400,
+            lazy: false,
         },
     );
 
@@ -214,6 +217,7 @@ fn rule_provider_ipcidr_clash_yaml() {
             path: file.path().to_str().unwrap().to_string(),
             url: None,
             interval: 86400,
+            lazy: false,
         },
     );
 
@@ -255,6 +259,7 @@ fn rule_provider_classical() {
             path: file.path().to_str().unwrap().to_string(),
             url: None,
             interval: 86400,
+            lazy: false,
         },
     );
 
@@ -315,6 +320,7 @@ fn rule_provider_multiple_providers() {
             path: domain_file.path().to_str().unwrap().to_string(),
             url: None,
             interval: 86400,
+            lazy: false,
         },
     );
     providers.insert(
@@ -325,6 +331,7 @@ fn rule_provider_multiple_providers() {
             path: cidr_file.path().to_str().unwrap().to_string(),
             url: None,
             interval: 86400,
+            lazy: false,
         },
     );
 
@@ -374,6 +381,7 @@ fn rule_provider_mixed_with_regular_rules() {
             path: file.path().to_str().unwrap().to_string(),
             url: None,
             interval: 86400,
+            lazy: false,
         },
     );
 
@@ -426,6 +434,7 @@ fn rule_provider_missing_file_fails() {
             path: "/nonexistent/path/rules.txt".to_string(),
             url: None,
             interval: 86400,
+            lazy: false,
         },
     );
 
@@ -470,6 +479,7 @@ fn rule_provider_unsupported_behavior_fails() {
             path: file.path().to_str().unwrap().to_string(),
             url: None,
             interval: 86400,
+            lazy: false,
         },
     );
 
@@ -537,7 +547,10 @@ router:
     let my_cidrs = &config.router.rule_providers["my-cidrs"];
     assert_eq!(my_cidrs.provider_type, "http");
     assert_eq!(my_cidrs.behavior, "ipcidr");
-    assert_eq!(my_cidrs.url.as_deref(), Some("https://example.com/cidrs.txt"));
+    assert_eq!(
+        my_cidrs.url.as_deref(),
+        Some("https://example.com/cidrs.txt")
+    );
     assert_eq!(my_cidrs.interval, 3600);
 }
 
@@ -576,6 +589,7 @@ fn router_providers_accessor() {
             path: file.path().to_str().unwrap().to_string(),
             url: None,
             interval: 86400,
+            lazy: false,
         },
     );
 
