@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -7,10 +8,16 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 pub type ProxyStream = Box<dyn AsyncStream>;
 
 /// 异步流 trait，组合 AsyncRead + AsyncWrite
-pub trait AsyncStream: AsyncRead + AsyncWrite + Send + Unpin {}
+pub trait AsyncStream: AsyncRead + AsyncWrite + Send + Unpin {
+    fn as_any(&self) -> &dyn Any;
+}
 
 /// 为所有满足约束的类型自动实现 AsyncStream
-impl<T: AsyncRead + AsyncWrite + Send + Unpin> AsyncStream for T {}
+impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> AsyncStream for T {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
 
 /// 带前缀缓冲的流：先读取预读数据，然后读取底层流
 pub struct PrefixedStream {
@@ -59,10 +66,7 @@ impl AsyncWrite for PrefixedStream {
         Pin::new(&mut self.inner).poll_flush(cx)
     }
 
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<std::io::Result<()>> {
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         Pin::new(&mut self.inner).poll_shutdown(cx)
     }
 }

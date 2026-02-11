@@ -31,23 +31,28 @@ pub fn start(
         secret: config.secret.clone(),
         config_path,
         log_broadcaster,
+        start_time: std::time::Instant::now(),
     };
 
     let mut app = axum::Router::new()
         .route("/version", get(handlers::get_version))
         .route("/proxies", get(handlers::get_proxies))
-        .route("/proxies/{name}", get(handlers::get_proxy).put(handlers::select_proxy))
+        .route(
+            "/proxies/{name}",
+            get(handlers::get_proxy).put(handlers::select_proxy),
+        )
         .route("/proxies/{name}/delay", get(handlers::test_proxy_delay))
         .route(
             "/connections",
             get(handlers::get_connections).delete(handlers::close_all_connections),
         )
-        .route(
-            "/connections/{id}",
-            delete(handlers::close_connection),
-        )
+        .route("/connections/{id}", delete(handlers::close_connection))
         .route("/traffic", get(handlers::traffic_ws))
         .route("/rules", get(handlers::get_rules))
+        .route("/stats", get(handlers::get_stats))
+        .route("/memory", get(handlers::get_memory))
+        .route("/uptime", get(handlers::get_uptime))
+        .route("/providers/rules", get(handlers::get_rule_providers))
         .route("/logs", get(handlers::logs_ws))
         .route("/configs", patch(handlers::reload_config))
         .layer(CorsLayer::permissive());

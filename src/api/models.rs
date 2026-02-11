@@ -50,6 +50,8 @@ pub struct ConnectionItem {
     pub start: String,
     pub chains: Vec<String>,
     pub rule: String,
+    #[serde(rename = "routeTag")]
+    pub route_tag: String,
 }
 
 /// 连接元数据
@@ -75,6 +77,38 @@ pub struct ConnectionMetadata {
 #[derive(Serialize)]
 pub struct RulesResponse {
     pub rules: Vec<RuleItem>,
+}
+
+/// GET /stats 响应
+#[derive(Serialize)]
+pub struct StatsResponse {
+    #[serde(rename = "routeStats")]
+    pub route_stats: HashMap<String, u64>,
+    #[serde(rename = "errorStats")]
+    pub error_stats: HashMap<String, u64>,
+    #[serde(rename = "dnsStats")]
+    pub dns_stats: DnsStats,
+    pub latency: LatencyStats,
+}
+
+#[derive(Serialize)]
+pub struct DnsStats {
+    #[serde(rename = "cacheHit")]
+    pub cache_hit: u64,
+    #[serde(rename = "cacheMiss")]
+    pub cache_miss: u64,
+    #[serde(rename = "negativeHit")]
+    pub negative_hit: u64,
+}
+
+#[derive(Serialize)]
+pub struct LatencyStats {
+    #[serde(rename = "p50")]
+    pub p50_ms: Option<u64>,
+    #[serde(rename = "p95")]
+    pub p95_ms: Option<u64>,
+    #[serde(rename = "p99")]
+    pub p99_ms: Option<u64>,
 }
 
 /// 单个规则
@@ -109,4 +143,40 @@ pub struct ReloadConfigRequest {
 #[derive(Serialize)]
 pub struct DelayResponse {
     pub delay: u64,
+}
+
+/// GET /memory 响应
+#[derive(Serialize)]
+pub struct MemoryResponse {
+    #[serde(rename = "inuse")]
+    pub in_use: u64,
+    #[serde(rename = "oslimit")]
+    pub os_limit: u64,
+}
+
+/// GET /uptime 响应
+#[derive(Serialize)]
+pub struct UptimeResponse {
+    pub uptime_secs: u64,
+    pub version: String,
+    pub active_connections: usize,
+}
+
+/// GET /providers/rules 响应
+#[derive(Serialize)]
+pub struct RuleProvidersResponse {
+    pub providers: HashMap<String, RuleProviderInfo>,
+}
+
+/// Rule provider info
+#[derive(Serialize)]
+pub struct RuleProviderInfo {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub provider_type: String,
+    #[serde(rename = "ruleCount")]
+    pub rule_count: usize,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+    pub behavior: String,
 }

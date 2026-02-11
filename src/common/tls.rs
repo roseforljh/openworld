@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use rustls::crypto::ring as ring_provider;
 use rustls::pki_types::CertificateDer;
 use rustls::ClientConfig;
 
@@ -60,15 +61,20 @@ impl rustls::client::danger::ServerCertVerifier for NoVerifier {
 /// - `allow_insecure`: 跳过证书验证
 /// - `alpn`: 可选的 ALPN 协议列表（如 `["h2", "http/1.1"]`）
 pub fn build_tls_config(allow_insecure: bool, alpn: Option<&[&str]>) -> Result<ClientConfig> {
+    let provider = Arc::new(ring_provider::default_provider());
     let mut config = if allow_insecure {
-        ClientConfig::builder()
+        ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .map_err(|e| anyhow::anyhow!("TLS config error: {}", e))?
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(NoVerifier))
             .with_no_client_auth()
     } else {
         let mut root_store = rustls::RootCertStore::empty();
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        ClientConfig::builder()
+        ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .map_err(|e| anyhow::anyhow!("TLS config error: {}", e))?
             .with_root_certificates(root_store)
             .with_no_client_auth()
     };
@@ -93,7 +99,10 @@ pub fn build_tls_config_with_roots(
             .map_err(|e| anyhow::anyhow!("add custom root cert failed: {}", e))?;
     }
 
-    let mut config = ClientConfig::builder()
+    let provider = Arc::new(ring_provider::default_provider());
+    let mut config = ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|e| anyhow::anyhow!("TLS config error: {}", e))?
         .with_root_certificates(root_store)
         .with_no_client_auth();
 

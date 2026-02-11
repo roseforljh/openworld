@@ -27,6 +27,7 @@ pub struct AppState {
     pub secret: Option<String>,
     pub config_path: Option<String>,
     pub log_broadcaster: crate::api::log_broadcast::LogBroadcaster,
+    pub start_time: std::time::Instant,
 }
 
 /// GET /version
@@ -100,7 +101,7 @@ async fn build_proxy_info(
 
 /// GET /proxies
 pub async fn get_proxies(State(state): State<AppState>) -> Json<ProxiesResponse> {
-    let outbound_manager = state.dispatcher.outbound_manager();
+    let outbound_manager = state.dispatcher.outbound_manager().await;
     let handlers = outbound_manager.list();
     let mut proxies = HashMap::new();
     for (tag, handler) in handlers {
@@ -115,11 +116,10 @@ pub async fn get_proxy(
     State(state): State<AppState>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
-    let outbound_manager = state.dispatcher.outbound_manager();
+    let outbound_manager = state.dispatcher.outbound_manager().await;
     match outbound_manager.get(&name) {
         Some(handler) => {
-            let info =
-                build_proxy_info(&name, handler.as_ref(), &outbound_manager).await;
+            let info = build_proxy_info(&name, handler.as_ref(), &outbound_manager).await;
             match serde_json::to_value(info) {
                 Ok(v) => (StatusCode::OK, Json(v)).into_response(),
                 Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -135,7 +135,7 @@ pub async fn select_proxy(
     Path(group_name): Path<String>,
     Json(body): Json<SelectProxyRequest>,
 ) -> StatusCode {
-    let outbound_manager = state.dispatcher.outbound_manager();
+    let outbound_manager = state.dispatcher.outbound_manager().await;
     let handler = match outbound_manager.get(&group_name) {
         Some(h) => h,
         None => return StatusCode::NOT_FOUND,
@@ -168,10 +168,14 @@ pub async fn test_proxy_delay(
         .and_then(|t| t.parse().ok())
         .unwrap_or(5000);
 
-    match state.dispatcher.outbound_manager().test_delay(&name, &url, timeout).await {
-        Some(delay) => {
-            (StatusCode::OK, Json(serde_json::json!({"delay": delay}))).into_response()
-        }
+    match state
+        .dispatcher
+        .outbound_manager()
+        .await
+        .test_delay(&name, &url, timeout)
+        .await
+    {
+        Some(delay) => (StatusCode::OK, Json(serde_json::json!({"delay": delay}))).into_response(),
         None => (
             StatusCode::REQUEST_TIMEOUT,
             Json(serde_json::json!({"message": "timeout"})),
@@ -208,7 +212,8 @@ pub async fn get_connections(State(state): State<AppState>) -> Json<ConnectionsR
                 download: c.download,
                 start,
                 chains: vec![c.outbound_tag.clone()],
-                rule: String::new(),
+                rule: c.matched_rule.clone(),
+                route_tag: c.route_tag.clone(),
             }
         })
         .collect();
@@ -228,10 +233,7 @@ pub async fn close_all_connections(State(state): State<AppState>) -> StatusCode 
 }
 
 /// DELETE /connections/:id
-pub async fn close_connection(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-) -> StatusCode {
+pub async fn close_connection(State(state): State<AppState>, Path(id): Path<String>) -> StatusCode {
     if let Ok(id) = id.parse::<u64>() {
         if state.dispatcher.tracker().close(id).await {
             return StatusCode::NO_CONTENT;
@@ -285,9 +287,8 @@ async fn handle_traffic_ws(mut socket: WebSocket, state: AppState) {
 
 /// GET /rules
 pub async fn get_rules(State(state): State<AppState>) -> Json<RulesResponse> {
-    let rules: Vec<RuleItem> = state
-        .dispatcher
-        .router()
+    let router = state.dispatcher.router().await;
+    let rules: Vec<RuleItem> = router
         .rules()
         .iter()
         .map(|(rule, outbound)| RuleItem {
@@ -298,6 +299,30 @@ pub async fn get_rules(State(state): State<AppState>) -> Json<RulesResponse> {
         .collect();
 
     Json(RulesResponse { rules })
+}
+
+/// GET /stats
+pub async fn get_stats(State(state): State<AppState>) -> Json<StatsResponse> {
+    let tracker = state.dispatcher.tracker();
+    let (p50, p95, p99) = tracker
+        .latency_percentiles_ms()
+        .map(|(a, b, c)| (Some(a), Some(b), Some(c)))
+        .unwrap_or((None, None, None));
+
+    Json(StatsResponse {
+        route_stats: tracker.route_stats(),
+        error_stats: tracker.error_stats(),
+        dns_stats: DnsStats {
+            cache_hit: 0,
+            cache_miss: 0,
+            negative_hit: 0,
+        },
+        latency: LatencyStats {
+            p50_ms: p50,
+            p95_ms: p95,
+            p99_ms: p99,
+        },
+    })
 }
 
 /// GET /logs (WebSocket) - 实时日志流
@@ -405,8 +430,8 @@ pub async fn reload_config(
         }
     };
 
-    state.dispatcher.update_router(new_router);
-    state.dispatcher.update_outbound_manager(new_om);
+    state.dispatcher.update_router(new_router).await;
+    state.dispatcher.update_outbound_manager(new_om).await;
 
     info!(path = path, "config reloaded via API");
     StatusCode::NO_CONTENT.into_response()
@@ -422,6 +447,17 @@ fn rule_type_name(rule: &crate::router::rules::Rule) -> String {
         Rule::GeoIp(_) => "GeoIP".to_string(),
         Rule::GeoSite(_) => "GeoSite".to_string(),
         Rule::RuleSet { .. } => "RuleSet".to_string(),
+        Rule::DstPort(_) => "DstPort".to_string(),
+        Rule::SrcPort(_) => "SrcPort".to_string(),
+        Rule::Network(_) => "Network".to_string(),
+        Rule::InTag(_) => "InTag".to_string(),
+        Rule::ProcessName(_) => "ProcessName".to_string(),
+        Rule::ProcessPath(_) => "ProcessPath".to_string(),
+        Rule::IpAsn(_) => "IPASN".to_string(),
+        Rule::Uid(_) => "UID".to_string(),
+        Rule::And(_) => "AND".to_string(),
+        Rule::Or(_) => "OR".to_string(),
+        Rule::Not(_) => "NOT".to_string(),
     }
 }
 
@@ -432,4 +468,95 @@ fn chrono_like_start(elapsed: Duration) -> String {
         .unwrap_or_default();
     let start_secs = now.as_secs().saturating_sub(elapsed.as_secs());
     format!("{}s", start_secs)
+}
+
+/// GET /memory
+pub async fn get_memory() -> Json<MemoryResponse> {
+    Json(MemoryResponse {
+        in_use: current_memory_usage(),
+        os_limit: 0,
+    })
+}
+
+fn current_memory_usage() -> u64 {
+    #[cfg(windows)]
+    {
+        use std::mem;
+        #[repr(C)]
+        #[allow(non_snake_case)]
+        struct ProcessMemoryCounters {
+            cb: u32,
+            PageFaultCount: u32,
+            PeakWorkingSetSize: usize,
+            WorkingSetSize: usize,
+            QuotaPeakPagedPoolUsage: usize,
+            QuotaPagedPoolUsage: usize,
+            QuotaPeakNonPagedPoolUsage: usize,
+            QuotaNonPagedPoolUsage: usize,
+            PagefileUsage: usize,
+            PeakPagefileUsage: usize,
+        }
+        extern "system" {
+            fn GetCurrentProcess() -> isize;
+            fn K32GetProcessMemoryInfo(
+                process: isize,
+                ppsmemcounters: *mut ProcessMemoryCounters,
+                cb: u32,
+            ) -> i32;
+        }
+        unsafe {
+            let mut pmc: ProcessMemoryCounters = mem::zeroed();
+            pmc.cb = mem::size_of::<ProcessMemoryCounters>() as u32;
+            if K32GetProcessMemoryInfo(GetCurrentProcess(), &mut pmc, pmc.cb) != 0 {
+                return pmc.WorkingSetSize as u64;
+            }
+        }
+        0
+    }
+    #[cfg(not(windows))]
+    {
+        0
+    }
+}
+
+/// GET /uptime
+pub async fn get_uptime(State(state): State<AppState>) -> Json<UptimeResponse> {
+    let tracker = state.dispatcher.tracker();
+    let snap = tracker.snapshot_async().await;
+
+    Json(UptimeResponse {
+        uptime_secs: state.start_time.elapsed().as_secs(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        active_connections: snap.active_count,
+    })
+}
+
+/// GET /providers/rules
+pub async fn get_rule_providers(State(state): State<AppState>) -> Json<RuleProvidersResponse> {
+    let router = state.dispatcher.router().await;
+    let providers = router.providers();
+    let mut result = HashMap::new();
+
+    for (name, data) in providers {
+        let snapshot = data.snapshot();
+        let rule_count = snapshot.domain_rules.len() + snapshot.ip_cidrs.len();
+        result.insert(
+            name.clone(),
+            RuleProviderInfo {
+                name: name.clone(),
+                provider_type: data.provider_type().to_string(),
+                rule_count,
+                updated_at: String::new(),
+                behavior: if !snapshot.ip_cidrs.is_empty() && snapshot.domain_rules.is_empty() {
+                    "ipcidr".to_string()
+                } else if snapshot.ip_cidrs.is_empty() && !snapshot.domain_rules.is_empty() {
+                    "domain".to_string()
+                } else {
+                    "classical".to_string()
+                },
+            },
+        );
+    }
+
+    Json(RuleProvidersResponse { providers: result })
 }
