@@ -143,15 +143,13 @@ impl InboundHandler for ShadowsocksInbound {
         let _ = decoder.decrypt(&len_frame)?;
         let payload = decoder.decrypt(&payload_frame)?;
 
-        // Server-side handshake reply: one empty encrypted frame.
-        let mut encoder = AeadCipher::new(
-            self.cipher_kind,
-            derive_subkey(&master_key, &salt, self.cipher_kind.key_len())?,
-        );
-        let encrypted_len = encoder.encrypt(&0u16.to_be_bytes())?;
-        let encrypted_payload = encoder.encrypt(&[])?;
-        stream.write_all(&encrypted_len).await?;
-        stream.write_all(&encrypted_payload).await?;
+        // Server → Client: send a fresh server salt, derive encoder from it
+        let mut server_salt = vec![0u8; salt_len];
+        rand::Rng::fill(&mut rand::thread_rng(), &mut server_salt[..]);
+        stream.write_all(&server_salt).await?;
+
+        let encoder_subkey = derive_subkey(&master_key, &server_salt, self.cipher_kind.key_len())?;
+        let encoder = AeadCipher::new(self.cipher_kind, encoder_subkey);
 
         let (target, consumed) = Address::parse_socks5_udp_addr(&payload)?;
         let first_udp_payload = payload[consumed..].to_vec();

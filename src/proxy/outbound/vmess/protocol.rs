@@ -203,7 +203,7 @@ fn encode_address(buf: &mut BytesMut, addr: &crate::common::Address) -> Result<(
     Ok(())
 }
 
-fn fnv1a_hash(data: &[u8]) -> u32 {
+pub fn fnv1a_hash(data: &[u8]) -> u32 {
     let mut hash: u32 = 0x811c9dc5;
     for &byte in data {
         hash ^= byte as u32;

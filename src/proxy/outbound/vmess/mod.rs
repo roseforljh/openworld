@@ -158,7 +158,7 @@ enum VmessWriteState {
     Writing { data: Vec<u8>, written: usize, original_len: usize },
 }
 
-struct VmessAeadStream {
+pub struct VmessAeadStream {
     inner: ProxyStream,
     encoder: VmessChunkCipher,
     decoder: VmessChunkCipher,
@@ -171,7 +171,7 @@ struct VmessAeadStream {
 }
 
 impl VmessAeadStream {
-    fn new(
+    pub fn new(
         inner: ProxyStream,
         encoder: VmessChunkCipher,
         decoder: VmessChunkCipher,

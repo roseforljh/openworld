@@ -67,30 +67,109 @@ impl InboundHandler for VmessInbound {
     }
 
     async fn handle(&self, mut stream: ProxyStream, source: SocketAddr) -> Result<InboundResult> {
-        // VMess AEAD 请求头格式 (简化版):
-        // auth_id(16) + encrypted_header_length(2+16) + encrypted_header(N+16)
-        //
-        // 简化实现：读取 auth_id 识别用户，然后解析加密头部。
-        // 完整实现需要 KDF + AEAD 解密请求头。
-        //
-        // 这里我们实现一个简化的握手流程：
-        // 1. 读取 16 字节 auth_id
-        // 2. 查找匹配的用户
-        // 3. 读取 38 字节请求头 (version + iv(16) + key(16) + resp_auth(1) + option(1) + security(1) + reserved(1) + cmd(1) + port(2) + addr_type(1) + addr)
-        // 4. 解析目标地址
+        use aes_gcm::{Aes128Gcm, KeyInit, Nonce, aead::Aead};
+        use crate::proxy::outbound::vmess::protocol::{
+            kdf, create_auth_id, fnv1a_hash, VmessChunkCipher,
+        };
+        use crate::proxy::outbound::vmess::VmessAeadStream;
 
+        // ── Step 1: Read auth_id (16 bytes) ──
         let mut auth_id = [0u8; 16];
         stream.read_exact(&mut auth_id).await?;
 
-        // 在简化模式下，auth_id 前 16 字节与某个用户的 cmd_key 进行匹配
-        // 完整的 VMess AEAD 使用时间戳 + KDF，这里简化为直接比对
-        let _matched_cmd_key = self.valid_users.values().next()
-            .ok_or_else(|| anyhow::anyhow!("no valid users configured"))?;
+        // Match auth_id against valid users using a ±120s timestamp window
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
-        // 读取请求头（简化: 读取固定长度的未加密部分作为演示）
-        // 实际 VMess AEAD 头部是加密的
-        let mut header = [0u8; 38];
-        stream.read_exact(&mut header).await?;
+        let mut matched_cmd_key: Option<[u8; 16]> = None;
+        'outer: for cmd_key in self.valid_users.values() {
+            for delta in -120i64..=120 {
+                let ts = (now as i64 + delta) as u64;
+                let expected = create_auth_id(cmd_key, ts);
+                if expected == auth_id {
+                    matched_cmd_key = Some(*cmd_key);
+                    break 'outer;
+                }
+            }
+        }
+
+        let cmd_key = matched_cmd_key
+            .ok_or_else(|| anyhow::anyhow!("vmess inbound: no matching user for auth_id"))?;
+
+        // ── Step 2: Read encrypted_length (18 bytes) + nonce (8 bytes) ──
+        let mut encrypted_length = [0u8; 18]; // 2 + 16 tag
+        stream.read_exact(&mut encrypted_length).await?;
+
+        let mut conn_nonce = [0u8; 8];
+        stream.read_exact(&mut conn_nonce).await?;
+
+        // Decrypt header length
+        let length_key_material = kdf(
+            &cmd_key,
+            &[b"VMess Header AEAD Key Length", &auth_id[..], &conn_nonce[..]],
+        );
+        let length_key: [u8; 16] = length_key_material[..16].try_into().unwrap();
+        let length_nonce_material = kdf(
+            &cmd_key,
+            &[b"VMess Header AEAD Nonce Length", &auth_id[..], &conn_nonce[..]],
+        );
+        let length_nonce: [u8; 12] = length_nonce_material[..12].try_into().unwrap();
+
+        let length_cipher = Aes128Gcm::new_from_slice(&length_key)
+            .map_err(|e| anyhow::anyhow!("length key init: {}", e))?;
+        let decrypted_length = length_cipher
+            .decrypt(Nonce::from_slice(&length_nonce), encrypted_length.as_ref())
+            .map_err(|e| anyhow::anyhow!("length decrypt: {}", e))?;
+
+        let header_len = u16::from_be_bytes([decrypted_length[0], decrypted_length[1]]) as usize;
+
+        // ── Step 3: Read encrypted header ──
+        let mut encrypted_header = vec![0u8; header_len];
+        stream.read_exact(&mut encrypted_header).await?;
+
+        // Decrypt header
+        let header_key_material = kdf(
+            &cmd_key,
+            &[b"VMess Header AEAD Key", &auth_id[..], &conn_nonce[..]],
+        );
+        let header_key: [u8; 16] = header_key_material[..16].try_into().unwrap();
+        let header_nonce_material = kdf(
+            &cmd_key,
+            &[b"VMess Header AEAD Nonce", &auth_id[..], &conn_nonce[..]],
+        );
+        let header_nonce: [u8; 12] = header_nonce_material[..12].try_into().unwrap();
+
+        let header_cipher = Aes128Gcm::new_from_slice(&header_key)
+            .map_err(|e| anyhow::anyhow!("header key init: {}", e))?;
+        let header = header_cipher
+            .decrypt(Nonce::from_slice(&header_nonce), encrypted_header.as_ref())
+            .map_err(|e| anyhow::anyhow!("header decrypt: {}", e))?;
+
+        // ── Step 4: Parse header ──
+        // header: version(1) + body_iv(16) + body_key(16) + resp_auth(1) + option(1) +
+        //         P_sec(1) + reserved(1) + cmd(1) + port(2) + addr_type(1) + addr... + FNV1a(4)
+        if header.len() < 42 {
+            anyhow::bail!("vmess inbound: header too short: {} bytes", header.len());
+        }
+
+        // Verify FNV1a checksum (last 4 bytes)
+        let checksum_offset = header.len() - 4;
+        let expected_checksum = u32::from_be_bytes([
+            header[checksum_offset],
+            header[checksum_offset + 1],
+            header[checksum_offset + 2],
+            header[checksum_offset + 3],
+        ]);
+        let actual_checksum = fnv1a_hash(&header[..checksum_offset]);
+        if expected_checksum != actual_checksum {
+            anyhow::bail!(
+                "vmess inbound: FNV1a checksum mismatch: expected 0x{:08x}, got 0x{:08x}",
+                expected_checksum,
+                actual_checksum
+            );
+        }
 
         let _version = header[0];
         let req_body_iv: [u8; 16] = header[1..17].try_into().unwrap();
@@ -107,35 +186,26 @@ impl InboundHandler for VmessInbound {
             _ => SecurityType::Aes128Gcm,
         };
 
-        // 读取目标地址
-        let mut port_buf = [0u8; 2];
-        stream.read_exact(&mut port_buf).await?;
-        let port = u16::from_be_bytes(port_buf);
+        // Parse target address from header[38..checksum_offset]
+        let addr_data = &header[38..checksum_offset];
+        let port = u16::from_be_bytes([addr_data[0], addr_data[1]]);
+        let addr_type = addr_data[2];
 
-        let mut addr_type = [0u8; 1];
-        stream.read_exact(&mut addr_type).await?;
-
-        let target = match addr_type[0] {
+        let target = match addr_type {
             0x01 => {
                 // IPv4
-                let mut addr = [0u8; 4];
-                stream.read_exact(&mut addr).await?;
+                let addr: [u8; 4] = addr_data[3..7].try_into().unwrap();
                 Address::Ip(SocketAddr::from((addr, port)))
             }
             0x02 => {
                 // Domain
-                let mut len_buf = [0u8; 1];
-                stream.read_exact(&mut len_buf).await?;
-                let domain_len = len_buf[0] as usize;
-                let mut domain_buf = vec![0u8; domain_len];
-                stream.read_exact(&mut domain_buf).await?;
-                let domain = String::from_utf8_lossy(&domain_buf).to_string();
+                let domain_len = addr_data[3] as usize;
+                let domain = String::from_utf8_lossy(&addr_data[4..4 + domain_len]).to_string();
                 Address::Domain(domain, port)
             }
             0x03 => {
                 // IPv6
-                let mut addr = [0u8; 16];
-                stream.read_exact(&mut addr).await?;
+                let addr: [u8; 16] = addr_data[3..19].try_into().unwrap();
                 Address::Ip(SocketAddr::from((addr, port)))
             }
             other => {
@@ -157,13 +227,30 @@ impl InboundHandler for VmessInbound {
             "VMess inbound connection"
         );
 
-        // 发送响应头
-        let (_resp_key, _resp_iv) = derive_response_key_iv(&req_body_key, &req_body_iv);
+        // ── Step 5: Send AEAD encrypted response header ──
+        let (resp_key, resp_iv) = derive_response_key_iv(&req_body_key, &req_body_iv);
 
-        // 简化响应: resp_auth + 0x00 + cmd + length(0)
-        let resp_header = [resp_auth, 0x00, 0x00, 0x00];
-        stream.write_all(&resp_header).await?;
+        let resp_header_key = kdf(&resp_key, &[b"AEAD Resp Header Key"]);
+        let resp_header_nonce = kdf(&resp_iv, &[b"AEAD Resp Header IV"]);
+        let rk: [u8; 16] = resp_header_key[..16].try_into().unwrap();
+        let rn: [u8; 12] = resp_header_nonce[..12].try_into().unwrap();
+
+        let resp_cipher = Aes128Gcm::new_from_slice(&rk)
+            .map_err(|e| anyhow::anyhow!("resp header key init: {}", e))?;
+        let resp_plaintext = [resp_auth, 0x00, 0x00, 0x00];
+        let resp_encrypted = resp_cipher
+            .encrypt(Nonce::from_slice(&rn), resp_plaintext.as_ref())
+            .map_err(|e| anyhow::anyhow!("resp header encrypt: {}", e))?;
+        stream.write_all(&resp_encrypted).await?;
         stream.flush().await?;
+
+        // ── Step 6: Wrap stream with VmessAeadStream ──
+        // Server encoder: encrypts data to client using resp_key/resp_iv
+        let encoder = VmessChunkCipher::new(security, &resp_key, &resp_iv);
+        // Server decoder: decrypts data from client using req_body_key/req_body_iv
+        let decoder = VmessChunkCipher::new(security, &req_body_key, &req_body_iv);
+
+        let vmess_stream: ProxyStream = Box::new(VmessAeadStream::new(stream, encoder, decoder, security));
 
         let session = Session {
             target,
@@ -176,7 +263,7 @@ impl InboundHandler for VmessInbound {
 
         Ok(InboundResult {
             session,
-            stream,
+            stream: vmess_stream,
             udp_transport: None,
         })
     }

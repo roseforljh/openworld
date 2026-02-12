@@ -138,6 +138,8 @@ outbounds:
         r#"
 log:
   level: warn
+router:
+  default: vless-out
 inbounds:
   - tag: socks-in
     protocol: mixed
@@ -216,6 +218,8 @@ outbounds:
         r#"
 log:
   level: warn
+router:
+  default: trojan-out
 inbounds:
   - tag: socks-in
     protocol: mixed
@@ -228,6 +232,7 @@ outbounds:
       address: "127.0.0.1"
       port: {server_port}
       password: "{test_password}"
+      security: "none"
 "#
     );
 
@@ -294,6 +299,8 @@ outbounds:
         r#"
 log:
   level: warn
+router:
+  default: ss-out
 inbounds:
   - tag: socks-in
     protocol: mixed
@@ -371,6 +378,8 @@ outbounds:
         r#"
 log:
   level: warn
+router:
+  default: vmess-out
 inbounds:
   - tag: socks-in
     protocol: mixed
@@ -384,7 +393,6 @@ outbounds:
       port: {server_port}
       uuid: "{test_uuid}"
       alter_id: 0
-      security: "auto"
 "#
     );
 
@@ -447,6 +455,8 @@ outbounds:
         r#"
 log:
   level: warn
+router:
+  default: vless-out
 inbounds:
   - tag: socks-in
     protocol: mixed
