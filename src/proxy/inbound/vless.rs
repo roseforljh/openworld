@@ -135,6 +135,7 @@ impl InboundHandler for VlessInbound {
             inbound_tag: self.tag.clone(),
             network,
             sniff: false,
+            detected_protocol: None,
         };
 
         Ok(InboundResult {
@@ -161,6 +162,7 @@ mod tests {
                 uuid: Some(uuid.to_string()),
                 ..Default::default()
             },
+            max_connections: None,
         }
     }
 
@@ -187,6 +189,7 @@ mod tests {
             port: 443,
             sniffing: SniffingConfig::default(),
             settings: InboundSettings::default(),
+            max_connections: None,
         };
         assert!(VlessInbound::new(&cfg).is_err());
     }
@@ -212,6 +215,7 @@ mod tests {
                 ]),
                 ..Default::default()
             },
+            max_connections: None,
         };
         let inbound = VlessInbound::new(&cfg).unwrap();
         assert_eq!(inbound.clients.len(), 2);

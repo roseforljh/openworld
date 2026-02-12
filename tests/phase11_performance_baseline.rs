@@ -1,4 +1,4 @@
-use std::time::Instant;
+﻿use std::time::Instant;
 
 use openworld::app::tracker::ConnectionTracker;
 use openworld::config::types::{RuleConfig, RouterConfig};
@@ -27,9 +27,7 @@ fn baseline_router_match_three_scenarios() {
             },
         ],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
-        rule_providers: Default::default(),
+        ..Default::default()
     };
 
     let router = Router::new(&router_cfg).unwrap();
@@ -40,6 +38,7 @@ fn baseline_router_match_three_scenarios() {
         inbound_tag: "bench".to_string(),
         network: Network::Tcp,
         sniff: false,
+        detected_protocol: None,
     };
     let scenario2 = Session {
         target: openworld::common::Address::Domain("www.google.com".to_string(), 443),
@@ -47,6 +46,7 @@ fn baseline_router_match_three_scenarios() {
         inbound_tag: "bench".to_string(),
         network: Network::Tcp,
         sniff: false,
+        detected_protocol: None,
     };
     let scenario3 = Session {
         target: openworld::common::Address::Ip("10.1.2.3:443".parse().unwrap()),
@@ -54,6 +54,7 @@ fn baseline_router_match_three_scenarios() {
         inbound_tag: "bench".to_string(),
         network: Network::Tcp,
         sniff: false,
+        detected_protocol: None,
     };
 
     let loops = 100_000;

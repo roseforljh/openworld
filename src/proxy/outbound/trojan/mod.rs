@@ -52,11 +52,12 @@ impl TrojanOutbound {
         }
 
         let transport_config = settings.effective_transport();
-        let transport: Arc<dyn StreamTransport> = crate::proxy::transport::build_transport(
+        let transport: Arc<dyn StreamTransport> = crate::proxy::transport::build_transport_with_dialer(
             address,
             port,
             &transport_config,
             &tls_config,
+            settings.dialer.clone(),
         )?
         .into();
 

@@ -24,6 +24,8 @@ pub struct ClashConfig {
     pub external_controller: Option<String>,
     #[serde(default)]
     pub secret: Option<String>,
+    #[serde(rename = "external-ui", default)]
+    pub external_ui: Option<String>,
     #[serde(default)]
     pub proxies: Vec<serde_json::Value>,
     #[serde(rename = "proxy-groups", default)]
@@ -77,6 +79,7 @@ pub fn parse_clash_config(content: &str) -> Result<CompatResult> {
             port,
             sniffing: SniffingConfig::default(),
             settings: InboundSettings::default(),
+            max_connections: None,
         });
     }
     if let Some(port) = clash.socks_port {
@@ -87,6 +90,7 @@ pub fn parse_clash_config(content: &str) -> Result<CompatResult> {
             port,
             sniffing: SniffingConfig::default(),
             settings: InboundSettings::default(),
+            max_connections: None,
         });
     }
     if let Some(port) = clash.port {
@@ -97,6 +101,7 @@ pub fn parse_clash_config(content: &str) -> Result<CompatResult> {
             port,
             sniffing: SniffingConfig::default(),
             settings: InboundSettings::default(),
+            max_connections: None,
         });
     }
 
@@ -108,6 +113,7 @@ pub fn parse_clash_config(content: &str) -> Result<CompatResult> {
             port: 7890,
             sniffing: SniffingConfig::default(),
             settings: InboundSettings::default(),
+            max_connections: None,
         });
         warnings.push("no port configured, defaulting to mixed-port 7890".to_string());
     }
@@ -153,6 +159,7 @@ pub fn parse_clash_config(content: &str) -> Result<CompatResult> {
             listen,
             port,
             secret: clash.secret.clone(),
+            external_ui: clash.external_ui.clone(),
         }
     });
 
@@ -170,10 +177,15 @@ pub fn parse_clash_config(content: &str) -> Result<CompatResult> {
             geoip_db: None,
             geosite_db: None,
             rule_providers: HashMap::new(),
+            geoip_url: None,
+            geosite_url: None,
+            geo_update_interval: 7 * 24 * 3600,
+            geo_auto_update: false,
         },
         api,
         dns: None,
         subscriptions: vec![],
+        max_connections: 10000,
     };
 
     let level = if degraded.is_empty() {
@@ -390,6 +402,7 @@ fn convert_clash_proxy_group(value: &serde_json::Value) -> Result<ProxyGroupConf
         url,
         interval,
         tolerance,
+        strategy: None,
     })
 }
 

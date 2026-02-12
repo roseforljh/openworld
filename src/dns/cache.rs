@@ -5,6 +5,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const INFLIGHT_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Prefetch threshold: refresh when TTL remaining < 30% of original TTL
+const PREFETCH_THRESHOLD_RATIO: f64 = 0.3;
+/// Minimum TTL before prefetch (seconds)
+const MIN_PREFETCH_TTL_SECS: u64 = 30;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -28,6 +32,10 @@ enum CacheValue {
 struct CacheEntry {
     value: CacheValue,
     expires_at: Instant,
+    /// Original TTL for prefetch calculation
+    original_ttl: Duration,
+    /// Access count for popularity tracking
+    access_count: AtomicU64,
 }
 
 /// 带缓存的 DNS 解析器包装器（正/负缓存 + 过期策略 + 并发去重）
@@ -105,6 +113,9 @@ impl CachedResolver {
             return None;
         }
 
+        // Track access count for prefetch priority
+        entry.access_count.fetch_add(1, Ordering::Relaxed);
+
         let result = match &entry.value {
             CacheValue::Positive(addrs) => {
                 self.cache_hit.fetch_add(1, Ordering::Relaxed);
@@ -127,12 +138,76 @@ impl CachedResolver {
         Some(result)
     }
 
+    /// Check if an entry should be prefetched (TTL approaching expiry and frequently accessed)
+    pub async fn should_prefetch(&self, host: &str) -> bool {
+        let cache = self.cache.read().await;
+        if let Some(entry) = cache.get(host) {
+            let now = Instant::now();
+            let remaining = entry.expires_at.saturating_duration_since(now);
+            let threshold = Duration::from_secs(
+                (entry.original_ttl.as_secs() as f64 * PREFETCH_THRESHOLD_RATIO) as u64
+            );
+            
+            // Prefetch if:
+            // 1. TTL remaining < 30% of original TTL
+            // 2. TTL remaining > minimum (don't prefetch if already very close to expiry)
+            // 3. Entry has been accessed at least 2 times (popular)
+            let access_count = entry.access_count.load(Ordering::Relaxed);
+            let should = remaining < threshold 
+                && remaining.as_secs() >= MIN_PREFETCH_TTL_SECS
+                && access_count >= 2;
+            
+            if should {
+                debug!(
+                    host = host,
+                    remaining_secs = remaining.as_secs(),
+                    original_ttl_secs = entry.original_ttl.as_secs(),
+                    access_count = access_count,
+                    "DNS prefetch candidate"
+                );
+            }
+            return should;
+        }
+        false
+    }
+
+    /// Get list of hosts that need prefetching
+    pub async fn get_prefetch_candidates(&self) -> Vec<String> {
+        let cache = self.cache.read().await;
+        let now = Instant::now();
+        let mut candidates = Vec::new();
+
+        for (host, entry) in cache.iter() {
+            if matches!(entry.value, CacheValue::Positive(_)) {
+                let remaining = entry.expires_at.saturating_duration_since(now);
+                let threshold = Duration::from_secs(
+                    (entry.original_ttl.as_secs() as f64 * PREFETCH_THRESHOLD_RATIO) as u64
+                );
+                let access_count = entry.access_count.load(Ordering::Relaxed);
+                
+                if remaining < threshold 
+                    && remaining.as_secs() >= MIN_PREFETCH_TTL_SECS
+                    && access_count >= 2
+                {
+                    candidates.push(host.clone());
+                }
+            }
+        }
+        candidates
+    }
+
     pub fn stats(&self) -> DnsCacheStats {
         DnsCacheStats {
             cache_hit: self.cache_hit.load(Ordering::Relaxed),
             cache_miss: self.cache_miss.load(Ordering::Relaxed),
             negative_hit: self.negative_hit.load(Ordering::Relaxed),
         }
+    }
+
+    pub async fn clear(&self) {
+        self.cache.write().await.clear();
+        self.order.lock().await.clear();
+        self.inflight.lock().await.clear();
     }
 }
 
@@ -192,6 +267,8 @@ impl DnsResolver for CachedResolver {
                         CacheEntry {
                             value: CacheValue::Positive(addrs.clone()),
                             expires_at: Instant::now() + self.ttl,
+                            original_ttl: self.ttl,
+                            access_count: AtomicU64::new(1),
                         },
                     );
                 }
@@ -201,6 +278,8 @@ impl DnsResolver for CachedResolver {
                         CacheEntry {
                             value: CacheValue::Negative(err.to_string()),
                             expires_at: Instant::now() + self.negative_ttl,
+                            original_ttl: self.negative_ttl,
+                            access_count: AtomicU64::new(1),
                         },
                     );
                 }
@@ -218,6 +297,14 @@ impl DnsResolver for CachedResolver {
         notify.notify_waiters();
 
         result
+    }
+
+    async fn flush_cache(&self) {
+        self.clear().await;
+    }
+    
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

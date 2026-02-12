@@ -64,7 +64,7 @@ impl RateLimiter {
 pub struct ConnectionLimiter {
     semaphore: Arc<Semaphore>,
     max_connections: u32,
-    active: AtomicU64,
+    active: Arc<AtomicU64>,
 }
 
 impl ConnectionLimiter {
@@ -72,17 +72,17 @@ impl ConnectionLimiter {
         Self {
             semaphore: Arc::new(Semaphore::new(max_connections as usize)),
             max_connections,
-            active: AtomicU64::new(0),
+            active: Arc::new(AtomicU64::new(0)),
         }
     }
 
     /// Try to acquire a connection slot. Returns a guard that releases on drop.
-    pub fn try_acquire(&self) -> Option<ConnectionGuard<'_>> {
+    pub fn try_acquire(&self) -> Option<ConnectionGuard> {
         let permit = self.semaphore.clone().try_acquire_owned().ok()?;
         self.active.fetch_add(1, Ordering::Relaxed);
         Some(ConnectionGuard {
             _permit: permit,
-            active: &self.active,
+            active: self.active.clone(),
         })
     }
 
@@ -99,12 +99,12 @@ impl ConnectionLimiter {
     }
 }
 
-pub struct ConnectionGuard<'a> {
+pub struct ConnectionGuard {
     _permit: tokio::sync::OwnedSemaphorePermit,
-    active: &'a AtomicU64,
+    active: Arc<AtomicU64>,
 }
 
-impl<'a> Drop for ConnectionGuard<'a> {
+impl Drop for ConnectionGuard {
     fn drop(&mut self) {
         self.active.fetch_sub(1, Ordering::Relaxed);
     }

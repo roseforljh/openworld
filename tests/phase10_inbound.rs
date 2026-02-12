@@ -1,10 +1,11 @@
-//! Phase 5: Mixed 入站集成测试
+﻿//! Phase 5: Mixed 鍏ョ珯闆嗘垚娴嬭瘯
 
 use openworld::proxy::inbound::mixed::MixedInbound;
 use openworld::proxy::inbound::shadowsocks::ShadowsocksInbound;
 use openworld::proxy::inbound::tun::TunInbound;
 use openworld::dns::DnsResolver;
 use openworld::proxy::InboundHandler;
+use tokio_util::sync::CancellationToken;
 
 struct MockResolver;
 
@@ -49,14 +50,13 @@ fn inbound_manager_registers_mixed() {
         port: 0,
         sniffing: SniffingConfig::default(),
         settings: InboundSettings::default(),
+        max_connections: None,
     }];
 
     let router_cfg = RouterConfig {
         rules: vec![],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
-        rule_providers: Default::default(),
+        ..Default::default()
     };
     let router = Arc::new(Router::new(&router_cfg).unwrap());
     let outbounds = vec![OutboundConfig {
@@ -67,11 +67,11 @@ fn inbound_manager_registers_mixed() {
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
     let resolver = Arc::new(MockResolver) as Arc<dyn DnsResolver>;
-    let _dispatcher = Arc::new(Dispatcher::new(router, om, tracker, resolver));
+    let _dispatcher = Arc::new(Dispatcher::new(router, om, tracker, resolver, None, CancellationToken::new()));
 
     // InboundManager 能够注册 mixed 协议
-    // 由于 InboundManager::new 需要 CancellationToken 和 bind，我们直接验证 MixedInbound 可创建
-    // 实际协议检测需要网络连接，这里只验证注册路径
+    // 由于 InboundManager::new 需要 CancellationToken 和 bind，这里直接验证 MixedInbound 可创建。
+    // 实际协议检测依赖网络连接，这里只验证注册路径。
     let mixed = MixedInbound::new("mixed-in".to_string(), "127.0.0.1".to_string());
     assert_eq!(mixed.tag(), "mixed-in");
 }
@@ -90,6 +90,7 @@ fn ss_inbound_creation() {
             users: None,
             ..Default::default()
         },
+        max_connections: None,
     };
     let ss = ShadowsocksInbound::new(&cfg).unwrap();
     assert_eq!(ss.tag(), "ss-in");

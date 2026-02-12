@@ -138,6 +138,7 @@ impl WireGuardOutbound {
     }
 
     /// 根据目标地址选择匹配的 Peer（按 allowed_ips 最长前缀匹配）
+    #[allow(dead_code)]
     fn select_peer(&self, target: &std::net::IpAddr) -> Option<&WireGuardPeer> {
         let mut best: Option<(&WireGuardPeer, u8)> = None;
         for peer in &self.peers {

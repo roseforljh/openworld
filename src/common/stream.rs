@@ -10,11 +10,16 @@ pub type ProxyStream = Box<dyn AsyncStream>;
 /// 异步流 trait，组合 AsyncRead + AsyncWrite
 pub trait AsyncStream: AsyncRead + AsyncWrite + Send + Unpin {
     fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 /// 为所有满足约束的类型自动实现 AsyncStream
 impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> AsyncStream for T {
     fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }

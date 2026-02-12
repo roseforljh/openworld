@@ -223,7 +223,7 @@ impl DnsResolver for FakeIpResolver {
 }
 
 /// 根据配置构建 DNS 解析器
-pub fn build_resolver(config: &DnsConfig) -> Result<Box<dyn DnsResolver>> {
+pub fn build_resolver(config: &DnsConfig) -> Result<(Box<dyn DnsResolver>, Option<Arc<FakeIpPool>>)> {
     let inner: Box<dyn DnsResolver> = match config.mode.as_str() {
         "race" => {
             // 竞速模式：所有 servers 并发查询，取最快结果
@@ -287,25 +287,43 @@ pub fn build_resolver(config: &DnsConfig) -> Result<Box<dyn DnsResolver>> {
     };
 
     // 可选包装 FakeIP 层
-    let with_fake_ip: Box<dyn DnsResolver> = if let Some(fake_cfg) = &config.fake_ip {
-        let pool = Arc::new(FakeIpPool::new(
-            &fake_cfg.ipv4_range,
-            fake_cfg.ipv6_range.as_deref(),
-            fake_cfg.exclude.clone(),
-        ));
-        info!(range = fake_cfg.ipv4_range, "DNS FakeIP enabled");
-        Box::new(FakeIpResolver::new(with_hosts, pool))
-    } else {
-        with_hosts
+    let (with_fake_ip, fakeip_pool): (Box<dyn DnsResolver>, Option<Arc<FakeIpPool>>) =
+        if let Some(fake_cfg) = &config.fake_ip {
+            let pool = Arc::new(FakeIpPool::new(
+                &fake_cfg.ipv4_range,
+                fake_cfg.ipv6_range.as_deref(),
+                fake_cfg.exclude.clone(),
+            ));
+            info!(range = fake_cfg.ipv4_range, "DNS FakeIP enabled");
+            let resolver = Box::new(FakeIpResolver::new(with_hosts, pool.clone()));
+            (resolver, Some(pool))
+        } else {
+            (with_hosts, None)
+        };
+
+    // 可选包装 IP 偏好层
+    let with_prefer_ip: Box<dyn DnsResolver> = match config.prefer_ip.as_deref() {
+        Some("ipv4") | Some("v4") => {
+            info!("DNS prefer-ipv4 enabled");
+            Box::new(super::hosts::PreferIpv4Resolver::new(with_fake_ip))
+        }
+        Some("ipv6") | Some("v6") => {
+            info!("DNS prefer-ipv6 enabled");
+            Box::new(super::hosts::PreferIpv6Resolver::new(with_fake_ip))
+        }
+        _ => with_fake_ip,
     };
 
     // 包装缓存层
-    Ok(Box::new(super::cache::CachedResolver::new(
-        with_fake_ip,
-        config.cache_ttl,
-        config.negative_cache_ttl,
-        config.cache_size,
-    )))
+    Ok((
+        Box::new(super::cache::CachedResolver::new(
+            with_prefer_ip,
+            config.cache_ttl,
+            config.negative_cache_ttl,
+            config.cache_size,
+        )),
+        fakeip_pool,
+    ))
 }
 
 /// 从服务器列表构建解析器（split 模式或单服务器）
@@ -622,6 +640,7 @@ mod tests {
             fallback: vec![],
             fallback_filter: None,
             edns_client_subnet: None,
+            prefer_ip: None,
         };
         assert!(build_resolver(&config).is_ok());
     }

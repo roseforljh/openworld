@@ -50,6 +50,7 @@ fn tracker_route_stats_from_track() {
             inbound_tag: "test-in".to_string(),
             network: openworld::proxy::Network::Tcp,
             sniff: false,
+            detected_protocol: None,
         };
 
         let _guard = tracker

@@ -1,3 +1,4 @@
+pub mod dns_hijack;
 pub mod http;
 pub mod hysteria2;
 pub mod mixed;
@@ -7,5 +8,6 @@ pub mod transparent;
 pub mod trojan;
 pub mod tun;
 pub mod tun_device;
+pub mod tun_stack;
 pub mod vless;
 pub mod vmess;

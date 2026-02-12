@@ -24,6 +24,12 @@ impl MixedInbound {
             http: HttpInbound::new(tag),
         }
     }
+
+    pub fn with_auth(mut self, users: Vec<(String, String)>) -> Self {
+        self.socks5 = self.socks5.with_auth(users.clone());
+        self.http = self.http.with_auth(users);
+        self
+    }
 }
 
 #[async_trait]

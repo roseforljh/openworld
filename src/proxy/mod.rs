@@ -1,6 +1,7 @@
 pub mod group;
 pub mod inbound;
 pub mod mux;
+pub mod nat;
 pub mod outbound;
 pub mod relay;
 pub mod sniff;
@@ -30,6 +31,8 @@ pub struct Session {
     /// 是否启用协议嗅探
     #[allow(dead_code)]
     pub sniff: bool,
+    /// 嗅探检测到的协议类型（tls, http, bittorrent, ssh, stun, dtls 等）
+    pub detected_protocol: Option<String>,
 }
 
 /// 入站处理结果

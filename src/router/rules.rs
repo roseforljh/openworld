@@ -45,6 +45,8 @@ pub enum Rule {
     IpAsn(Vec<u32>),
     /// UID 匹配 (Android/Linux 用户 ID)
     Uid(Vec<u32>),
+    /// 嗅探协议类型匹配 (tls, http, quic, bittorrent, ssh, stun, dtls)
+    Protocol(Vec<String>),
     /// 逻辑 AND: all sub-rules must match
     And(Vec<Rule>),
     /// 逻辑 OR: any sub-rule must match
@@ -106,6 +108,9 @@ impl Rule {
                     uids.map_err(|e| anyhow::anyhow!("invalid UID: {}", e))?,
                 ))
             }
+            "protocol" => Ok(Rule::Protocol(
+                config.values.iter().map(|s| s.to_lowercase()).collect(),
+            )),
             "and" | "AND" => {
                 let sub_rules: Result<Vec<Rule>> = config
                     .values
@@ -170,7 +175,7 @@ impl Rule {
         geoip_db: Option<&super::geoip::GeoIpDb>,
         geosite_db: Option<&super::geosite::GeoSiteDb>,
     ) -> bool {
-        self.matches_session(addr, geoip_db, geosite_db, None, None, None)
+        self.matches_session(addr, geoip_db, geosite_db, None, None, None, None)
     }
 
     pub fn matches_session(
@@ -181,6 +186,7 @@ impl Rule {
         source: Option<std::net::SocketAddr>,
         network: Option<&str>,
         inbound_tag: Option<&str>,
+        detected_protocol: Option<&str>,
     ) -> bool {
         match self {
             Rule::DomainSuffix(suffixes) => {
@@ -303,14 +309,21 @@ impl Rule {
                 // Currently a stub — always returns false.
                 false
             }
+            Rule::Protocol(protocols) => {
+                if let Some(proto) = detected_protocol {
+                    protocols.iter().any(|p| p == proto)
+                } else {
+                    false
+                }
+            }
             Rule::And(sub_rules) => sub_rules.iter().all(|r| {
-                r.matches_session(addr, geoip_db, geosite_db, source, network, inbound_tag)
+                r.matches_session(addr, geoip_db, geosite_db, source, network, inbound_tag, detected_protocol)
             }),
             Rule::Or(sub_rules) => sub_rules.iter().any(|r| {
-                r.matches_session(addr, geoip_db, geosite_db, source, network, inbound_tag)
+                r.matches_session(addr, geoip_db, geosite_db, source, network, inbound_tag, detected_protocol)
             }),
             Rule::Not(inner) => {
-                !inner.matches_session(addr, geoip_db, geosite_db, source, network, inbound_tag)
+                !inner.matches_session(addr, geoip_db, geosite_db, source, network, inbound_tag, detected_protocol)
             }
         }
     }
@@ -592,6 +605,7 @@ mod tests {
             None,
             Some(src),
             None,
+            None,
             None
         ));
         let other_src: SocketAddr = "10.0.0.1:54321".parse().unwrap();
@@ -600,6 +614,7 @@ mod tests {
             None,
             None,
             Some(other_src),
+            None,
             None,
             None
         ));
@@ -615,6 +630,7 @@ mod tests {
             None,
             None,
             Some("tcp"),
+            None,
             None
         ));
         assert!(!rule.matches_session(
@@ -623,6 +639,7 @@ mod tests {
             None,
             None,
             Some("udp"),
+            None,
             None
         ));
     }
@@ -637,7 +654,8 @@ mod tests {
             None,
             None,
             None,
-            Some("socks-in")
+            Some("socks-in"),
+            None
         ));
         assert!(!rule.matches_session(
             &domain("example.com", 443),
@@ -645,7 +663,8 @@ mod tests {
             None,
             None,
             None,
-            Some("http-in")
+            Some("http-in"),
+            None
         ));
     }
 
@@ -710,6 +729,7 @@ mod tests {
             None,
             None,
             Some("tcp"),
+            None,
             None
         ));
         assert!(!rule.matches_session(
@@ -718,6 +738,7 @@ mod tests {
             None,
             None,
             Some("udp"),
+            None,
             None
         ));
         assert!(!rule.matches_session(
@@ -726,6 +747,7 @@ mod tests {
             None,
             None,
             Some("tcp"),
+            None,
             None
         ));
     }
@@ -793,6 +815,7 @@ impl fmt::Display for Rule {
                 let strs: Vec<String> = v.iter().map(|u| u.to_string()).collect();
                 write!(f, "uid({})", strs.join(","))
             }
+            Rule::Protocol(v) => write!(f, "protocol({})", v.join(",")),
             Rule::And(rules) => {
                 let strs: Vec<String> = rules.iter().map(|r| format!("{}", r)).collect();
                 write!(f, "and({})", strs.join(","))

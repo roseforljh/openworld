@@ -1,8 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::net::TcpStream;
 
-use crate::common::{Address, ProxyStream};
+use crate::common::{Address, DialerConfig, ProxyStream};
 
 use super::StreamTransport;
 
@@ -10,13 +9,15 @@ use super::StreamTransport;
 pub struct TcpTransport {
     server_addr: String,
     server_port: u16,
+    dialer_config: Option<DialerConfig>,
 }
 
 impl TcpTransport {
-    pub fn new(server_addr: String, server_port: u16) -> Self {
+    pub fn new(server_addr: String, server_port: u16, dialer_config: Option<DialerConfig>) -> Self {
         Self {
             server_addr,
             server_port,
+            dialer_config,
         }
     }
 }
@@ -24,8 +25,7 @@ impl TcpTransport {
 #[async_trait]
 impl StreamTransport for TcpTransport {
     async fn connect(&self, _addr: &Address) -> Result<ProxyStream> {
-        let addr = format!("{}:{}", self.server_addr, self.server_port);
-        let tcp = TcpStream::connect(&addr).await?;
+        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config).await?;
         Ok(Box::new(tcp))
     }
 }

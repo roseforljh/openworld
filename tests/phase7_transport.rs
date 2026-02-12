@@ -111,6 +111,7 @@ async fn h2_transport_echo() {
         Some("/test".to_string()),
         None,
         None,
+        None,
     );
 
     let target = Address::Domain("dummy.test".to_string(), 80);
@@ -137,6 +138,7 @@ async fn h2_transport_multi_write() {
         "127.0.0.1".to_string(),
         addr.port(),
         Some("/multi".to_string()),
+        None,
         None,
         None,
     );
@@ -181,6 +183,7 @@ async fn grpc_transport_echo() {
         Some("TestService".to_string()),
         None,
         None,
+        None,
     );
 
     let target = Address::Domain("dummy.test".to_string(), 80);
@@ -207,6 +210,7 @@ async fn grpc_transport_multi_write() {
         "127.0.0.1".to_string(),
         addr.port(),
         None, // 默认 GunService
+        None,
         None,
         None,
     );

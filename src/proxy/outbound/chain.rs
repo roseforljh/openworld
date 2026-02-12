@@ -89,6 +89,7 @@ impl ProxyChain {
             inbound_tag: base.inbound_tag.clone(),
             network: base.network,
             sniff: base.sniff,
+            detected_protocol: None,
         }
     }
 
@@ -571,6 +572,7 @@ mod tests {
             inbound_tag: "test".to_string(),
             network: Network::Tcp,
             sniff: false,
+            detected_protocol: None,
         };
         let result = chain.connect(&session).await;
         assert!(result.is_ok());

@@ -120,11 +120,48 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Run benchmarks
-        run: cargo test --lib app::benchmark -- --nocapture
-      - name: Compare with main
+      - name: Run criterion benchmarks
+        run: cargo bench --bench router_match --bench dns_resolve --bench mux_throughput -- --output-format bencher | tee bench_current.txt
+      - name: Checkout main branch baseline
         run: |
-          echo "Benchmark results recorded. Manual comparison with main branch recommended."
+          git fetch origin main
+          git stash
+          git checkout origin/main -- benches/ Cargo.toml 2>/dev/null || true
+          cargo bench --bench router_match --bench dns_resolve --bench mux_throughput -- --output-format bencher | tee bench_baseline.txt 2>/dev/null || true
+          git checkout -- .
+          git stash pop 2>/dev/null || true
+        continue-on-error: true
+      - name: Compare and check regression
+        run: |
+          if [ -f bench_baseline.txt ] && [ -s bench_baseline.txt ] && [ -f bench_current.txt ]; then
+            echo "=== Benchmark Comparison ==="
+            python3 -c "
+          import re, sys
+          def parse(f):
+              d = {}
+              for l in open(f):
+                  m = re.match(r'test (\S+)\s+bench:\s+([\d,]+) ns/iter', l)
+                  if m:
+                      d[m.group(1)] = int(m.group(2).replace(',',''))
+              return d
+          base = parse('bench_baseline.txt')
+          curr = parse('bench_current.txt')
+          warn = False
+          for k in curr:
+              if k in base and base[k] > 0:
+                  pct = (curr[k] - base[k]) / base[k] * 100
+                  status = 'REGRESSION' if pct > 10 else 'ok'
+                  print(f'{k}: {base[k]} -> {curr[k]} ns/iter ({pct:+.1f}%) [{status}]')
+                  if pct > 10:
+                      warn = True
+              else:
+                  print(f'{k}: {curr[k]} ns/iter (new)')
+          if warn:
+              print('::warning::Benchmark regression detected (>10%)')
+          " || echo "Comparison script failed, skipping"
+          else
+            echo "No baseline available, skipping comparison"
+          fi
         continue-on-error: true
 
   quality-gate:

@@ -26,6 +26,7 @@ fn make_inbound(tag: &str, protocol: &str, listen: &str, port: u16) -> InboundCo
         port,
         sniffing: SniffingConfig::default(),
         settings: InboundSettings::default(),
+        max_connections: None,
     }
 }
 
@@ -275,10 +276,15 @@ mod tests {
                 geoip_db: None,
                 geosite_db: None,
                 rule_providers: Default::default(),
+                geoip_url: None,
+                geosite_url: None,
+                geo_update_interval: 7 * 24 * 3600,
+                geo_auto_update: false,
             },
             subscriptions: vec![],
             api: None,
             dns: None,
+            max_connections: 10000,
         };
 
         mgr.apply_to_config("minimal", &mut config).unwrap();
@@ -309,10 +315,15 @@ mod tests {
                 geoip_db: None,
                 geosite_db: None,
                 rule_providers: Default::default(),
+                geoip_url: None,
+                geosite_url: None,
+                geo_update_interval: 7 * 24 * 3600,
+                geo_auto_update: false,
             },
             subscriptions: vec![],
             api: None,
             dns: None,
+            max_connections: 10000,
         };
 
         let result = mgr.apply_to_config("nonexistent", &mut config);

@@ -1,5 +1,6 @@
 pub mod geoip;
 pub mod geosite;
+pub mod geo_update;
 pub mod process;
 pub mod provider;
 pub mod rules;
@@ -140,6 +141,7 @@ impl Router {
                 session.source,
                 Some(network_str),
                 Some(&session.inbound_tag),
+                session.detected_protocol.as_deref(),
             ) {
                 fallback_match_idx = Some(idx);
                 break;

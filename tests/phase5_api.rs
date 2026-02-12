@@ -1,4 +1,4 @@
-//! Phase 5: API 端点集成测试
+﻿//! Phase 5: API 绔偣闆嗘垚娴嬭瘯
 
 use std::sync::Arc;
 
@@ -9,6 +9,7 @@ use openworld::app::tracker::ConnectionTracker;
 use openworld::config::types::{OutboundConfig, OutboundSettings, RouterConfig};
 use openworld::dns::DnsResolver;
 use openworld::router::Router;
+use tokio_util::sync::CancellationToken;
 
 struct MockResolver;
 
@@ -26,9 +27,7 @@ async fn start_test_api() -> String {
     let router_cfg = RouterConfig {
         rules: vec![],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
-        rule_providers: Default::default(),
+        ..Default::default()
     };
     let router = Arc::new(Router::new(&router_cfg).unwrap());
 
@@ -40,9 +39,9 @@ async fn start_test_api() -> String {
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
 
-    let dispatcher = Arc::new(Dispatcher::new(router, outbound_manager, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>));
+    let dispatcher = Arc::new(Dispatcher::new(router, outbound_manager, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new()));
 
-    // 手动创建 API 服务器以获取实际端口
+    // 鎵嬪姩鍒涘缓 API 鏈嶅姟鍣ㄤ互鑾峰彇瀹為檯绔彛
     let state = openworld::api::handlers::AppState {
         dispatcher,
         secret: None,

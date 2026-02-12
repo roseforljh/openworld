@@ -37,8 +37,9 @@ async fn dns_build_resolver_empty_servers() {
         fallback: vec![],
         fallback_filter: None,
         edns_client_subnet: None,
+        prefer_ip: None,
     };
-    let resolver = build_resolver(&config).unwrap();
+    let (resolver, _pool) = build_resolver(&config).unwrap();
     // 空配置应使用系统解析器
     let addrs = resolver.resolve("localhost").await.unwrap();
     assert!(!addrs.is_empty());
@@ -60,9 +61,10 @@ async fn dns_build_resolver_single_udp() {
         fallback: vec![],
         fallback_filter: None,
         edns_client_subnet: None,
+        prefer_ip: None,
     };
     // 构建应成功
-    let _resolver = build_resolver(&config).unwrap();
+    let (_resolver, _pool) = build_resolver(&config).unwrap();
 }
 
 #[tokio::test]
@@ -87,8 +89,9 @@ async fn dns_build_resolver_split() {
         fallback: vec![],
         fallback_filter: None,
         edns_client_subnet: None,
+        prefer_ip: None,
     };
-    let _resolver = build_resolver(&config).unwrap();
+    let (_resolver, _pool) = build_resolver(&config).unwrap();
 }
 
 #[tokio::test]
@@ -136,9 +139,7 @@ fn router_geoip_rule_without_db_does_not_match() {
             outbound: "direct".to_string(),
         }],
         default: "proxy".to_string(),
-        geoip_db: None,
-        geosite_db: None,
-        rule_providers: Default::default(),
+        ..Default::default()
     };
     let router = Router::new(&router_cfg).unwrap();
 
@@ -148,6 +149,7 @@ fn router_geoip_rule_without_db_does_not_match() {
         inbound_tag: "test".to_string(),
         network: Network::Tcp,
         sniff: false,
+        detected_protocol: None,
     };
     // 没有 GeoIP 数据库，规则不匹配，走默认
     assert_eq!(router.route(&session), "proxy");
@@ -162,9 +164,7 @@ fn router_geosite_rule_without_db_does_not_match() {
             outbound: "direct".to_string(),
         }],
         default: "proxy".to_string(),
-        geoip_db: None,
-        geosite_db: None,
-        rule_providers: Default::default(),
+        ..Default::default()
     };
     let router = Router::new(&router_cfg).unwrap();
 
@@ -174,6 +174,7 @@ fn router_geosite_rule_without_db_does_not_match() {
         inbound_tag: "test".to_string(),
         network: Network::Tcp,
         sniff: false,
+        detected_protocol: None,
     };
     // 没有 GeoSite 数据库，规则不匹配，走默认
     assert_eq!(router.route(&session), "proxy");
@@ -195,9 +196,7 @@ fn router_mixed_rules_priority() {
             },
         ],
         default: "reject".to_string(),
-        geoip_db: None,
-        geosite_db: None,
-        rule_providers: Default::default(),
+        ..Default::default()
     };
     let router = Router::new(&router_cfg).unwrap();
 
@@ -208,6 +207,7 @@ fn router_mixed_rules_priority() {
         inbound_tag: "test".to_string(),
         network: Network::Tcp,
         sniff: false,
+        detected_protocol: None,
     };
     assert_eq!(router.route(&session1), "direct");
 
@@ -218,6 +218,7 @@ fn router_mixed_rules_priority() {
         inbound_tag: "test".to_string(),
         network: Network::Tcp,
         sniff: false,
+        detected_protocol: None,
     };
     assert_eq!(router.route(&session2), "proxy");
 
@@ -228,6 +229,7 @@ fn router_mixed_rules_priority() {
         inbound_tag: "test".to_string(),
         network: Network::Tcp,
         sniff: false,
+        detected_protocol: None,
     };
     assert_eq!(router.route(&session3), "reject");
 }
@@ -241,9 +243,7 @@ fn router_api_accessors() {
             outbound: "direct".to_string(),
         }],
         default: "proxy".to_string(),
-        geoip_db: None,
-        geosite_db: None,
-        rule_providers: Default::default(),
+        ..Default::default()
     };
     let router = Router::new(&router_cfg).unwrap();
 

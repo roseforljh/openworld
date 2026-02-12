@@ -1,10 +1,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::TcpStream;
 use tracing::debug;
 
-use crate::common::{Address, BoxUdpTransport, ProxyStream};
+use crate::common::{Address, BoxUdpTransport, Dialer, DialerConfig, ProxyStream};
 use crate::config::types::OutboundConfig;
 use crate::proxy::{OutboundHandler, Session};
 
@@ -14,6 +13,7 @@ pub struct HttpOutbound {
     server_port: u16,
     username: Option<String>,
     password: Option<String>,
+    dialer_config: Option<DialerConfig>,
 }
 
 impl HttpOutbound {
@@ -42,6 +42,7 @@ impl HttpOutbound {
             server_port: port,
             username,
             password,
+            dialer_config: settings.dialer.clone(),
         })
     }
 }
@@ -56,7 +57,11 @@ impl OutboundHandler for HttpOutbound {
         let server = format!("{}:{}", self.server_addr, self.server_port);
         debug!(target = %session.target, server = %server, "http CONNECT proxy");
 
-        let mut stream = TcpStream::connect(&server).await?;
+        let dialer = match &self.dialer_config {
+            Some(cfg) => Dialer::new(cfg.clone()),
+            None => Dialer::default_dialer(),
+        };
+        let mut stream = dialer.connect_host(&self.server_addr, self.server_port).await?;
 
         let target_str = match &session.target {
             Address::Domain(domain, port) => format!("{}:{}", domain, port),
@@ -198,6 +203,7 @@ mod tests {
             inbound_tag: String::new(),
             network: crate::proxy::Network::Tcp,
             sniff: false,
+            detected_protocol: None,
         };
 
         let stream = outbound.connect(&session).await.unwrap();

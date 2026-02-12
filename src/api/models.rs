@@ -125,6 +125,9 @@ pub struct RuleItem {
 pub struct TrafficItem {
     pub up: u64,
     pub down: u64,
+    pub memory: u64,
+    #[serde(rename = "connActive")]
+    pub conn_active: usize,
 }
 
 /// PUT /proxies/{name} 请求体
@@ -179,4 +182,42 @@ pub struct RuleProviderInfo {
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
     pub behavior: String,
+}
+
+/// GET /providers/proxies 响应
+#[derive(Serialize)]
+pub struct ProxyProvidersResponse {
+    pub providers: HashMap<String, ProxyProviderInfo>,
+}
+
+/// Proxy provider info
+#[derive(Serialize)]
+pub struct ProxyProviderInfo {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub provider_type: String,
+    pub proxies: Vec<ProxyInfo>,
+    #[serde(rename = "vehicleType")]
+    pub vehicle_type: String,
+}
+
+/// GET /configs 响应
+#[derive(Serialize)]
+pub struct ConfigsResponse {
+    pub port: u16,
+    #[serde(rename = "socks-port")]
+    pub socks_port: u16,
+    #[serde(rename = "mixed-port")]
+    pub mixed_port: u16,
+    pub mode: String,
+    #[serde(rename = "log-level")]
+    pub log_level: String,
+    #[serde(rename = "allow-lan")]
+    pub allow_lan: bool,
+    #[serde(rename = "outboundCount")]
+    pub outbound_count: usize,
+    #[serde(rename = "ruleCount")]
+    pub rule_count: usize,
+    #[serde(rename = "providerCount")]
+    pub provider_count: usize,
 }

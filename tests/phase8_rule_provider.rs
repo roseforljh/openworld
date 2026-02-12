@@ -42,9 +42,8 @@ fn rule_provider_domain_plain_text() {
             outbound: "proxy".to_string(),
         }],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
         rule_providers: providers,
+        ..Default::default()
     };
 
     let router = Router::new(&router_cfg).unwrap();
@@ -89,9 +88,8 @@ fn rule_provider_domain_clash_yaml() {
             outbound: "proxy".to_string(),
         }],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
         rule_providers: providers,
+        ..Default::default()
     };
 
     let router = Router::new(&router_cfg).unwrap();
@@ -135,9 +133,8 @@ fn rule_provider_domain_with_prefix_syntax() {
             outbound: "proxy".to_string(),
         }],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
         rule_providers: providers,
+        ..Default::default()
     };
 
     let router = Router::new(&router_cfg).unwrap();
@@ -184,9 +181,8 @@ fn rule_provider_ipcidr() {
             outbound: "direct".to_string(),
         }],
         default: "proxy".to_string(),
-        geoip_db: None,
-        geosite_db: None,
         rule_providers: providers,
+        ..Default::default()
     };
 
     let router = Router::new(&router_cfg).unwrap();
@@ -228,9 +224,8 @@ fn rule_provider_ipcidr_clash_yaml() {
             outbound: "direct".to_string(),
         }],
         default: "proxy".to_string(),
-        geoip_db: None,
-        geosite_db: None,
         rule_providers: providers,
+        ..Default::default()
     };
 
     let router = Router::new(&router_cfg).unwrap();
@@ -270,9 +265,8 @@ fn rule_provider_classical() {
             outbound: "proxy".to_string(),
         }],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
         rule_providers: providers,
+        ..Default::default()
     };
 
     let router = Router::new(&router_cfg).unwrap();
@@ -349,9 +343,8 @@ fn rule_provider_multiple_providers() {
             },
         ],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
         rule_providers: providers,
+        ..Default::default()
     };
 
     let router = Router::new(&router_cfg).unwrap();
@@ -401,9 +394,8 @@ fn rule_provider_mixed_with_regular_rules() {
             },
         ],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
         rule_providers: providers,
+        ..Default::default()
     };
 
     let router = Router::new(&router_cfg).unwrap();
@@ -441,9 +433,8 @@ fn rule_provider_missing_file_fails() {
     let router_cfg = RouterConfig {
         rules: vec![],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
         rule_providers: providers,
+        ..Default::default()
     };
 
     assert!(Router::new(&router_cfg).is_err());
@@ -458,9 +449,7 @@ fn rule_provider_unknown_provider_name_fails() {
             outbound: "proxy".to_string(),
         }],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
-        rule_providers: HashMap::new(),
+        ..Default::default()
     };
 
     assert!(Router::new(&router_cfg).is_err());
@@ -486,9 +475,8 @@ fn rule_provider_unsupported_behavior_fails() {
     let router_cfg = RouterConfig {
         rules: vec![],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
         rule_providers: providers,
+        ..Default::default()
     };
 
     assert!(Router::new(&router_cfg).is_err());
@@ -596,9 +584,8 @@ fn router_providers_accessor() {
     let router_cfg = RouterConfig {
         rules: vec![],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
         rule_providers: providers,
+        ..Default::default()
     };
 
     let router = Router::new(&router_cfg).unwrap();
@@ -623,6 +610,7 @@ fn make_session(domain: &str, port: u16) -> openworld::proxy::Session {
         source: Some("127.0.0.1:12345".parse().unwrap()),
         inbound_tag: "test".to_string(),
         sniff: false,
+        detected_protocol: None,
     }
 }
 
@@ -637,5 +625,6 @@ fn make_ip_session(ip: &str, port: u16) -> openworld::proxy::Session {
         source: Some("127.0.0.1:12345".parse().unwrap()),
         inbound_tag: "test".to_string(),
         sniff: false,
+        detected_protocol: None,
     }
 }

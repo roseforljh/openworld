@@ -1,8 +1,5 @@
 //! Phase 3 端到端集成测试
-//!
-//! 覆盖：SOCKS5 TCP/UDP、HTTP CONNECT、Dispatcher TCP/UDP 全链路、
-//! Router 多规则优先级、配置反序列化、并发连接。
-
+//! 覆盖：SOCKS5 TCP/UDP、HTTP CONNECT、Dispatcher TCP/UDP 全链路、Router 多规则优先级、配置反序列化、并发连接。
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -21,6 +18,7 @@ use openworld::proxy::inbound::socks5::Socks5Inbound;
 use openworld::proxy::outbound::direct::DirectOutbound;
 use openworld::proxy::{InboundHandler, Network, OutboundHandler, Session};
 use openworld::router::Router;
+use tokio_util::sync::CancellationToken;
 
 struct MockResolver;
 
@@ -34,10 +32,10 @@ impl DnsResolver for MockResolver {
 }
 
 // ============================================================
-// 辅助函数
+// 杈呭姪鍑芥暟
 // ============================================================
 
-/// 启动一个本地 TCP echo 服务器，返回监听地址
+/// 鍚姩涓€涓湰鍦?TCP echo 鏈嶅姟鍣紝杩斿洖鐩戝惉鍦板潃
 async fn start_echo_server() -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -64,7 +62,7 @@ async fn start_echo_server() -> SocketAddr {
     addr
 }
 
-/// 启动一个本地 UDP echo 服务器，返回监听地址
+/// 鍚姩涓€涓湰鍦?UDP echo 鏈嶅姟鍣紝杩斿洖鐩戝惉鍦板潃
 async fn start_udp_echo_server() -> SocketAddr {
     let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let addr = socket.local_addr().unwrap();
@@ -85,9 +83,7 @@ fn make_dispatcher_with_rules(rules: Vec<RuleConfig>, default: &str) -> Dispatch
     let router_cfg = RouterConfig {
         rules,
         default: default.to_string(),
-        geoip_db: None,
-        geosite_db: None,
-        rule_providers: Default::default(),
+        ..Default::default()
     };
     let router = Arc::new(Router::new(&router_cfg).unwrap());
 
@@ -99,11 +95,11 @@ fn make_dispatcher_with_rules(rules: Vec<RuleConfig>, default: &str) -> Dispatch
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
     let resolver = Arc::new(MockResolver) as Arc<dyn DnsResolver>;
-    Dispatcher::new(router, outbound_manager, tracker, resolver)
+    Dispatcher::new(router, outbound_manager, tracker, resolver, None, CancellationToken::new())
 }
 
 // ============================================================
-// 1. Direct TCP 出站 loopback
+// 1. Direct TCP 鍑虹珯 loopback
 // ============================================================
 
 #[tokio::test]
@@ -117,6 +113,7 @@ async fn e2e_direct_tcp_loopback() {
         inbound_tag: "test".to_string(),
         network: Network::Tcp,
         sniff: false,
+        detected_protocol: None,
     };
 
     let mut stream = outbound.connect(&session).await.unwrap();
@@ -130,21 +127,20 @@ async fn e2e_direct_tcp_loopback() {
 }
 
 // ============================================================
-// 2. SOCKS5 TCP CONNECT 端到端
-// ============================================================
+// 2. SOCKS5 TCP CONNECT 绔埌绔?// ============================================================
 
 #[tokio::test]
 async fn e2e_socks5_tcp_connect() {
     let echo_addr = start_echo_server().await;
 
-    // 启动 SOCKS5 入站
+    // 鍚姩 SOCKS5 鍏ョ珯
     let socks5 = Socks5Inbound::new("socks-test".to_string(), "127.0.0.1".to_string());
     let socks_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let socks_addr = socks_listener.local_addr().unwrap();
 
     let dispatcher = Arc::new(make_dispatcher_with_rules(vec![], "direct"));
 
-    // 服务端：接受一个连接并走 dispatcher
+    // 鏈嶅姟绔細鎺ュ彈涓€涓繛鎺ュ苟璧?dispatcher
     let socks5 = Arc::new(socks5);
     let socks5_clone = socks5.clone();
     let dispatcher_clone = dispatcher.clone();
@@ -154,16 +150,16 @@ async fn e2e_socks5_tcp_connect() {
         dispatcher_clone.dispatch(result).await.unwrap();
     });
 
-    // 客户端：SOCKS5 握手
+    // 瀹㈡埛绔細SOCKS5 鎻℃墜
     let mut client = TcpStream::connect(socks_addr).await.unwrap();
 
-    // 方法协商: VER=5, NMETHODS=1, METHOD=0x00(no auth)
+    // 鏂规硶鍗忓晢: VER=5, NMETHODS=1, METHOD=0x00(no auth)
     client.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
     let mut resp = [0u8; 2];
     client.read_exact(&mut resp).await.unwrap();
     assert_eq!(resp, [0x05, 0x00]);
 
-    // CONNECT 请求: VER=5, CMD=CONNECT, RSV=0, ATYP=1(IPv4), ADDR, PORT
+    // CONNECT 璇锋眰: VER=5, CMD=CONNECT, RSV=0, ATYP=1(IPv4), ADDR, PORT
     let mut req = vec![0x05, 0x01, 0x00, 0x01];
     match echo_addr {
         SocketAddr::V4(v4) => {
@@ -174,14 +170,13 @@ async fn e2e_socks5_tcp_connect() {
     }
     client.write_all(&req).await.unwrap();
 
-    // 读取 CONNECT 回复 (10 bytes)
+    // 璇诲彇 CONNECT 鍥炲 (10 bytes)
     let mut reply = [0u8; 10];
     client.read_exact(&mut reply).await.unwrap();
     assert_eq!(reply[0], 0x05); // VER
     assert_eq!(reply[1], 0x00); // REP=success
 
-    // 通过隧道发送数据
-    client.write_all(b"socks5-e2e-test").await.unwrap();
+    // 閫氳繃闅ч亾鍙戦€佹暟鎹?    client.write_all(b"socks5-e2e-test").await.unwrap();
     client.flush().await.unwrap();
 
     let mut buf = [0u8; 32];
@@ -193,8 +188,7 @@ async fn e2e_socks5_tcp_connect() {
 }
 
 // ============================================================
-// 3. HTTP CONNECT 端到端
-// ============================================================
+// 3. HTTP CONNECT 绔埌绔?// ============================================================
 
 #[tokio::test]
 async fn e2e_http_connect() {
@@ -216,14 +210,14 @@ async fn e2e_http_connect() {
 
     let mut client = TcpStream::connect(http_addr).await.unwrap();
 
-    // 发送 CONNECT 请求
+    // 鍙戦€?CONNECT 璇锋眰
     let connect_req = format!(
         "CONNECT {} HTTP/1.1\r\nHost: {}\r\n\r\n",
         echo_addr, echo_addr
     );
     client.write_all(connect_req.as_bytes()).await.unwrap();
 
-    // 读取 200 响应
+    // 璇诲彇 200 鍝嶅簲
     let mut resp_buf = [0u8; 256];
     let n = client.read(&mut resp_buf).await.unwrap();
     let resp_str = std::str::from_utf8(&resp_buf[..n]).unwrap();
@@ -232,8 +226,7 @@ async fn e2e_http_connect() {
         "expected 200 response, got: {resp_str}"
     );
 
-    // 通过隧道发送数据
-    client.write_all(b"http-connect-e2e").await.unwrap();
+    // 閫氳繃闅ч亾鍙戦€佹暟鎹?    client.write_all(b"http-connect-e2e").await.unwrap();
     client.flush().await.unwrap();
 
     let mut buf = [0u8; 32];
@@ -245,8 +238,7 @@ async fn e2e_http_connect() {
 }
 
 // ============================================================
-// 4. Dispatcher TCP 全链路（路由 -> 出站 -> relay）
-// ============================================================
+// 4. Dispatcher TCP 鍏ㄩ摼璺紙璺敱 -> 鍑虹珯 -> relay锛?// ============================================================
 
 #[tokio::test]
 async fn e2e_dispatcher_tcp_relay() {
@@ -260,9 +252,10 @@ async fn e2e_dispatcher_tcp_relay() {
         inbound_tag: "test-in".to_string(),
         network: Network::Tcp,
         sniff: false,
+        detected_protocol: None,
     };
 
-    // 创建一对 connected TCP streams 模拟入站
+    // 鍒涘缓涓€瀵?connected TCP streams 妯℃嫙鍏ョ珯
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let local_addr = listener.local_addr().unwrap();
 
@@ -279,8 +272,7 @@ async fn e2e_dispatcher_tcp_relay() {
 
     let dispatch_task = tokio::spawn(async move { dispatcher.dispatch(inbound_result).await });
 
-    // 通过 client_side 发送数据，应该被 relay 到 echo server 并返回
-    client_side.write_all(b"dispatcher-tcp-e2e").await.unwrap();
+    // 閫氳繃 client_side 鍙戦€佹暟鎹紝搴旇琚?relay 鍒?echo server 骞惰繑鍥?    client_side.write_all(b"dispatcher-tcp-e2e").await.unwrap();
     client_side.flush().await.unwrap();
 
     let mut buf = [0u8; 64];
@@ -292,7 +284,7 @@ async fn e2e_dispatcher_tcp_relay() {
 }
 
 // ============================================================
-// 5. Router 多规则优先级
+// 5. Router 澶氳鍒欎紭鍏堢骇
 // ============================================================
 
 #[test]
@@ -321,9 +313,7 @@ fn e2e_router_multi_rule_first_match() {
             },
         ],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
-        rule_providers: Default::default(),
+        ..Default::default()
     };
     let router = Router::new(&router_cfg).unwrap();
 
@@ -333,9 +323,10 @@ fn e2e_router_multi_rule_first_match() {
         inbound_tag: "test".to_string(),
         network: Network::Tcp,
         sniff: false,
+        detected_protocol: None,
     };
 
-    // domain-full 精确匹配
+    // domain-full 绮剧‘鍖归厤
     assert_eq!(
         router.route(&make_session(Address::Domain(
             "exact.example.com".to_string(),
@@ -344,7 +335,7 @@ fn e2e_router_multi_rule_first_match() {
         "direct"
     );
 
-    // domain-suffix 后缀匹配
+    // domain-suffix 鍚庣紑鍖归厤
     assert_eq!(
         router.route(&make_session(Address::Domain(
             "sub.example.com".to_string(),
@@ -362,13 +353,13 @@ fn e2e_router_multi_rule_first_match() {
         "direct"
     );
 
-    // ip-cidr 匹配
+    // ip-cidr 鍖归厤
     assert_eq!(
         router.route(&make_session(Address::Ip("10.1.2.3:80".parse().unwrap()))),
         "direct"
     );
 
-    // 不匹配任何规则 -> default
+    // 涓嶅尮閰嶄换浣曡鍒?-> default
     assert_eq!(
         router.route(&make_session(Address::Domain(
             "unknown.org".to_string(),
@@ -383,7 +374,7 @@ fn e2e_router_multi_rule_first_match() {
 }
 
 // ============================================================
-// 6. Config 反序列化：Reality 字段
+// 6. Config 鍙嶅簭鍒楀寲锛歊eality 瀛楁
 // ============================================================
 
 #[test]
@@ -456,8 +447,7 @@ router:
 }
 
 // ============================================================
-// 7. SOCKS5 UDP ASSOCIATE 端到端
-// ============================================================
+// 7. SOCKS5 UDP ASSOCIATE 绔埌绔?// ============================================================
 
 #[tokio::test]
 async fn e2e_socks5_udp_associate() {
@@ -482,22 +472,22 @@ async fn e2e_socks5_udp_associate() {
         dispatcher_clone.dispatch(result).await.unwrap();
     });
 
-    // 客户端 TCP 控制连接
+    // 瀹㈡埛绔?TCP 鎺у埗杩炴帴
     let mut client = TcpStream::connect(socks_addr).await.unwrap();
 
-    // 方法协商
+    // 鏂规硶鍗忓晢
     client.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
     let mut resp = [0u8; 2];
     client.read_exact(&mut resp).await.unwrap();
     assert_eq!(resp, [0x05, 0x00]);
 
-    // UDP ASSOCIATE 请求: CMD=0x03, ATYP=1, ADDR=0.0.0.0, PORT=0
+    // UDP ASSOCIATE 璇锋眰: CMD=0x03, ATYP=1, ADDR=0.0.0.0, PORT=0
     client
         .write_all(&[0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
         .await
         .unwrap();
 
-    // 读取回复: VER(1) + REP(1) + RSV(1) + ATYP(1) + ADDR(4/16) + PORT(2)
+    // 璇诲彇鍥炲: VER(1) + REP(1) + RSV(1) + ATYP(1) + ADDR(4/16) + PORT(2)
     let mut reply_head = [0u8; 4];
     client.read_exact(&mut reply_head).await.unwrap();
     assert_eq!(reply_head[0], 0x05); // VER
@@ -527,10 +517,10 @@ async fn e2e_socks5_udp_associate() {
         _ => panic!("unexpected atyp: {atyp}"),
     };
 
-    // 客户端 UDP socket
+    // 瀹㈡埛绔?UDP socket
     let client_udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
 
-    // 构造 SOCKS5 UDP 数据报: [RSV:2][FRAG:1][ATYP+ADDR+PORT][DATA]
+    // 鏋勯€?SOCKS5 UDP 鏁版嵁鎶? [RSV:2][FRAG:1][ATYP+ADDR+PORT][DATA]
     let mut udp_pkt = vec![0x00, 0x00, 0x00]; // RSV + FRAG=0
     match udp_echo_addr {
         SocketAddr::V4(v4) => {
@@ -544,7 +534,7 @@ async fn e2e_socks5_udp_associate() {
 
     client_udp.send_to(&udp_pkt, relay_addr).await.unwrap();
 
-    // 等待回复
+    // 绛夊緟鍥炲
     let mut recv_buf = [0u8; 512];
     let tokio_result = tokio::time::timeout(
         std::time::Duration::from_secs(5),
@@ -555,24 +545,23 @@ async fn e2e_socks5_udp_associate() {
     let (n, _from) = tokio_result.expect("UDP reply timed out").unwrap();
     let reply_data = &recv_buf[..n];
 
-    // 解析 SOCKS5 UDP 回复头
-    assert!(reply_data.len() >= 3, "reply too short");
+    // 瑙ｆ瀽 SOCKS5 UDP 鍥炲澶?    assert!(reply_data.len() >= 3, "reply too short");
     assert_eq!(reply_data[2], 0x00); // FRAG=0
 
     let (addr, addr_len) = Address::parse_socks5_udp_addr(&reply_data[3..]).unwrap();
     let payload = &reply_data[3 + addr_len..];
 
-    // echo server 应该原样返回
+    // echo server 搴旇鍘熸牱杩斿洖
     assert_eq!(payload, b"udp-e2e-payload");
     assert_eq!(addr, Address::Ip(udp_echo_addr));
 
-    // 关闭 TCP 控制连接，触发 dispatcher 清理
+    // 鍏抽棴 TCP 鎺у埗杩炴帴锛岃Е鍙?dispatcher 娓呯悊
     drop(client);
     let _ = tokio::time::timeout(std::time::Duration::from_secs(2), server_task).await;
 }
 
 // ============================================================
-// 8. 并发 TCP 连接
+// 8. 骞跺彂 TCP 杩炴帴
 // ============================================================
 
 #[tokio::test]
@@ -590,6 +579,7 @@ async fn e2e_concurrent_tcp_connections() {
                 inbound_tag: format!("conn-{i}"),
                 network: Network::Tcp,
                 sniff: false,
+                detected_protocol: None,
             };
 
             let mut stream = outbound.connect(&session).await.unwrap();
@@ -610,7 +600,7 @@ async fn e2e_concurrent_tcp_connections() {
 }
 
 // ============================================================
-// 9. Direct UDP 多目标 NAT 行为
+// 9. Direct UDP 澶氱洰鏍?NAT 琛屼负
 // ============================================================
 
 #[tokio::test]
@@ -625,11 +615,12 @@ async fn e2e_direct_udp_multi_target() {
         inbound_tag: "test".to_string(),
         network: Network::Udp,
         sniff: false,
+        detected_protocol: None,
     };
 
     let transport = outbound.connect_udp(&session).await.unwrap();
 
-    // 发送到 echo1
+    // 鍙戦€佸埌 echo1
     transport
         .send(UdpPacket {
             addr: Address::Ip(echo1),
@@ -641,7 +632,7 @@ async fn e2e_direct_udp_multi_target() {
     let reply1 = transport.recv().await.unwrap();
     assert_eq!(reply1.data.as_ref(), b"to-echo1");
 
-    // 发送到 echo2（同一个 transport，不同目标）
+    // 鍙戦€佸埌 echo2锛堝悓涓€涓?transport锛屼笉鍚岀洰鏍囷級
     transport
         .send(UdpPacket {
             addr: Address::Ip(echo2),
@@ -655,7 +646,7 @@ async fn e2e_direct_udp_multi_target() {
 }
 
 // ============================================================
-// 10. SOCKS5 TCP CONNECT 域名目标
+// 10. SOCKS5 TCP CONNECT 鍩熷悕鐩爣
 // ============================================================
 
 #[tokio::test]
@@ -681,14 +672,14 @@ async fn e2e_socks5_tcp_connect_domain() {
 
     let mut client = TcpStream::connect(socks_addr).await.unwrap();
 
-    // 方法协商
+    // 鏂规硶鍗忓晢
     client.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
     let mut resp = [0u8; 2];
     client.read_exact(&mut resp).await.unwrap();
     assert_eq!(resp, [0x05, 0x00]);
 
-    // CONNECT 请求: ATYP=0x03(Domain), domain="127.0.0.1", port=echo_addr.port()
-    // 注意：这里用 "localhost" 作为域名，它会被 DNS 解析到 127.0.0.1
+    // CONNECT 璇锋眰: ATYP=0x03(Domain), domain="127.0.0.1", port=echo_addr.port()
+    // 娉ㄦ剰锛氳繖閲岀敤 "localhost" 浣滀负鍩熷悕锛屽畠浼氳 DNS 瑙ｆ瀽鍒?127.0.0.1
     let domain = b"localhost";
     let port = echo_addr.port();
     let mut req = vec![0x05, 0x01, 0x00, 0x03];
@@ -697,14 +688,13 @@ async fn e2e_socks5_tcp_connect_domain() {
     req.extend_from_slice(&port.to_be_bytes());
     client.write_all(&req).await.unwrap();
 
-    // 读取回复
+    // 璇诲彇鍥炲
     let mut reply = [0u8; 10];
     client.read_exact(&mut reply).await.unwrap();
     assert_eq!(reply[0], 0x05);
     assert_eq!(reply[1], 0x00);
 
-    // 通过隧道发送数据
-    client.write_all(b"domain-connect-test").await.unwrap();
+    // 閫氳繃闅ч亾鍙戦€佹暟鎹?    client.write_all(b"domain-connect-test").await.unwrap();
     client.flush().await.unwrap();
 
     let mut buf = [0u8; 32];

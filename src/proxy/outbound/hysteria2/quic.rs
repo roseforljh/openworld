@@ -11,8 +11,7 @@ pub struct QuicManager {
     server_addr: String,
     server_port: u16,
     sni: String,
-    allow_insecure: bool,
-    endpoint: Option<quinn::Endpoint>,
+    endpoint: quinn::Endpoint,
     connection: Option<quinn::Connection>,
     authenticated: bool,
 }
@@ -24,12 +23,30 @@ impl QuicManager {
         sni: String,
         allow_insecure: bool,
     ) -> Result<Self> {
+        // Build TLS config with 0-RTT support and h3 ALPN
+        let mut tls_config =
+            crate::common::tls::build_tls_config(allow_insecure, Some(&["h3"]))?;
+        tls_config.enable_early_data = true;
+
+        let quic_crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls_config)?;
+        let mut client_config = quinn::ClientConfig::new(Arc::new(quic_crypto));
+
+        let mut transport_config = quinn::TransportConfig::default();
+        transport_config.max_idle_timeout(Some(
+            quinn::IdleTimeout::try_from(std::time::Duration::from_secs(30)).unwrap(),
+        ));
+        transport_config.keep_alive_interval(Some(std::time::Duration::from_secs(15)));
+        transport_config.datagram_receive_buffer_size(Some(1350 * 256));
+        client_config.transport_config(Arc::new(transport_config));
+
+        let mut endpoint = quinn::Endpoint::client("0.0.0.0:0".parse::<SocketAddr>()?)?;
+        endpoint.set_default_client_config(client_config);
+
         Ok(Self {
             server_addr,
             server_port,
             sni,
-            allow_insecure,
-            endpoint: None,
+            endpoint,
             connection: None,
             authenticated: false,
         })
@@ -62,39 +79,38 @@ impl QuicManager {
         self.authenticated
     }
 
-    async fn create_connection(&mut self) -> Result<quinn::Connection> {
-        // 构建 TLS 配置（复用 common::tls）
-        let tls_config = crate::common::tls::build_tls_config(self.allow_insecure, None)?;
-        let mut client_config = quinn::ClientConfig::new(Arc::new(
-            quinn::crypto::rustls::QuicClientConfig::try_from(tls_config)?,
-        ));
-
-        // 启用 datagram 支持（UDP 代理需要）
-        let mut transport_config = quinn::TransportConfig::default();
-        transport_config.max_idle_timeout(Some(
-            quinn::IdleTimeout::try_from(std::time::Duration::from_secs(30)).unwrap(),
-        ));
-        transport_config.keep_alive_interval(Some(std::time::Duration::from_secs(15)));
-        transport_config.datagram_receive_buffer_size(Some(1350 * 256));
-        client_config.transport_config(Arc::new(transport_config));
-
-        // 创建 endpoint
-        let mut endpoint = quinn::Endpoint::client("0.0.0.0:0".parse::<SocketAddr>()?)?;
-        endpoint.set_default_client_config(client_config);
-
-        // 解析服务器地址
+    async fn create_connection(&self) -> Result<quinn::Connection> {
         let addr_str = format!("{}:{}", self.server_addr, self.server_port);
         let server_addr: SocketAddr = tokio::net::lookup_host(&addr_str)
             .await?
             .next()
             .ok_or_else(|| anyhow::anyhow!("failed to resolve {}", addr_str))?;
 
-        // 连接
-        let conn = endpoint.connect(server_addr, &self.sni)?.await?;
-        tracing::debug!(addr = %server_addr, "QUIC connection established");
+        let connecting = self.endpoint.connect(server_addr, &self.sni)?;
 
-        self.endpoint = Some(endpoint);
-        Ok(conn)
+        // Try 0-RTT for faster connection establishment
+        match connecting.into_0rtt() {
+            Ok((conn, zero_rtt_accepted)) => {
+                tracing::debug!(addr = %server_addr, "QUIC 0-RTT connection initiated");
+                tokio::spawn(async move {
+                    let accepted = zero_rtt_accepted.await;
+                    tracing::debug!(accepted = accepted, "QUIC 0-RTT acceptance result");
+                });
+                Ok(conn)
+            }
+            Err(connecting) => {
+                let conn = connecting.await?;
+                tracing::debug!(addr = %server_addr, "QUIC 1-RTT connection established");
+                Ok(conn)
+            }
+        }
+    }
+
+    /// Rebind endpoint to a new UDP socket for connection migration
+    pub fn rebind(&self, socket: std::net::UdpSocket) -> std::io::Result<()> {
+        self.endpoint.rebind(socket)?;
+        tracing::debug!("QUIC endpoint rebound for connection migration");
+        Ok(())
     }
 }
 

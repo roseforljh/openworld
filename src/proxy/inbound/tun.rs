@@ -17,6 +17,7 @@ pub struct TunInbound {
     tag: String,
     name: String,
     icmp_policy: IcmpPolicy,
+    dns_hijack_enabled: bool,
 }
 
 pub struct TunRouteDecision {
@@ -31,7 +32,13 @@ impl TunInbound {
             tag,
             name,
             icmp_policy: IcmpPolicy::Drop,
+            dns_hijack_enabled: true,
         }
+    }
+
+    pub fn with_dns_hijack(mut self, enabled: bool) -> Self {
+        self.dns_hijack_enabled = enabled;
+        self
     }
 
     pub fn with_icmp_policy(mut self, icmp_policy: IcmpPolicy) -> Self {
@@ -45,6 +52,10 @@ impl TunInbound {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn dns_hijack_enabled(&self) -> bool {
+        self.dns_hijack_enabled
     }
 
     pub fn session_from_packet(&self, packet: &[u8]) -> Result<Session> {
@@ -89,6 +100,7 @@ impl TunInbound {
             inbound_tag: self.tag.clone(),
             network,
             sniff: false,
+            detected_protocol: None,
         })
     }
 
@@ -123,6 +135,7 @@ impl TunInbound {
             inbound_tag: self.tag.clone(),
             network,
             sniff: false,
+            detected_protocol: None,
         })
     }
 
@@ -184,6 +197,27 @@ impl TunInbound {
                     };
 
                     if !self.icmp_policy.should_process(&parsed) {
+                        continue;
+                    }
+
+                    // DNS 劫持：拦截 UDP:53 包
+                    if self.dns_hijack_enabled && super::dns_hijack::is_dns_query(&parsed) {
+                        let resolver = dispatcher.resolver();
+                        if let Some(response) = super::dns_hijack::handle_dns_hijack(
+                            &parsed,
+                            packet,
+                            resolver.as_ref(),
+                        ).await {
+                            if let Err(e) = tun_device.write_packet(&response).await {
+                                debug!(error = %e, "failed to write DNS response");
+                            } else {
+                                debug!(
+                                    domain = %parsed.dst_ip,
+                                    src = %parsed.src_ip,
+                                    "DNS hijack: responded"
+                                );
+                            }
+                        }
                         continue;
                     }
 
@@ -293,6 +327,10 @@ mod tests {
             geoip_db: None,
             geosite_db: None,
             rule_providers: Default::default(),
+            geoip_url: None,
+            geosite_url: None,
+            geo_update_interval: 7 * 24 * 3600,
+            geo_auto_update: false,
         };
         let router = Router::new(&router_cfg).unwrap();
         let pkt = build_ipv4_packet(6, [10, 0, 0, 2], [1, 1, 1, 1], 50000, 443);

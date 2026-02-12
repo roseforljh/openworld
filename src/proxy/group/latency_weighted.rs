@@ -259,6 +259,7 @@ mod tests {
                 url: None,
                 interval: 300,
                 tolerance: 150,
+                strategy: None,
             },
         ];
         assert!(validate_group_nesting(&configs, 5).is_ok());
@@ -274,6 +275,7 @@ mod tests {
                 url: None,
                 interval: 300,
                 tolerance: 150,
+                strategy: None,
             },
             ProxyGroupConfig {
                 name: "outer".to_string(),
@@ -282,6 +284,7 @@ mod tests {
                 url: None,
                 interval: 300,
                 tolerance: 150,
+                strategy: None,
             },
         ];
         assert!(validate_group_nesting(&configs, 5).is_ok());
@@ -297,6 +300,7 @@ mod tests {
                 url: None,
                 interval: 300,
                 tolerance: 150,
+                strategy: None,
             },
             ProxyGroupConfig {
                 name: "group-b".to_string(),
@@ -305,6 +309,7 @@ mod tests {
                 url: None,
                 interval: 300,
                 tolerance: 150,
+                strategy: None,
             },
         ];
         assert!(validate_group_nesting(&configs, 5).is_err());
@@ -320,6 +325,7 @@ mod tests {
                 url: None,
                 interval: 300,
                 tolerance: 150,
+                strategy: None,
             },
             ProxyGroupConfig {
                 name: "g2".to_string(),
@@ -328,6 +334,7 @@ mod tests {
                 url: None,
                 interval: 300,
                 tolerance: 150,
+                strategy: None,
             },
             ProxyGroupConfig {
                 name: "g3".to_string(),
@@ -336,6 +343,7 @@ mod tests {
                 url: None,
                 interval: 300,
                 tolerance: 150,
+                strategy: None,
             },
         ];
         // max_depth=1 should fail (g1 -> g2 -> g3 is depth 2)

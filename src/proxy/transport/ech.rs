@@ -5,6 +5,7 @@
 ///
 /// This module provides:
 /// - ECH configuration from raw config bytes or DNS HTTPS records
+/// - Automatic ECH config fetching from DNS HTTPS records
 /// - GREASE ECH for anti-ossification when no ECH config is available
 /// - Integration with the fingerprint system
 use std::sync::Arc;
@@ -17,6 +18,7 @@ use rustls::ClientConfig;
 use tracing::debug;
 
 use super::fingerprint::{self, FingerprintType};
+use crate::config::types::TlsConfig;
 
 /// HPKE suites supported for ECH
 fn supported_hpke_suites() -> &'static [&'static dyn Hpke] {
@@ -167,6 +169,69 @@ fn build_ech_provider(fingerprint: FingerprintType) -> rustls::crypto::CryptoPro
 /// Parse base64-encoded ECH config list
 pub fn parse_ech_config_base64(b64: &str) -> Result<Vec<u8>> {
     base64::decode_config(b64)
+}
+
+/// Resolve ECH configuration from DNS HTTPS records (RR type 65).
+///
+/// Queries the domain's HTTPS records and extracts ECH config (SvcParam key 5).
+/// Returns `Ok(None)` if no ECH config is found or DNS lookup fails.
+pub async fn resolve_ech_from_dns(domain: &str) -> Result<Option<Vec<u8>>> {
+    use hickory_resolver::config::{ResolverConfig, ResolverOpts};
+    use hickory_resolver::proto::rr::rdata::svcb::{SvcParamKey, SvcParamValue};
+    use hickory_resolver::proto::rr::{RData, RecordType};
+    use hickory_resolver::TokioAsyncResolver;
+
+    let resolver = TokioAsyncResolver::tokio(
+        ResolverConfig::cloudflare_https(),
+        ResolverOpts::default(),
+    );
+
+    let lookup = match resolver.lookup(domain, RecordType::HTTPS).await {
+        Ok(lookup) => lookup,
+        Err(e) => {
+            debug!(domain = domain, error = %e, "ECH DNS HTTPS lookup failed");
+            return Ok(None);
+        }
+    };
+
+    for record in lookup.record_iter() {
+        if let Some(RData::HTTPS(ref svcb)) = record.data() {
+            for (key, value) in svcb.svc_params() {
+                if let (SvcParamKey::EchConfig, SvcParamValue::EchConfig(ref ech)) = (key, value) {
+                    debug!(domain = domain, len = ech.0.len(), "ECH config found via DNS HTTPS");
+                    return Ok(Some(ech.0.clone()));
+                }
+            }
+        }
+    }
+
+    debug!(domain = domain, "no ECH config in DNS HTTPS records");
+    Ok(None)
+}
+
+/// Build `EchSettings` from `TlsConfig`, optionally auto-fetching from DNS.
+///
+/// Priority: manual `ech-config` > `ech-auto` DNS fetch > `ech-grease`.
+pub async fn resolve_ech_settings(config: &TlsConfig, domain: &str) -> Result<EchSettings> {
+    let manual_config = config
+        .ech_config
+        .as_deref()
+        .map(parse_ech_config_base64)
+        .transpose()?;
+
+    let config_list = if manual_config.is_some() {
+        manual_config
+    } else if config.ech_auto {
+        resolve_ech_from_dns(domain).await?
+    } else {
+        None
+    };
+
+    Ok(EchSettings {
+        config_list,
+        grease: config.ech_grease,
+        outer_sni: config.ech_outer_sni.clone(),
+    })
 }
 
 /// Simple base64 decoder (no extra dependency)

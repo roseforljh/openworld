@@ -19,6 +19,7 @@ static NEXT_SESSION_ID: AtomicU32 = AtomicU32::new(1);
 pub struct Hysteria2Outbound {
     tag: String,
     password: String,
+    down_mbps: u64,
     quic_manager: std::sync::Arc<tokio::sync::Mutex<quic::QuicManager>>,
 }
 
@@ -38,6 +39,7 @@ impl Hysteria2Outbound {
             .ok_or_else(|| anyhow::anyhow!("hysteria2: password is required"))?;
         let sni = settings.sni.clone().unwrap_or_else(|| address.clone());
         let allow_insecure = settings.allow_insecure;
+        let down_mbps = settings.down_mbps.unwrap_or(0);
 
         let quic_manager =
             quic::QuicManager::new(address.clone(), port, sni.clone(), allow_insecure)?;
@@ -45,6 +47,7 @@ impl Hysteria2Outbound {
         Ok(Self {
             tag: config.tag.clone(),
             password: password.clone(),
+            down_mbps,
             quic_manager: std::sync::Arc::new(tokio::sync::Mutex::new(quic_manager)),
         })
     }
@@ -55,7 +58,8 @@ impl Hysteria2Outbound {
         let (conn, is_new) = manager.get_connection().await?;
 
         if is_new || !manager.is_authenticated() {
-            auth::authenticate(&conn, &self.password).await?;
+            let down_bps = self.down_mbps.saturating_mul(125_000);
+            auth::authenticate(&conn, &self.password, down_bps).await?;
             manager.mark_authenticated();
         }
 

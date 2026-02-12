@@ -179,6 +179,7 @@ impl InboundHandler for ShadowsocksInbound {
                 inbound_tag: self.tag.clone(),
                 network: Network::Udp,
                 sniff: false,
+                detected_protocol: None,
             };
 
             return Ok(InboundResult {
@@ -194,6 +195,7 @@ impl InboundHandler for ShadowsocksInbound {
             inbound_tag: self.tag.clone(),
             network: Network::Tcp,
             sniff: false,
+            detected_protocol: None,
         };
 
         Ok(InboundResult {
@@ -532,6 +534,7 @@ mod tests {
                 users: None,
                 ..Default::default()
             },
+            max_connections: None,
         }
     }
 
@@ -572,6 +575,7 @@ mod tests {
                 }]),
                 ..Default::default()
             },
+            max_connections: None,
         };
         let inbound = ShadowsocksInbound::new(&cfg).unwrap();
         assert_eq!(inbound.tag(), "ss-in");
@@ -592,6 +596,7 @@ mod tests {
                 users: None,
                 ..Default::default()
             },
+            max_connections: None,
         };
         assert!(ShadowsocksInbound::new(&cfg).is_err());
     }
@@ -613,6 +618,7 @@ mod tests {
                 }]),
                 ..Default::default()
             },
+            max_connections: None,
         };
         assert!(ShadowsocksInbound::new(&cfg).is_err());
     }

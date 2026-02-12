@@ -13,6 +13,7 @@ use openworld::dns::DnsResolver;
 use openworld::proxy::outbound::direct::DirectOutbound;
 use openworld::proxy::{InboundResult, Network, OutboundHandler, Session};
 use openworld::router::Router;
+use tokio_util::sync::CancellationToken;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -90,6 +91,7 @@ fn phase3_config_validate_baseline_ok() {
             port: 1080,
             sniffing: SniffingConfig::default(),
             settings: InboundSettings::default(),
+            max_connections: None,
         }],
         outbounds: vec![OutboundConfig {
             tag: "direct".to_string(),
@@ -99,14 +101,13 @@ fn phase3_config_validate_baseline_ok() {
         router: RouterConfig {
             rules: vec![],
             default: "direct".to_string(),
-            geoip_db: None,
-            geosite_db: None,
-            rule_providers: Default::default(),
+            ..Default::default()
         },
         api: None,
         dns: None,
         subscriptions: vec![],
         proxy_groups: vec![],
+        max_connections: 10000,
     };
 
     assert!(config.validate().is_ok());
@@ -117,9 +118,7 @@ fn phase3_router_default_route_baseline() {
     let router_cfg = RouterConfig {
         rules: vec![],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
-        rule_providers: Default::default(),
+        ..Default::default()
     };
     let router = Router::new(&router_cfg).unwrap();
 
@@ -129,6 +128,7 @@ fn phase3_router_default_route_baseline() {
         inbound_tag: "test-in".to_string(),
         network: Network::Tcp,
         sniff: false,
+        detected_protocol: None,
     };
 
     assert_eq!(router.route(&session), "direct");
@@ -157,6 +157,7 @@ async fn phase3_direct_udp_send_recv_loopback_baseline() {
         inbound_tag: "test-in".to_string(),
         network: Network::Udp,
         sniff: false,
+        detected_protocol: None,
     };
 
     let transport = outbound.connect_udp(&session).await.unwrap();
@@ -189,9 +190,7 @@ async fn phase3_dispatcher_udp_requires_inbound_transport() {
     let router_cfg = RouterConfig {
         rules: vec![],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
-        rule_providers: Default::default(),
+        ..Default::default()
     };
     let router = Arc::new(Router::new(&router_cfg).unwrap());
 
@@ -202,7 +201,7 @@ async fn phase3_dispatcher_udp_requires_inbound_transport() {
     }];
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Dispatcher::new(router, outbound_manager, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>);
+    let dispatcher = Dispatcher::new(router, outbound_manager, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new());
 
     let session = Session {
         target: Address::Domain("example.com".to_string(), 53),
@@ -210,6 +209,7 @@ async fn phase3_dispatcher_udp_requires_inbound_transport() {
         inbound_tag: "test-in".to_string(),
         network: Network::Udp,
         sniff: false,
+        detected_protocol: None,
     };
 
     let inbound = InboundResult {
@@ -235,6 +235,7 @@ async fn phase3_outbound_default_udp_not_supported_returns_error() {
         inbound_tag: "test-in".to_string(),
         network: Network::Udp,
         sniff: false,
+        detected_protocol: None,
     };
 
     let err_text = match outbound.connect_udp(&session).await {
@@ -255,6 +256,7 @@ fn phase3_inbound_result_udp_field_wiring_baseline() {
         inbound_tag: "test-in".to_string(),
         network: Network::Tcp,
         sniff: false,
+        detected_protocol: None,
     };
 
     let stream: openworld::common::ProxyStream = Box::new(tokio::io::empty());
@@ -272,9 +274,7 @@ fn phase3_dispatcher_construction_baseline() {
     let router_cfg = RouterConfig {
         rules: vec![],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
-        rule_providers: Default::default(),
+        ..Default::default()
     };
     let router = Arc::new(Router::new(&router_cfg).unwrap());
 
@@ -286,5 +286,5 @@ fn phase3_dispatcher_construction_baseline() {
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
 
     let tracker = Arc::new(ConnectionTracker::new());
-    let _dispatcher = Dispatcher::new(router, outbound_manager, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>);
+    let _dispatcher = Dispatcher::new(router, outbound_manager, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new());
 }

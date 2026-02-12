@@ -1,6 +1,7 @@
 use aes_gcm::aead::generic_array::GenericArray;
 use aes_gcm::{AeadInPlace, Aes128Gcm, Aes256Gcm, KeyInit};
 use anyhow::{bail, Result};
+use base64::Engine;
 use chacha20poly1305::ChaCha20Poly1305;
 use hkdf::Hkdf;
 use md5::{Digest as Md5Digest, Md5};
@@ -79,9 +80,10 @@ pub fn evp_bytes_to_key(password: &[u8], key_len: usize) -> Vec<u8> {
     key
 }
 
-/// Derive subkey from master key and salt using HKDF-SHA1.
+/// Derive subkey from master key and salt.
 ///
-/// info = b"ss-subkey"
+/// - Legacy AEAD: HKDF-SHA1 with info = b"ss-subkey"
+/// - AEAD-2022: blake3::derive_key with context "shadowsocks 2022 session subkey"
 pub fn derive_subkey(key: &[u8], salt: &[u8], key_len: usize) -> Result<Vec<u8>> {
     let hk = Hkdf::<Sha1>::new(Some(salt), key);
     let mut subkey = vec![0u8; key_len];
@@ -90,20 +92,70 @@ pub fn derive_subkey(key: &[u8], salt: &[u8], key_len: usize) -> Result<Vec<u8>>
     Ok(subkey)
 }
 
+/// Derive subkey for Shadowsocks 2022 using blake3.
+///
+/// key_material = key || salt
+/// context = "shadowsocks 2022 session subkey"
+pub fn derive_subkey_2022(key: &[u8], salt: &[u8], key_len: usize) -> Result<Vec<u8>> {
+    let mut key_material = Vec::with_capacity(key.len() + salt.len());
+    key_material.extend_from_slice(key);
+    key_material.extend_from_slice(salt);
+    let derived = blake3::derive_key("shadowsocks 2022 session subkey", &key_material);
+    Ok(derived[..key_len].to_vec())
+}
+
 /// Derive Shadowsocks 2022 key from configured password field.
 ///
-/// For this codebase, we accept the configured value as plain text bytes,
-/// trimming URL-safe/base64 paddings if present is deferred to future parser improvements.
+/// SS2022 spec requires the password to be a base64-encoded key of exact length.
+/// We try base64 standard and URL-safe decoding first, then fall back to raw bytes.
 pub fn ss2022_password_to_key(password: &str, key_len: usize) -> Result<Vec<u8>> {
+    // Try base64 standard decoding first
+    if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(password.trim()) {
+        if decoded.len() == key_len {
+            return Ok(decoded);
+        }
+    }
+    // Try base64 URL-safe decoding
+    if let Ok(decoded) = base64::engine::general_purpose::URL_SAFE.decode(password.trim()) {
+        if decoded.len() == key_len {
+            return Ok(decoded);
+        }
+    }
+    // Try base64 standard without padding
+    if let Ok(decoded) = base64::engine::general_purpose::STANDARD_NO_PAD.decode(password.trim()) {
+        if decoded.len() == key_len {
+            return Ok(decoded);
+        }
+    }
+    // Fallback: raw bytes
     let raw = password.as_bytes().to_vec();
     if raw.len() != key_len {
         bail!(
-            "invalid shadowsocks 2022 key length: expected {}, got {}",
+            "invalid shadowsocks 2022 key: expected {} bytes (try base64-encoded key)",
             key_len,
-            raw.len()
         );
     }
     Ok(raw)
+}
+
+/// Check if a cipher kind is an AEAD-2022 variant
+pub fn is_aead_2022(cipher_kind: CipherKind) -> bool {
+    matches!(
+        cipher_kind,
+        CipherKind::Aes128Gcm2022 | CipherKind::Aes256Gcm2022 | CipherKind::ChaCha20Poly1305_2022
+    )
+}
+
+/// Derive identity subkey for SIP022 iPSK (identity PSK) multi-user.
+///
+/// context = "shadowsocks 2022 identity subkey"
+/// key_material = identity_key || salt
+pub fn derive_identity_subkey_2022(identity_key: &[u8], salt: &[u8], key_len: usize) -> Vec<u8> {
+    let mut key_material = Vec::with_capacity(identity_key.len() + salt.len());
+    key_material.extend_from_slice(identity_key);
+    key_material.extend_from_slice(salt);
+    let derived = blake3::derive_key("shadowsocks 2022 identity subkey", &key_material);
+    derived[..key_len].to_vec()
 }
 
 /// AEAD cipher with nonce counter for Shadowsocks stream encryption.
@@ -368,16 +420,71 @@ mod tests {
     }
 
     #[test]
-    fn ss2022_password_to_key_valid_len() {
+    fn ss2022_password_to_key_base64() {
+        // 16 bytes = base64 of 16 random bytes
+        let key_bytes = [0x42u8; 16];
+        let b64 = base64::engine::general_purpose::STANDARD.encode(key_bytes);
+        let k = ss2022_password_to_key(&b64, 16).unwrap();
+        assert_eq!(k, key_bytes);
+    }
+
+    #[test]
+    fn ss2022_password_to_key_base64_32() {
+        let key_bytes = [0xABu8; 32];
+        let b64 = base64::engine::general_purpose::STANDARD.encode(key_bytes);
+        let k = ss2022_password_to_key(&b64, 32).unwrap();
+        assert_eq!(k, key_bytes);
+    }
+
+    #[test]
+    fn ss2022_password_to_key_raw_fallback() {
         let k16 = ss2022_password_to_key("1234567890abcdef", 16).unwrap();
         assert_eq!(k16.len(), 16);
-
-        let k32 = ss2022_password_to_key("1234567890abcdef1234567890abcdef", 32).unwrap();
-        assert_eq!(k32.len(), 32);
     }
 
     #[test]
     fn ss2022_password_to_key_invalid_len() {
         assert!(ss2022_password_to_key("short", 16).is_err());
+    }
+
+    #[test]
+    fn derive_subkey_2022_differs_from_legacy() {
+        let key = vec![0x42u8; 32];
+        let salt = vec![0x01u8; 32];
+        let legacy = derive_subkey(&key, &salt, 32).unwrap();
+        let ss2022 = derive_subkey_2022(&key, &salt, 32).unwrap();
+        assert_ne!(legacy, ss2022);
+        assert_eq!(ss2022.len(), 32);
+    }
+
+    #[test]
+    fn is_aead_2022_check() {
+        assert!(is_aead_2022(CipherKind::Aes128Gcm2022));
+        assert!(is_aead_2022(CipherKind::Aes256Gcm2022));
+        assert!(is_aead_2022(CipherKind::ChaCha20Poly1305_2022));
+        assert!(!is_aead_2022(CipherKind::Aes128Gcm));
+        assert!(!is_aead_2022(CipherKind::Aes256Gcm));
+        assert!(!is_aead_2022(CipherKind::ChaCha20Poly1305));
+    }
+
+    #[test]
+    fn derive_identity_subkey_2022_works() {
+        let identity_key = vec![0x42u8; 32];
+        let salt = vec![0x01u8; 32];
+        let subkey = derive_identity_subkey_2022(&identity_key, &salt, 32);
+        assert_eq!(subkey.len(), 32);
+        // Different salt should produce different subkey
+        let salt2 = vec![0x02u8; 32];
+        let subkey2 = derive_identity_subkey_2022(&identity_key, &salt2, 32);
+        assert_ne!(subkey, subkey2);
+    }
+
+    #[test]
+    fn derive_identity_subkey_2022_differs_from_session() {
+        let key = vec![0x42u8; 32];
+        let salt = vec![0x01u8; 32];
+        let session_subkey = derive_subkey_2022(&key, &salt, 32).unwrap();
+        let identity_subkey = derive_identity_subkey_2022(&key, &salt, 32);
+        assert_ne!(session_subkey, identity_subkey);
     }
 }

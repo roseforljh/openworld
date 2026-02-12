@@ -6,13 +6,12 @@ use anyhow::Result;
 use async_trait::async_trait;
 use futures_util::{Sink, Stream};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::http::Request;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 use tracing::debug;
 
-use crate::common::{Address, ProxyStream};
+use crate::common::{Address, DialerConfig, ProxyStream};
 use crate::config::types::{TlsConfig, TransportConfig};
 
 use super::{ech, fingerprint, StreamTransport};
@@ -25,6 +24,7 @@ pub struct WsTransport {
     host: Option<String>,
     headers: Option<std::collections::HashMap<String, String>>,
     tls_config: Option<TlsConfig>,
+    dialer_config: Option<DialerConfig>,
 }
 
 impl WsTransport {
@@ -33,6 +33,7 @@ impl WsTransport {
         server_port: u16,
         transport_config: &TransportConfig,
         tls_config: Option<TlsConfig>,
+        dialer_config: Option<DialerConfig>,
     ) -> Self {
         Self {
             server_addr,
@@ -44,6 +45,7 @@ impl WsTransport {
             host: transport_config.host.clone(),
             headers: transport_config.headers.clone(),
             tls_config,
+            dialer_config,
         }
     }
 }
@@ -55,9 +57,8 @@ impl StreamTransport for WsTransport {
         let scheme = if use_tls { "wss" } else { "ws" };
         let host = self.host.as_deref().unwrap_or(&self.server_addr);
 
-        // 建立底层 TCP 连接
-        let tcp_addr = format!("{}:{}", self.server_addr, self.server_port);
-        let tcp_stream = TcpStream::connect(&tcp_addr).await?;
+        // 建立底层 TCP 连接（通过统一 Dialer）
+        let tcp_stream = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config).await?;
 
         let stream: ProxyStream = if use_tls {
             let tls_cfg = self
@@ -74,15 +75,7 @@ impl StreamTransport for WsTransport {
                 .as_deref()
                 .map(fingerprint::FingerprintType::from_str)
                 .unwrap_or(fingerprint::FingerprintType::None);
-            let ech_settings = ech::EchSettings {
-                config_list: tls_cfg
-                    .ech_config
-                    .as_deref()
-                    .map(ech::parse_ech_config_base64)
-                    .transpose()?,
-                grease: tls_cfg.ech_grease,
-                outer_sni: tls_cfg.ech_outer_sni.clone(),
-            };
+            let ech_settings = ech::resolve_ech_settings(tls_cfg, sni).await?;
             let rustls_config =
                 ech::build_ech_tls_config(&ech_settings, fp, tls_cfg.allow_insecure, alpn.as_deref())?;
             let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(rustls_config));

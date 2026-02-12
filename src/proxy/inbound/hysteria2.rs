@@ -230,6 +230,7 @@ mod tests {
             port: 443,
             sniffing: Default::default(),
             settings: Default::default(),
+            max_connections: None,
         };
         assert!(Hysteria2Inbound::new(&config).is_err());
     }
@@ -245,6 +246,7 @@ mod tests {
             port: 443,
             sniffing: Default::default(),
             settings,
+            max_connections: None,
         };
         let inbound = Hysteria2Inbound::new(&config).unwrap();
         assert!(inbound.verify_password("test123"));
@@ -296,6 +298,7 @@ mod tests {
             port: 8443,
             sniffing: Default::default(),
             settings,
+            max_connections: None,
         };
         let inbound = Hysteria2Inbound::new(&config).unwrap();
         assert_eq!(inbound.listen_addr(), "127.0.0.1");

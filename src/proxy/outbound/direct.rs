@@ -3,19 +3,32 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
-use tokio::net::{TcpStream, UdpSocket};
+use tokio::net::UdpSocket;
 use tracing::debug;
 
-use crate::common::{Address, BoxUdpTransport, ProxyStream, UdpPacket, UdpTransport};
+use crate::common::{Address, BoxUdpTransport, Dialer, DialerConfig, ProxyStream, UdpPacket, UdpTransport};
 use crate::proxy::{OutboundHandler, Session};
+
+use super::pool::ConnectionPool;
 
 pub struct DirectOutbound {
     tag: String,
+    dialer_config: Option<DialerConfig>,
+    pool: Arc<ConnectionPool>,
 }
 
 impl DirectOutbound {
     pub fn new(tag: String) -> Self {
-        Self { tag }
+        Self { tag, dialer_config: None, pool: Arc::new(ConnectionPool::with_defaults()) }
+    }
+
+    pub fn with_dialer(mut self, dialer_config: Option<DialerConfig>) -> Self {
+        self.dialer_config = dialer_config;
+        self
+    }
+
+    pub fn pool(&self) -> &Arc<ConnectionPool> {
+        &self.pool
     }
 }
 
@@ -31,8 +44,13 @@ impl OutboundHandler for DirectOutbound {
 
     async fn connect(&self, session: &Session) -> Result<ProxyStream> {
         let addr = session.target.resolve().await?;
+
         debug!(target = %session.target, resolved = %addr, "direct connect");
-        let stream = TcpStream::connect(addr).await?;
+        let dialer = match &self.dialer_config {
+            Some(cfg) => Dialer::new(cfg.clone()),
+            None => Dialer::default_dialer(),
+        };
+        let stream = dialer.connect(addr).await?;
         Ok(Box::new(stream))
     }
 

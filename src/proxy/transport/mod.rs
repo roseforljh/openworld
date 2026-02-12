@@ -10,7 +10,7 @@ pub mod ws;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::common::{Address, ProxyStream};
+use crate::common::{Address, DialerConfig, ProxyStream};
 use crate::config::types::{TlsConfig, TransportConfig};
 
 /// 传输层抽象 trait
@@ -29,6 +29,17 @@ pub fn build_transport(
     transport_config: &TransportConfig,
     tls_config: &TlsConfig,
 ) -> Result<Box<dyn StreamTransport>> {
+    build_transport_with_dialer(server_addr, server_port, transport_config, tls_config, None)
+}
+
+/// 根据配置构建传输层实例，支持统一 Dialer 配置
+pub fn build_transport_with_dialer(
+    server_addr: &str,
+    server_port: u16,
+    transport_config: &TransportConfig,
+    tls_config: &TlsConfig,
+    dialer_config: Option<DialerConfig>,
+) -> Result<Box<dyn StreamTransport>> {
     match transport_config.transport_type.as_str() {
         "tcp" | "" => {
             if tls_config.enabled || tls_config.security == "reality" {
@@ -38,6 +49,7 @@ pub fn build_transport(
                             server_addr.to_string(),
                             server_port,
                             tls_config,
+                            dialer_config,
                         )?;
                         Ok(Box::new(transport))
                     }
@@ -46,12 +58,13 @@ pub fn build_transport(
                             server_addr.to_string(),
                             server_port,
                             tls_config,
+                            dialer_config,
                         )?;
                         Ok(Box::new(transport))
                     }
                 }
             } else {
-                let transport = tcp::TcpTransport::new(server_addr.to_string(), server_port);
+                let transport = tcp::TcpTransport::new(server_addr.to_string(), server_port, dialer_config);
                 Ok(Box::new(transport))
             }
         }
@@ -62,7 +75,7 @@ pub fn build_transport(
                 None
             };
             let transport =
-                ws::WsTransport::new(server_addr.to_string(), server_port, transport_config, tls);
+                ws::WsTransport::new(server_addr.to_string(), server_port, transport_config, tls, dialer_config);
             Ok(Box::new(transport))
         }
         "h2" => {
@@ -77,6 +90,7 @@ pub fn build_transport(
                 transport_config.path.clone(),
                 transport_config.host.clone(),
                 tls,
+                dialer_config,
             );
             Ok(Box::new(transport))
         }
@@ -92,9 +106,25 @@ pub fn build_transport(
                 transport_config.service_name.clone(),
                 transport_config.host.clone(),
                 tls,
+                dialer_config,
             );
             Ok(Box::new(transport))
         }
         other => anyhow::bail!("unsupported transport type: {}", other),
     }
+}
+
+/// 使用 Dialer 建立 TCP 连接的辅助函数。
+/// 所有传输层共用此函数，确保 socket 选项统一应用。
+pub(crate) async fn dial_tcp(
+    server_addr: &str,
+    server_port: u16,
+    dialer_config: &Option<DialerConfig>,
+) -> Result<tokio::net::TcpStream> {
+    use crate::common::Dialer;
+    let dialer = match dialer_config {
+        Some(cfg) => Dialer::new(cfg.clone()),
+        None => Dialer::default_dialer(),
+    };
+    dialer.connect_host(server_addr, server_port).await
 }

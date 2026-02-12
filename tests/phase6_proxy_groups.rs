@@ -1,11 +1,11 @@
 //! Phase 4A: 代理组功能测试
-
 use std::sync::Arc;
 
 use openworld::app::outbound_manager::OutboundManager;
 use openworld::config::types::{OutboundConfig, OutboundSettings, ProxyGroupConfig};
 use openworld::dns::DnsResolver;
 use openworld::proxy::group::loadbalance::LoadBalanceGroup;
+use tokio_util::sync::CancellationToken;
 use openworld::proxy::group::selector::SelectorGroup;
 use openworld::proxy::outbound::direct::DirectOutbound;
 use openworld::proxy::OutboundHandler;
@@ -32,7 +32,7 @@ fn make_direct_proxies(count: usize) -> (Vec<Arc<dyn OutboundHandler>>, Vec<Stri
     (proxies, names)
 }
 
-// --- SelectorGroup 测试 ---
+// --- SelectorGroup 娴嬭瘯 ---
 
 #[tokio::test]
 async fn selector_default_selects_first() {
@@ -81,13 +81,13 @@ async fn selector_as_any_downcast() {
     assert!(any.downcast_ref::<LoadBalanceGroup>().is_none());
 }
 
-// --- LoadBalanceGroup 测试 ---
+// --- LoadBalanceGroup 娴嬭瘯 ---
 
 #[tokio::test]
 async fn loadbalance_round_robin() {
     let (proxies, names) = make_direct_proxies(3);
-    let group = LoadBalanceGroup::new("lb".to_string(), proxies, names);
-    // 轮询分配: 0, 1, 2, 0, 1, 2
+    let group = LoadBalanceGroup::new("lb".to_string(), proxies, names, openworld::proxy::group::loadbalance::LbStrategy::RoundRobin);
+    // 杞鍒嗛厤: 0, 1, 2, 0, 1, 2
     assert_eq!(group.tag(), "lb");
     assert_eq!(group.proxy_names(), &["direct-0", "direct-1", "direct-2"]);
 }
@@ -96,11 +96,11 @@ async fn loadbalance_round_robin() {
 async fn loadbalance_as_any_downcast() {
     let (proxies, names) = make_direct_proxies(2);
     let group: Arc<dyn OutboundHandler> =
-        Arc::new(LoadBalanceGroup::new("lb".to_string(), proxies, names));
+        Arc::new(LoadBalanceGroup::new("lb".to_string(), proxies, names, openworld::proxy::group::loadbalance::LbStrategy::RoundRobin));
     assert!(group.as_any().downcast_ref::<LoadBalanceGroup>().is_some());
 }
 
-// --- OutboundManager 代理组注册测试 ---
+// --- OutboundManager 浠ｇ悊缁勬敞鍐屾祴锟?---
 
 fn make_outbound_configs() -> Vec<OutboundConfig> {
     vec![
@@ -127,6 +127,7 @@ fn outbound_manager_with_selector_group() {
         url: None,
         interval: 300,
         tolerance: 150,
+        strategy: None,
     }];
 
     let manager = OutboundManager::new(&outbounds, &groups).unwrap();
@@ -145,6 +146,7 @@ fn outbound_manager_with_loadbalance_group() {
         url: None,
         interval: 300,
         tolerance: 150,
+        strategy: None,
     }];
 
     let manager = OutboundManager::new(&outbounds, &groups).unwrap();
@@ -162,6 +164,7 @@ async fn outbound_manager_selector_select_and_query() {
         url: None,
         interval: 300,
         tolerance: 150,
+        strategy: None,
     }];
 
     let manager = OutboundManager::new(&outbounds, &groups).unwrap();
@@ -172,16 +175,16 @@ async fn outbound_manager_selector_select_and_query() {
         Some("direct".to_string())
     );
 
-    // 切换
+    // 鍒囨崲
     assert!(manager.select_proxy("sel", "direct-2").await);
     assert_eq!(
         manager.group_selected("sel").await,
         Some("direct-2".to_string())
     );
 
-    // 无效切换
+    // 鏃犳晥鍒囨崲
     assert!(!manager.select_proxy("sel", "nonexistent").await);
-    // 仍然是 direct-2
+    // 浠嶇劧锟?direct-2
     assert_eq!(
         manager.group_selected("sel").await,
         Some("direct-2".to_string())
@@ -198,11 +201,12 @@ async fn outbound_manager_select_non_selector_fails() {
         url: None,
         interval: 300,
         tolerance: 150,
+        strategy: None,
     }];
 
     let manager = OutboundManager::new(&outbounds, &groups).unwrap();
 
-    // load-balance 不支持手动选择
+    // load-balance 涓嶆敮鎸佹墜鍔ㄩ€夋嫨
     assert!(!manager.select_proxy("lb", "direct").await);
 }
 
@@ -223,6 +227,7 @@ fn outbound_manager_unknown_proxy_in_group_fails() {
         url: None,
         interval: 300,
         tolerance: 150,
+        strategy: None,
     }];
 
     assert!(OutboundManager::new(&outbounds, &groups).is_err());
@@ -238,12 +243,13 @@ fn outbound_manager_unsupported_group_type_fails() {
         url: None,
         interval: 300,
         tolerance: 150,
+        strategy: None,
     }];
 
     assert!(OutboundManager::new(&outbounds, &groups).is_err());
 }
 
-// --- Config validation 代理组测试 ---
+// --- Config validation 浠ｇ悊缁勬祴锟?---
 
 #[test]
 fn config_validate_proxy_group_reference_ok() {
@@ -259,6 +265,7 @@ fn config_validate_proxy_group_reference_ok() {
             port: 1080,
             sniffing: SniffingConfig::default(),
             settings: InboundSettings::default(),
+            max_connections: None,
         }],
         outbounds: vec![OutboundConfig {
             tag: "direct".to_string(),
@@ -268,9 +275,7 @@ fn config_validate_proxy_group_reference_ok() {
         router: RouterConfig {
             rules: vec![],
             default: "direct".to_string(),
-            geoip_db: None,
-            geosite_db: None,
-            rule_providers: Default::default(),
+            ..Default::default()
         },
         api: None,
         dns: None,
@@ -282,7 +287,9 @@ fn config_validate_proxy_group_reference_ok() {
             url: None,
             interval: 300,
             tolerance: 150,
+            strategy: None,
         }],
+        max_connections: 10000,
     };
 
     assert!(config.validate().is_ok());
@@ -302,6 +309,7 @@ fn config_validate_proxy_group_unknown_proxy_fails() {
             port: 1080,
             sniffing: SniffingConfig::default(),
             settings: InboundSettings::default(),
+            max_connections: None,
         }],
         outbounds: vec![OutboundConfig {
             tag: "direct".to_string(),
@@ -311,9 +319,7 @@ fn config_validate_proxy_group_unknown_proxy_fails() {
         router: RouterConfig {
             rules: vec![],
             default: "direct".to_string(),
-            geoip_db: None,
-            geosite_db: None,
-            rule_providers: Default::default(),
+            ..Default::default()
         },
         api: None,
         dns: None,
@@ -325,7 +331,9 @@ fn config_validate_proxy_group_unknown_proxy_fails() {
             url: None,
             interval: 300,
             tolerance: 150,
+            strategy: None,
         }],
+        max_connections: 10000,
     };
 
     let err = config.validate().unwrap_err();
@@ -350,6 +358,7 @@ fn config_validate_router_default_can_be_group() {
             port: 1080,
             sniffing: SniffingConfig::default(),
             settings: InboundSettings::default(),
+            max_connections: None,
         }],
         outbounds: vec![OutboundConfig {
             tag: "direct".to_string(),
@@ -359,9 +368,7 @@ fn config_validate_router_default_can_be_group() {
         router: RouterConfig {
             rules: vec![],
             default: "my-group".to_string(),
-            geoip_db: None,
-            geosite_db: None,
-            rule_providers: Default::default(),
+            ..Default::default()
         },
         api: None,
         dns: None,
@@ -373,13 +380,15 @@ fn config_validate_router_default_can_be_group() {
             url: None,
             interval: 300,
             tolerance: 150,
+            strategy: None,
         }],
+        max_connections: 10000,
     };
 
     assert!(config.validate().is_ok());
 }
 
-// --- API 代理组端点测试 ---
+// --- API 浠ｇ悊缁勭鐐规祴锟?---
 
 #[tokio::test]
 async fn api_proxies_includes_group() {
@@ -416,7 +425,7 @@ async fn api_select_proxy() {
     let base = start_test_api_with_group().await;
     let client = reqwest::Client::new();
 
-    // 切换到 direct-2
+    // 鍒囨崲锟?direct-2
     let resp = client
         .put(format!("{}/proxies/my-selector", base))
         .json(&serde_json::json!({"name": "direct-2"}))
@@ -452,7 +461,7 @@ async fn api_select_proxy_non_selector_fails() {
     let base = start_test_api_with_group().await;
     let client = reqwest::Client::new();
 
-    // direct 不是 selector
+    // direct 涓嶆槸 selector
     let resp = client
         .put(format!("{}/proxies/direct", base))
         .json(&serde_json::json!({"name": "something"}))
@@ -486,9 +495,7 @@ async fn start_test_api_with_group() -> String {
     let router_cfg = openworld::config::types::RouterConfig {
         rules: vec![],
         default: "direct".to_string(),
-        geoip_db: None,
-        geosite_db: None,
-        rule_providers: Default::default(),
+        ..Default::default()
     };
     let router = Arc::new(Router::new(&router_cfg).unwrap());
 
@@ -511,11 +518,12 @@ async fn start_test_api_with_group() -> String {
         url: None,
         interval: 300,
         tolerance: 150,
+        strategy: None,
     }];
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &groups).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
 
-    let dispatcher = Arc::new(Dispatcher::new(router, outbound_manager, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>));
+    let dispatcher = Arc::new(Dispatcher::new(router, outbound_manager, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new()));
 
     let state = api::handlers::AppState {
         dispatcher,

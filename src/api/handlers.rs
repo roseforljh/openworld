@@ -14,9 +14,23 @@ use tracing::{debug, info};
 use crate::app::dispatcher::Dispatcher;
 use crate::app::outbound_manager::OutboundManager;
 use crate::proxy::group::fallback::FallbackGroup;
+use crate::proxy::group::latency_weighted::LatencyWeightedGroup;
 use crate::proxy::group::loadbalance::LoadBalanceGroup;
 use crate::proxy::group::selector::SelectorGroup;
 use crate::proxy::group::urltest::UrlTestGroup;
+use crate::proxy::outbound::direct::DirectOutbound;
+use crate::proxy::outbound::http::HttpOutbound;
+use crate::proxy::outbound::hysteria2::Hysteria2Outbound;
+use crate::proxy::outbound::reject::{BlackholeOutbound, RejectOutbound};
+use crate::proxy::outbound::shadowsocks::ShadowsocksOutbound;
+use crate::proxy::outbound::ssh::SshOutbound;
+use crate::proxy::outbound::tor::TorOutbound;
+use crate::proxy::outbound::trojan::TrojanOutbound;
+use crate::proxy::outbound::tuic::TuicOutbound;
+use crate::proxy::outbound::vless::VlessOutbound;
+use crate::proxy::outbound::vmess::VmessOutbound;
+use crate::proxy::outbound::wireguard::WireGuardOutbound;
+use crate::proxy::outbound::chain::ProxyChain;
 
 use super::models::*;
 
@@ -88,15 +102,67 @@ async fn build_proxy_info(
         };
     }
 
-    // 普通出站
+    // 普通出站 — 检测具体协议类型
+    let proxy_type = detect_proxy_type(any);
+
     ProxyInfo {
         name: name.to_string(),
-        proxy_type: "Unknown".to_string(),
+        proxy_type,
         udp: false,
         history: vec![],
         all: None,
         now: None,
     }
+}
+
+/// 检测出站处理器的具体协议类型
+fn detect_proxy_type(any: &dyn std::any::Any) -> String {
+    if any.downcast_ref::<DirectOutbound>().is_some() {
+        return "Direct".to_string();
+    }
+    if any.downcast_ref::<RejectOutbound>().is_some() {
+        return "Reject".to_string();
+    }
+    if any.downcast_ref::<BlackholeOutbound>().is_some() {
+        return "Blackhole".to_string();
+    }
+    if any.downcast_ref::<VlessOutbound>().is_some() {
+        return "VLESS".to_string();
+    }
+    if any.downcast_ref::<VmessOutbound>().is_some() {
+        return "VMess".to_string();
+    }
+    if any.downcast_ref::<TrojanOutbound>().is_some() {
+        return "Trojan".to_string();
+    }
+    if any.downcast_ref::<ShadowsocksOutbound>().is_some() {
+        return "Shadowsocks".to_string();
+    }
+    if any.downcast_ref::<Hysteria2Outbound>().is_some() {
+        return "Hysteria2".to_string();
+    }
+    if any.downcast_ref::<WireGuardOutbound>().is_some() {
+        return "WireGuard".to_string();
+    }
+    if any.downcast_ref::<HttpOutbound>().is_some() {
+        return "HTTP".to_string();
+    }
+    if any.downcast_ref::<SshOutbound>().is_some() {
+        return "SSH".to_string();
+    }
+    if any.downcast_ref::<TuicOutbound>().is_some() {
+        return "TUIC".to_string();
+    }
+    if any.downcast_ref::<TorOutbound>().is_some() {
+        return "Tor".to_string();
+    }
+    if any.downcast_ref::<ProxyChain>().is_some() {
+        return "Chain".to_string();
+    }
+    if any.downcast_ref::<LatencyWeightedGroup>().is_some() {
+        return "LatencyWeighted".to_string();
+    }
+    "Unknown".to_string()
 }
 
 /// GET /proxies
@@ -262,15 +328,18 @@ pub async fn traffic_ws(
 async fn handle_traffic_ws(mut socket: WebSocket, state: AppState) {
     let mut ticker = interval(Duration::from_secs(1));
     let tracker = state.dispatcher.tracker().clone();
-    let mut last_up = tracker.snapshot().total_up;
-    let mut last_down = tracker.snapshot().total_down;
+    let snap = tracker.snapshot_async().await;
+    let mut last_up = snap.total_up;
+    let mut last_down = snap.total_down;
 
     loop {
         ticker.tick().await;
-        let snap = tracker.snapshot();
+        let snap = tracker.snapshot_async().await;
         let item = TrafficItem {
             up: snap.total_up.saturating_sub(last_up),
             down: snap.total_down.saturating_sub(last_down),
+            memory: current_memory_usage(),
+            conn_active: snap.active_count,
         };
         last_up = snap.total_up;
         last_down = snap.total_down;
@@ -323,6 +392,76 @@ pub async fn get_stats(State(state): State<AppState>) -> Json<StatsResponse> {
             p99_ms: p99,
         },
     })
+}
+
+/// GET /metrics - Prometheus metrics export
+pub async fn get_metrics(State(state): State<AppState>) -> impl IntoResponse {
+    let tracker = state.dispatcher.tracker();
+    let snap = tracker.snapshot_async().await;
+    let route_stats = tracker.route_stats();
+    let error_stats = tracker.error_stats();
+    let latency = tracker.latency_percentiles_ms();
+
+    let mut out = String::with_capacity(2048);
+
+    // Active connections (gauge)
+    out.push_str("# HELP openworld_connections_active Current active connections\n");
+    out.push_str("# TYPE openworld_connections_active gauge\n");
+    out.push_str(&format!("openworld_connections_active {}\n\n", snap.active_count));
+
+    // Total traffic (counters)
+    out.push_str("# HELP openworld_traffic_bytes_total Total traffic in bytes\n");
+    out.push_str("# TYPE openworld_traffic_bytes_total counter\n");
+    out.push_str(&format!("openworld_traffic_bytes_total{{direction=\"upload\"}} {}\n", snap.total_up));
+    out.push_str(&format!("openworld_traffic_bytes_total{{direction=\"download\"}} {}\n\n", snap.total_down));
+
+    // Route hits (counter with label)
+    if !route_stats.is_empty() {
+        out.push_str("# HELP openworld_route_hits_total Route match hit count\n");
+        out.push_str("# TYPE openworld_route_hits_total counter\n");
+        let mut sorted: Vec<_> = route_stats.iter().collect();
+        sorted.sort_by(|(a, _), (b, _)| a.cmp(b));
+        for (route, count) in sorted {
+            out.push_str(&format!("openworld_route_hits_total{{route=\"{}\"}} {}\n", prom_escape(route), count));
+        }
+        out.push('\n');
+    }
+
+    // Error counts (counter with label)
+    if !error_stats.is_empty() {
+        out.push_str("# HELP openworld_errors_total Error count by category\n");
+        out.push_str("# TYPE openworld_errors_total counter\n");
+        let mut sorted: Vec<_> = error_stats.iter().collect();
+        sorted.sort_by(|(a, _), (b, _)| a.cmp(b));
+        for (code, count) in sorted {
+            out.push_str(&format!("openworld_errors_total{{code=\"{}\"}} {}\n", prom_escape(code), count));
+        }
+        out.push('\n');
+    }
+
+    // Latency summary
+    if let Some((p50, p95, p99)) = latency {
+        out.push_str("# HELP openworld_connection_duration_ms Connection latency in milliseconds\n");
+        out.push_str("# TYPE openworld_connection_duration_ms summary\n");
+        out.push_str(&format!("openworld_connection_duration_ms{{quantile=\"0.5\"}} {}\n", p50));
+        out.push_str(&format!("openworld_connection_duration_ms{{quantile=\"0.95\"}} {}\n", p95));
+        out.push_str(&format!("openworld_connection_duration_ms{{quantile=\"0.99\"}} {}\n\n", p99));
+    }
+
+    // Uptime (gauge)
+    let uptime_secs = state.start_time.elapsed().as_secs();
+    out.push_str("# HELP openworld_uptime_seconds Process uptime in seconds\n");
+    out.push_str("# TYPE openworld_uptime_seconds gauge\n");
+    out.push_str(&format!("openworld_uptime_seconds {}\n", uptime_secs));
+
+    (
+        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        out,
+    )
+}
+
+fn prom_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
 }
 
 /// GET /logs (WebSocket) - 实时日志流
@@ -455,6 +594,7 @@ fn rule_type_name(rule: &crate::router::rules::Rule) -> String {
         Rule::ProcessPath(_) => "ProcessPath".to_string(),
         Rule::IpAsn(_) => "IPASN".to_string(),
         Rule::Uid(_) => "UID".to_string(),
+        Rule::Protocol(_) => "Protocol".to_string(),
         Rule::And(_) => "AND".to_string(),
         Rule::Or(_) => "OR".to_string(),
         Rule::Not(_) => "NOT".to_string(),
@@ -559,4 +699,393 @@ pub async fn get_rule_providers(State(state): State<AppState>) -> Json<RuleProvi
     }
 
     Json(RuleProvidersResponse { providers: result })
+}
+
+/// GET /dns/query?name=example.com&type=A
+pub async fn dns_query(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let name = match params.get("name") {
+        Some(n) => n.clone(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"message": "missing 'name' parameter"})),
+            )
+                .into_response();
+        }
+    };
+
+    let resolver = state.dispatcher.resolver();
+    match resolver.resolve(&name).await {
+        Ok(addrs) => {
+            let answers: Vec<serde_json::Value> = addrs
+                .iter()
+                .map(|ip| {
+                    serde_json::json!({
+                        "type": if ip.is_ipv4() { "A" } else { "AAAA" },
+                        "data": ip.to_string(),
+                        "ttl": 300,
+                    })
+                })
+                .collect();
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "Status": 0,
+                    "Question": [{"name": name, "type": params.get("type").unwrap_or(&"A".to_string())}],
+                    "Answer": answers,
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "Status": 2,
+                "Question": [{"name": name}],
+                "Answer": [],
+                "Comment": format!("resolve failed: {}", e),
+            })),
+        )
+            .into_response(),
+    }
+}
+
+/// GET /connections (WebSocket) - 实时连接流
+pub async fn connections_ws(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    if let Some(ref secret) = state.secret {
+        let token = params.get("token").map(|s| s.as_str()).unwrap_or("");
+        if token != secret {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+    }
+
+    ws.on_upgrade(move |socket| handle_connections_ws(socket, state))
+        .into_response()
+}
+
+async fn handle_connections_ws(mut socket: WebSocket, state: AppState) {
+    let mut ticker = interval(Duration::from_secs(1));
+    let tracker = state.dispatcher.tracker().clone();
+
+    loop {
+        ticker.tick().await;
+        let connections = tracker.list().await;
+        let snapshot = tracker.snapshot();
+
+        let items: Vec<ConnectionItem> = connections
+            .into_iter()
+            .map(|c| {
+                let elapsed = c.start_time.elapsed();
+                let start = chrono_like_start(elapsed);
+                ConnectionItem {
+                    id: c.id.to_string(),
+                    metadata: ConnectionMetadata {
+                        network: c.network.clone(),
+                        conn_type: c.inbound_tag.clone(),
+                        source_ip: c.source.map(|s| s.ip().to_string()).unwrap_or_default(),
+                        source_port: c.source.map(|s| s.port().to_string()).unwrap_or_default(),
+                        destination_ip: String::new(),
+                        destination_port: String::new(),
+                        host: c.target.clone(),
+                        dns_mode: String::new(),
+                    },
+                    upload: c.upload,
+                    download: c.download,
+                    start,
+                    chains: vec![c.outbound_tag.clone()],
+                    rule: c.matched_rule.clone(),
+                    route_tag: c.route_tag.clone(),
+                }
+            })
+            .collect();
+
+        let resp = serde_json::json!({
+            "downloadTotal": snapshot.total_down,
+            "uploadTotal": snapshot.total_up,
+            "connections": items,
+        });
+
+        let json = match serde_json::to_string(&resp) {
+            Ok(j) => j,
+            Err(_) => break,
+        };
+        if socket.send(Message::Text(json.into())).await.is_err() {
+            break;
+        }
+    }
+}
+
+/// GET /providers/proxies
+pub async fn get_proxy_providers(State(state): State<AppState>) -> Json<ProxyProvidersResponse> {
+    let outbound_manager = state.dispatcher.outbound_manager().await;
+    let mut providers = HashMap::new();
+
+    // 将代理组作为 proxy provider 暴露
+    for (name, handler) in outbound_manager.list() {
+        let any = handler.as_any();
+        let (group_type, proxy_names) = if let Some(selector) = any.downcast_ref::<SelectorGroup>() {
+            ("Selector", selector.proxy_names().to_vec())
+        } else if let Some(urltest) = any.downcast_ref::<UrlTestGroup>() {
+            ("URLTest", urltest.proxy_names().to_vec())
+        } else if let Some(fallback) = any.downcast_ref::<FallbackGroup>() {
+            ("Fallback", fallback.proxy_names().to_vec())
+        } else if let Some(lb) = any.downcast_ref::<LoadBalanceGroup>() {
+            ("LoadBalance", lb.proxy_names().to_vec())
+        } else {
+            continue;
+        };
+
+        let mut proxies = Vec::new();
+        for pname in &proxy_names {
+            if let Some(ph) = outbound_manager.get(pname) {
+                let info = build_proxy_info(pname, ph.as_ref(), &outbound_manager).await;
+                proxies.push(info);
+            }
+        }
+
+        providers.insert(
+            name.clone(),
+            ProxyProviderInfo {
+                name: name.clone(),
+                provider_type: group_type.to_string(),
+                proxies,
+                vehicle_type: "Compatible".to_string(),
+            },
+        );
+    }
+
+    Json(ProxyProvidersResponse { providers })
+}
+
+/// POST /dns/flush
+pub async fn flush_dns(State(state): State<AppState>) -> StatusCode {
+    state.dispatcher.resolver().flush_cache().await;
+    info!("DNS cache flushed via API");
+    StatusCode::NO_CONTENT
+}
+
+/// PUT /providers/proxies/:name
+pub async fn refresh_proxy_provider(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    let outbound_manager = state.dispatcher.outbound_manager().await;
+    let handler = match outbound_manager.get(&name) {
+        Some(h) => h,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let any = handler.as_any();
+    let proxy_names = if let Some(selector) = any.downcast_ref::<SelectorGroup>() {
+        selector.proxy_names().to_vec()
+    } else if let Some(urltest) = any.downcast_ref::<UrlTestGroup>() {
+        urltest.proxy_names().to_vec()
+    } else if let Some(fallback) = any.downcast_ref::<FallbackGroup>() {
+        fallback.proxy_names().to_vec()
+    } else if let Some(lb) = any.downcast_ref::<LoadBalanceGroup>() {
+        lb.proxy_names().to_vec()
+    } else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+
+    // 对组内所有代理触发延迟测试
+    let url = "http://www.gstatic.com/generate_204".to_string();
+    let timeout = 5000u64;
+    let mut results = HashMap::new();
+    for pname in &proxy_names {
+        if let Some(delay) = outbound_manager.test_delay(pname, &url, timeout).await {
+            results.insert(pname.clone(), delay);
+        }
+    }
+
+    info!(provider = name.as_str(), tested = results.len(), "proxy provider refreshed via API");
+    (StatusCode::OK, Json(serde_json::json!({"tested": results}))).into_response()
+}
+
+/// GET /providers/rules/:name
+pub async fn get_rule_provider(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    let router = state.dispatcher.router().await;
+    let providers = router.providers();
+    match providers.get(&name) {
+        Some(data) => {
+            let snapshot = data.snapshot();
+            let rule_count = snapshot.domain_rules.len() + snapshot.ip_cidrs.len();
+            let info = RuleProviderInfo {
+                name: name.clone(),
+                provider_type: data.provider_type().to_string(),
+                rule_count,
+                updated_at: String::new(),
+                behavior: if !snapshot.ip_cidrs.is_empty() && snapshot.domain_rules.is_empty() {
+                    "ipcidr".to_string()
+                } else if snapshot.ip_cidrs.is_empty() && !snapshot.domain_rules.is_empty() {
+                    "domain".to_string()
+                } else {
+                    "classical".to_string()
+                },
+            };
+            (StatusCode::OK, Json(serde_json::json!(info))).into_response()
+        }
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// PUT /providers/rules/:name
+pub async fn refresh_rule_provider(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    let router = state.dispatcher.router().await;
+    let provider = match router.providers().get(&name) {
+        Some(p) => p.clone(),
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let provider_for_refresh = provider.clone();
+    let refresh_result = tokio::task::spawn_blocking(move || {
+        provider_for_refresh.refresh_http_provider()
+    }).await;
+
+    match refresh_result {
+        Ok(Ok(changed)) => {
+            if changed {
+                let current_router = state.dispatcher.router().await;
+                state.dispatcher.update_router(current_router).await;
+                info!(provider = name.as_str(), "rule provider refreshed and router updated via API");
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(Err(e)) => {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"message": format!("refresh failed: {}", e)})),
+            ).into_response()
+        }
+        Err(e) => {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"message": format!("task join error: {}", e)})),
+            ).into_response()
+        }
+    }
+}
+
+/// GET /configs
+pub async fn get_configs(State(state): State<AppState>) -> Json<ConfigsResponse> {
+    let outbound_manager = state.dispatcher.outbound_manager().await;
+    let router = state.dispatcher.router().await;
+
+    let outbound_count = outbound_manager.list().len();
+    let rule_count = router.rules().len();
+    let provider_count = router.providers().len();
+
+    Json(ConfigsResponse {
+        port: 0,
+        socks_port: 0,
+        mixed_port: 0,
+        mode: "rule".to_string(),
+        log_level: "info".to_string(),
+        allow_lan: false,
+        outbound_count,
+        rule_count,
+        provider_count,
+    })
+}
+
+/// GET /traffic/sse — SSE 版流量推送
+pub async fn traffic_sse(
+    State(state): State<AppState>,
+) -> axum::response::sse::Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>
+{
+    let tracker = state.dispatcher.tracker().clone();
+
+    let stream = futures_util::stream::unfold(
+        (tracker, 0u64, 0u64, true),
+        |(tracker, mut last_up, mut last_down, first)| async move {
+            if first {
+                let snap = tracker.snapshot_async().await;
+                last_up = snap.total_up;
+                last_down = snap.total_down;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            let snap = tracker.snapshot_async().await;
+            let item = TrafficItem {
+                up: snap.total_up.saturating_sub(last_up),
+                down: snap.total_down.saturating_sub(last_down),
+                memory: current_memory_usage(),
+                conn_active: snap.active_count,
+            };
+            last_up = snap.total_up;
+            last_down = snap.total_down;
+            let json = serde_json::to_string(&item).unwrap_or_default();
+            let event = axum::response::sse::Event::default().data(json);
+            Some((Ok(event), (tracker, last_up, last_down, false)))
+        },
+    );
+
+    axum::response::sse::Sse::new(stream)
+        .keep_alive(axum::response::sse::KeepAlive::default())
+}
+
+/// GET /connections/sse — SSE 版连接列表推送
+pub async fn connections_sse(
+    State(state): State<AppState>,
+) -> axum::response::sse::Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>
+{
+    let tracker = state.dispatcher.tracker().clone();
+
+    let stream = futures_util::stream::unfold(tracker, |tracker| async move {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let connections = tracker.list().await;
+        let snapshot = tracker.snapshot_async().await;
+
+        let items: Vec<ConnectionItem> = connections
+            .into_iter()
+            .map(|c| {
+                let elapsed = c.start_time.elapsed();
+                let start = chrono_like_start(elapsed);
+                ConnectionItem {
+                    id: c.id.to_string(),
+                    metadata: ConnectionMetadata {
+                        network: c.network.clone(),
+                        conn_type: c.inbound_tag.clone(),
+                        source_ip: c.source.map(|s| s.ip().to_string()).unwrap_or_default(),
+                        source_port: c.source.map(|s| s.port().to_string()).unwrap_or_default(),
+                        destination_ip: String::new(),
+                        destination_port: String::new(),
+                        host: c.target.clone(),
+                        dns_mode: String::new(),
+                    },
+                    upload: c.upload,
+                    download: c.download,
+                    start,
+                    chains: vec![c.outbound_tag.clone()],
+                    rule: c.matched_rule.clone(),
+                    route_tag: c.route_tag.clone(),
+                }
+            })
+            .collect();
+
+        let resp = serde_json::json!({
+            "downloadTotal": snapshot.total_down,
+            "uploadTotal": snapshot.total_up,
+            "connections": items,
+        });
+
+        let json = serde_json::to_string(&resp).unwrap_or_default();
+        let event = axum::response::sse::Event::default().data(json);
+        Some((Ok(event), tracker))
+    });
+
+    axum::response::sse::Sse::new(stream)
+        .keep_alive(axum::response::sse::KeepAlive::default())
 }

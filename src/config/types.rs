@@ -19,6 +19,9 @@ pub struct Config {
     pub subscriptions: Vec<SubscriptionConfig>,
     pub api: Option<ApiConfig>,
     pub dns: Option<DnsConfig>,
+    /// 全局最大连接数限制
+    #[serde(default = "default_max_connections", rename = "max-connections")]
+    pub max_connections: u32,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -60,6 +63,12 @@ impl Config {
             );
         }
         for rule in &self.router.rules {
+            if matches!(rule.rule_type.as_str(), "ip-asn" | "uid") {
+                anyhow::bail!(
+                    "router rule type '{}' is declared but not implemented in matcher yet",
+                    rule.rule_type
+                );
+            }
             if !all_tags.contains(&rule.outbound.as_str()) {
                 anyhow::bail!(
                     "rule outbound '{}' does not match any outbound or proxy-group",
@@ -75,6 +84,36 @@ impl Config {
                         "proxy-group '{}' references unknown proxy '{}'",
                         group.name,
                         proxy_name
+                    );
+                }
+            }
+        }
+
+        let outbound_tags: Vec<&str> = self.outbounds.iter().map(|o| o.tag.as_str()).collect();
+        for outbound in &self.outbounds {
+            if outbound.protocol != "chain" {
+                continue;
+            }
+
+            let hops = outbound.settings.chain.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("chain outbound '{}' requires settings.chain", outbound.tag)
+            })?;
+            if hops.is_empty() {
+                anyhow::bail!(
+                    "chain outbound '{}' requires non-empty settings.chain",
+                    outbound.tag
+                );
+            }
+
+            for hop in hops {
+                if hop == &outbound.tag {
+                    anyhow::bail!("chain outbound '{}' cannot contain itself", outbound.tag);
+                }
+                if !outbound_tags.contains(&hop.as_str()) {
+                    anyhow::bail!(
+                        "chain outbound '{}' references unknown hop '{}'",
+                        outbound.tag,
+                        hop
                     );
                 }
             }
@@ -101,6 +140,22 @@ fn default_log_level() -> String {
     "info".to_string()
 }
 
+fn default_max_connections() -> u32 {
+    10000
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_tproxy_mark() -> u32 {
+    1
+}
+
+fn default_tproxy_table() -> u32 {
+    100
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct InboundConfig {
     pub tag: String,
@@ -111,6 +166,9 @@ pub struct InboundConfig {
     pub sniffing: SniffingConfig,
     #[serde(default)]
     pub settings: InboundSettings,
+    /// 此入站的最大连接数限制（可选，不设则仅受全局限制）
+    #[serde(default, rename = "max-connections")]
+    pub max_connections: Option<u32>,
 }
 
 #[derive(Debug, Default, Deserialize, Clone)]
@@ -125,6 +183,42 @@ pub struct InboundSettings {
     pub clients: Option<Vec<VlessClientConfig>>,
     /// 网络类型 (tcp/udp)，用于 TProxy 等入站
     pub network: Option<String>,
+    /// 认证用户列表（SOCKS5/HTTP/Mixed 入站）
+    #[serde(default)]
+    pub auth: Option<Vec<AuthUserConfig>>,
+    /// 自动设置系统代理（主要用于 Windows）
+    #[serde(default, rename = "set-system-proxy")]
+    pub set_system_proxy: bool,
+    /// 系统代理绕过列表
+    #[serde(default, rename = "system-proxy-bypass")]
+    pub system_proxy_bypass: Vec<String>,
+    /// 系统代理 SOCKS 端口（可选）
+    #[serde(default, rename = "system-proxy-socks-port")]
+    pub system_proxy_socks_port: Option<u16>,
+    /// Linux 透明代理规则自动应用（redirect/tproxy 入站）
+    #[serde(default = "default_true", rename = "auto-route")]
+    pub auto_route: bool,
+    /// Linux 透明代理后端：iptables | nftables
+    #[serde(default, rename = "route-backend")]
+    pub route_backend: Option<String>,
+    /// Linux cgroup 路径（可选）
+    #[serde(default, rename = "cgroup-path")]
+    pub cgroup_path: Option<String>,
+    /// TPROXY fwmark（默认 1）
+    #[serde(default = "default_tproxy_mark", rename = "tproxy-mark")]
+    pub tproxy_mark: u32,
+    /// TPROXY 路由表号（默认 100）
+    #[serde(default = "default_tproxy_table", rename = "tproxy-table")]
+    pub tproxy_table: u32,
+    /// TUN DNS 劫持规则（如 ["udp://any:53", "tcp://any:53"]）
+    #[serde(default, rename = "dns-hijack")]
+    pub dns_hijack: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct AuthUserConfig {
+    pub username: String,
+    pub password: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -167,6 +261,8 @@ pub struct OutboundSettings {
     pub plugin: Option<String>,
     /// SIP003 插件参数
     pub plugin_opts: Option<String>,
+    /// Shadowsocks 2022 iPSK (identity PSK) for multi-user
+    pub identity_key: Option<String>,
     /// WireGuard private key (base64)
     pub private_key: Option<String>,
     /// WireGuard peer public key (base64)
@@ -185,6 +281,10 @@ pub struct OutboundSettings {
     pub private_key_passphrase: Option<String>,
     /// 拥塞控制算法 (cubic/bbr/new_reno)
     pub congestion_control: Option<String>,
+    /// Hysteria2 上行带宽提示 (Mbps)
+    pub up_mbps: Option<u64>,
+    /// Hysteria2 下行带宽提示 (Mbps)
+    pub down_mbps: Option<u64>,
     /// VMess AlterID (0 = AEAD, >0 = legacy MD5+Timestamp)
     pub alter_id: Option<u16>,
     /// WireGuard 多 Peer 配置
@@ -196,6 +296,9 @@ pub struct OutboundSettings {
     /// TLS 配置（新格式）
     pub tls: Option<TlsConfig>,
     pub mux: Option<MuxConfig>,
+    pub chain: Option<Vec<String>>,
+    /// 统一 Dialer 配置（接口绑定、路由标记、TFO、MPTCP 等）
+    pub dialer: Option<crate::common::DialerConfig>,
 }
 
 impl OutboundSettings {
@@ -229,6 +332,7 @@ impl OutboundSettings {
             ech_config: None,
             ech_grease: false,
             ech_outer_sni: None,
+            ech_auto: false,
         }
     }
 }
@@ -312,6 +416,9 @@ pub struct TlsConfig {
     /// ECH outer SNI（保留）
     #[serde(default, rename = "ech-outer-sni")]
     pub ech_outer_sni: Option<String>,
+    /// 自动从 DNS HTTPS 记录获取 ECH 配置
+    #[serde(default, rename = "ech-auto")]
+    pub ech_auto: bool,
 }
 
 impl Default for TlsConfig {
@@ -329,6 +436,7 @@ impl Default for TlsConfig {
             ech_config: None,
             ech_grease: false,
             ech_outer_sni: None,
+            ech_auto: false,
         }
     }
 }
@@ -341,6 +449,8 @@ pub struct ApiConfig {
     #[serde(default = "default_api_port")]
     pub port: u16,
     pub secret: Option<String>,
+    #[serde(default, rename = "external-ui")]
+    pub external_ui: Option<String>,
 }
 
 fn default_api_listen() -> String {
@@ -379,6 +489,9 @@ pub struct DnsConfig {
     /// EDNS Client Subnet (如 "1.2.3.0/24")
     #[serde(default, rename = "edns-client-subnet")]
     pub edns_client_subnet: Option<String>,
+    /// IP 地址偏好策略: "ipv4" | "ipv6" | "" (默认不偏好)
+    #[serde(default, rename = "prefer-ip")]
+    pub prefer_ip: Option<String>,
 }
 
 fn default_dns_mode() -> String {
@@ -453,6 +566,9 @@ pub struct ProxyGroupConfig {
     /// url-test 容差（毫秒），延迟差在此范围内不切换
     #[serde(default = "default_tolerance")]
     pub tolerance: u64,
+    /// load-balance 策略: round-robin | random | consistent-hash | sticky
+    #[serde(default)]
+    pub strategy: Option<String>,
 }
 
 fn default_health_interval() -> u64 {
@@ -473,6 +589,21 @@ pub struct RouterConfig {
     pub geosite_db: Option<String>,
     #[serde(default, rename = "rule-providers")]
     pub rule_providers: HashMap<String, RuleProviderConfig>,
+    /// GeoIP 自动更新 URL
+    #[serde(default, rename = "geoip-url")]
+    pub geoip_url: Option<String>,
+    /// GeoSite 自动更新 URL
+    #[serde(default, rename = "geosite-url")]
+    pub geosite_url: Option<String>,
+    /// Geo 数据库自动更新间隔（秒），默认 7 天
+    #[serde(
+        default = "default_geo_update_interval",
+        rename = "geo-update-interval"
+    )]
+    pub geo_update_interval: u64,
+    /// 是否启用 Geo 数据库自动更新
+    #[serde(default, rename = "geo-auto-update")]
+    pub geo_auto_update: bool,
 }
 
 impl Default for RouterConfig {
@@ -483,12 +614,20 @@ impl Default for RouterConfig {
             geoip_db: None,
             geosite_db: None,
             rule_providers: HashMap::new(),
+            geoip_url: None,
+            geosite_url: None,
+            geo_update_interval: default_geo_update_interval(),
+            geo_auto_update: false,
         }
     }
 }
 
 fn default_outbound() -> String {
     "direct".to_string()
+}
+
+fn default_geo_update_interval() -> u64 {
+    7 * 24 * 3600
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -549,6 +688,7 @@ mod tests {
                 port: 1080,
                 sniffing: SniffingConfig::default(),
                 settings: InboundSettings::default(),
+                max_connections: None,
             }],
             outbounds: vec![OutboundConfig {
                 tag: "direct".to_string(),
@@ -561,11 +701,16 @@ mod tests {
                 geoip_db: None,
                 geosite_db: None,
                 rule_providers: Default::default(),
+                geoip_url: None,
+                geosite_url: None,
+                geo_update_interval: 7 * 24 * 3600,
+                geo_auto_update: false,
             },
             subscriptions: vec![],
             api: None,
             dns: None,
             proxy_groups: vec![],
+            max_connections: 10000,
         }
     }
 
@@ -691,5 +836,55 @@ router:
         assert_eq!(vless.port, Some(443));
         assert!(vless.allow_insecure);
         assert_eq!(vless.sni.as_deref(), Some("example.com"));
+    }
+
+    #[test]
+    fn validate_chain_outbound_ok() {
+        let mut config = minimal_config();
+        config.outbounds.push(OutboundConfig {
+            tag: "chain-out".to_string(),
+            protocol: "chain".to_string(),
+            settings: OutboundSettings {
+                chain: Some(vec!["direct".to_string()]),
+                ..Default::default()
+            },
+        });
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_chain_outbound_unknown_hop() {
+        let mut config = minimal_config();
+        config.outbounds.push(OutboundConfig {
+            tag: "chain-out".to_string(),
+            protocol: "chain".to_string(),
+            settings: OutboundSettings {
+                chain: Some(vec!["missing".to_string()]),
+                ..Default::default()
+            },
+        });
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_ip_asn_rule() {
+        let mut config = minimal_config();
+        config.router.rules.push(RuleConfig {
+            rule_type: "ip-asn".to_string(),
+            values: vec!["13335".to_string()],
+            outbound: "direct".to_string(),
+        });
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_uid_rule() {
+        let mut config = minimal_config();
+        config.router.rules.push(RuleConfig {
+            rule_type: "uid".to_string(),
+            values: vec!["1000".to_string()],
+            outbound: "direct".to_string(),
+        });
+        assert!(config.validate().is_err());
     }
 }

@@ -11,7 +11,7 @@ use tracing::debug;
 
 use crate::common::{Address, BoxUdpTransport, ProxyStream, UdpPacket, UdpTransport};
 use crate::config::types::OutboundConfig;
-use crate::proxy::mux::{MuxManager, MuxTransport, StreamConnector};
+use crate::proxy::mux::{MuxManager, MuxTransport, StreamConnector, XudpFrame, XudpMux};
 use crate::proxy::transport::StreamTransport;
 use crate::proxy::{OutboundHandler, Session};
 
@@ -25,6 +25,7 @@ pub struct VlessOutbound {
     transport: Arc<dyn StreamTransport>,
     mux: Option<Arc<MuxManager>>,
     flow: Option<String>,
+    xudp_mux: Arc<XudpMux>,
 }
 
 impl VlessOutbound {
@@ -66,11 +67,12 @@ impl VlessOutbound {
         }
 
         let transport_config = settings.effective_transport();
-        let transport: Arc<dyn StreamTransport> = crate::proxy::transport::build_transport(
+        let transport: Arc<dyn StreamTransport> = crate::proxy::transport::build_transport_with_dialer(
             address,
             port,
             &transport_config,
             &tls_config,
+            settings.dialer.clone(),
         )?
         .into();
 
@@ -93,6 +95,7 @@ impl VlessOutbound {
             transport,
             mux,
             flow,
+            xudp_mux: Arc::new(XudpMux::new()),
         })
     }
 }
@@ -153,34 +156,88 @@ impl OutboundHandler for VlessOutbound {
 
         protocol::read_response(&mut stream).await?;
 
-        debug!(target = %session.target, "VLESS UDP stream established");
+        debug!(target = %session.target, "VLESS UDP stream established (XUDP)");
 
+        let session_id = self.xudp_mux.allocate_session_id();
         Ok(Box::new(VlessUdpTransport {
             stream: Mutex::new(stream),
             target: session.target.clone(),
+            xudp_mux: self.xudp_mux.clone(),
+            session_id,
+            session_opened: Mutex::new(false),
         }))
     }
 }
 
-/// VLESS UDP 传输：通过 TLS 流收发 UDP 帧
+/// VLESS UDP 传输：通过 XUDP 协议在 TLS 流上多路复用 UDP 会话
 struct VlessUdpTransport {
     stream: Mutex<ProxyStream>,
     target: Address,
+    #[allow(dead_code)]
+    xudp_mux: Arc<XudpMux>,
+    session_id: u16,
+    /// 是否已发送 NEW 帧
+    session_opened: Mutex<bool>,
 }
 
 #[async_trait]
 impl UdpTransport for VlessUdpTransport {
     async fn send(&self, packet: UdpPacket) -> Result<()> {
         let mut stream = self.stream.lock().await;
-        protocol::write_udp_frame(&mut stream, &packet.data).await
+        let mut opened = self.session_opened.lock().await;
+
+        // 首次发送时先发 NEW 帧建立 XUDP 会话
+        if !*opened {
+            let new_frame = XudpFrame::new_session(self.session_id, packet.addr.clone());
+            let encoded = new_frame.encode();
+            protocol::write_udp_frame(&mut stream, &encoded).await?;
+            *opened = true;
+        }
+
+        // 发送 DATA 帧
+        let data_frame = XudpFrame::data(self.session_id, packet.addr, packet.data.to_vec());
+        let encoded = data_frame.encode();
+        protocol::write_udp_frame(&mut stream, &encoded).await
     }
 
     async fn recv(&self) -> Result<UdpPacket> {
         let mut stream = self.stream.lock().await;
-        let data = protocol::read_udp_frame(&mut stream).await?;
-        Ok(UdpPacket {
-            addr: self.target.clone(),
-            data,
-        })
+        loop {
+            let data = protocol::read_udp_frame(&mut stream).await?;
+            // 尝试解码 XUDP 帧
+            match XudpFrame::decode(&data) {
+                Ok((frame, _)) => {
+                    match frame.frame_type {
+                        0x02 => {
+                            // DATA 帧
+                            let addr = frame.address.unwrap_or_else(|| self.target.clone());
+                            return Ok(UdpPacket {
+                                addr,
+                                data: bytes::Bytes::from(frame.payload),
+                            });
+                        }
+                        0x03 => {
+                            // CLOSE 帧
+                            anyhow::bail!("XUDP session closed by remote");
+                        }
+                        0x04 => {
+                            // KEEPALIVE — 忽略，继续读取
+                            continue;
+                        }
+                        _ => {
+                            // NEW 或其他 — 忽略
+                            continue;
+                        }
+                    }
+                }
+                Err(_) => {
+                    // 非 XUDP 帧，作为原始 UDP 数据返回（兼容旧服务端）
+                    return Ok(UdpPacket {
+                        addr: self.target.clone(),
+                        data,
+                    });
+                }
+            }
+        }
     }
 }

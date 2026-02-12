@@ -55,6 +55,7 @@ impl InboundHandler for RedirectInbound {
             inbound_tag: self.tag.clone(),
             network: Network::Tcp,
             sniff: true,
+            detected_protocol: None,
         };
 
         Ok(InboundResult {
@@ -114,6 +115,7 @@ impl InboundHandler for TProxyInbound {
             inbound_tag: self.tag.clone(),
             network: self.network,
             sniff: true,
+            detected_protocol: None,
         };
 
         Ok(InboundResult {
@@ -230,6 +232,7 @@ mod tests {
             port: 7893,
             sniffing: Default::default(),
             settings: InboundSettings::default(),
+            max_connections: None,
         };
         let inbound = RedirectInbound::new(&config).unwrap();
         assert_eq!(inbound.tag(), "redirect-in");
@@ -244,6 +247,7 @@ mod tests {
             port: 7894,
             sniffing: Default::default(),
             settings: InboundSettings::default(),
+            max_connections: None,
         };
         let inbound = TProxyInbound::new(&config).unwrap();
         assert_eq!(inbound.tag(), "tproxy-in");
@@ -262,6 +266,7 @@ mod tests {
                 network: Some("udp".to_string()),
                 ..Default::default()
             },
+            max_connections: None,
         };
         let inbound = TProxyInbound::new(&config).unwrap();
         assert_eq!(inbound.network(), Network::Udp);

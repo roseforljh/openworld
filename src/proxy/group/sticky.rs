@@ -144,6 +144,7 @@ mod tests {
             inbound_tag: "test".to_string(),
             network: Network::Tcp,
             sniff: false,
+            detected_protocol: None,
         }
     }
 

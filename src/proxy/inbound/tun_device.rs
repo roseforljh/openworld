@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr};
 
 #[cfg(target_os = "linux")]
 use std::ffi::c_void;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 use std::process::Command;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 use std::sync::Mutex;
@@ -740,6 +740,387 @@ impl SystemProxy {
         }
 
         cmds
+    }
+
+    /// Apply system proxy settings.
+    pub fn apply(&self) -> Result<()> {
+        let commands = self.enable_commands();
+        for cmd in commands {
+            run_platform_shell_command(&cmd)?;
+        }
+        Ok(())
+    }
+
+    /// Disable system proxy settings.
+    pub fn disable(&self) -> Result<()> {
+        let commands = self.disable_commands();
+        for cmd in commands {
+            run_platform_shell_command(&cmd)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn capture_windows_state() -> WindowsProxyState {
+        WindowsProxyState {
+            proxy_enable: query_windows_internet_settings("ProxyEnable").and_then(|v| {
+                let token = v.split_whitespace().last()?.trim();
+                if token.starts_with("0x") {
+                    u32::from_str_radix(token.trim_start_matches("0x"), 16).ok()
+                } else {
+                    token.parse::<u32>().ok()
+                }
+            }),
+            proxy_server: query_windows_internet_settings("ProxyServer"),
+            proxy_override: query_windows_internet_settings("ProxyOverride"),
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn restore_windows_state(state: &WindowsProxyState) -> Result<()> {
+        let key = r#"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings"#;
+
+        if let Some(enable) = state.proxy_enable {
+            run_platform_shell_command(&format!(
+                r#"reg add "{}" /v ProxyEnable /t REG_DWORD /d {} /f"#,
+                key, enable
+            ))?;
+        } else {
+            run_platform_shell_command(&format!(
+                r#"reg delete "{}" /v ProxyEnable /f"#,
+                key
+            ))?;
+        }
+
+        if let Some(ref server) = state.proxy_server {
+            run_platform_shell_command(&format!(
+                r#"reg add "{}" /v ProxyServer /t REG_SZ /d "{}" /f"#,
+                key, server
+            ))?;
+        } else {
+            run_platform_shell_command(&format!(
+                r#"reg delete "{}" /v ProxyServer /f"#,
+                key
+            ))?;
+        }
+
+        if let Some(ref override_list) = state.proxy_override {
+            run_platform_shell_command(&format!(
+                r#"reg add "{}" /v ProxyOverride /t REG_SZ /d "{}" /f"#,
+                key, override_list
+            ))?;
+        } else {
+            run_platform_shell_command(&format!(
+                r#"reg delete "{}" /v ProxyOverride /f"#,
+                key
+            ))?;
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, Default)]
+pub struct WindowsProxyState {
+    pub proxy_enable: Option<u32>,
+    pub proxy_server: Option<String>,
+    pub proxy_override: Option<String>,
+}
+
+#[cfg(target_os = "windows")]
+fn query_windows_internet_settings(name: &str) -> Option<String> {
+    let key = r#"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings"#;
+    let output = Command::new("reg")
+        .args(["query", key, "/v", name])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .lines()
+        .find_map(|line| {
+            let trimmed = line.trim();
+            if !trimmed.starts_with(name) {
+                return None;
+            }
+            let parts: Vec<&str> = trimmed.split_whitespace().collect();
+            if parts.len() < 3 {
+                return None;
+            }
+            Some(parts[2..].join(" "))
+        })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransparentProxyMode {
+    Redirect,
+    TProxyTcp,
+    TProxyUdp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FirewallBackend {
+    Iptables,
+    Nftables,
+}
+
+#[derive(Debug, Clone)]
+pub struct TransparentProxyConfig {
+    pub inbound_port: u16,
+    pub mode: TransparentProxyMode,
+    pub backend: FirewallBackend,
+    pub cgroup_path: Option<String>,
+    pub tproxy_mark: u32,
+    pub tproxy_table: u32,
+}
+
+impl TransparentProxyConfig {
+    pub fn new(inbound_port: u16, mode: TransparentProxyMode) -> Self {
+        Self {
+            inbound_port,
+            mode,
+            backend: FirewallBackend::Iptables,
+            cgroup_path: None,
+            tproxy_mark: 1,
+            tproxy_table: 100,
+        }
+    }
+
+    pub fn with_backend(mut self, backend: FirewallBackend) -> Self {
+        self.backend = backend;
+        self
+    }
+
+    pub fn with_cgroup_path(mut self, cgroup_path: Option<String>) -> Self {
+        self.cgroup_path = cgroup_path;
+        self
+    }
+
+    pub fn with_tproxy_routing(mut self, mark: u32, table: u32) -> Self {
+        self.tproxy_mark = mark;
+        self.tproxy_table = table;
+        self
+    }
+}
+
+pub struct TransparentProxyManager {
+    config: TransparentProxyConfig,
+}
+
+impl TransparentProxyManager {
+    pub fn new(config: TransparentProxyConfig) -> Self {
+        Self { config }
+    }
+
+    pub fn generate_apply_commands(&self) -> Vec<String> {
+        #[cfg(target_os = "linux")]
+        {
+            match self.config.backend {
+                FirewallBackend::Iptables => self.generate_iptables_apply_commands(),
+                FirewallBackend::Nftables => self.generate_nftables_apply_commands(),
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = &self.config;
+            Vec::new()
+        }
+    }
+
+    pub fn generate_cleanup_commands(&self) -> Vec<String> {
+        #[cfg(target_os = "linux")]
+        {
+            match self.config.backend {
+                FirewallBackend::Iptables => self.generate_iptables_cleanup_commands(),
+                FirewallBackend::Nftables => self.generate_nftables_cleanup_commands(),
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = &self.config;
+            Vec::new()
+        }
+    }
+
+    pub fn apply(&self) -> Result<()> {
+        for cmd in self.generate_apply_commands() {
+            run_platform_shell_command(&cmd)?;
+        }
+        Ok(())
+    }
+
+    pub fn cleanup(&self) -> Result<()> {
+        for cmd in self.generate_cleanup_commands() {
+            run_platform_shell_command(&cmd)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    fn generate_iptables_apply_commands(&self) -> Vec<String> {
+        let mut cmds = vec![
+            "iptables -t nat -N OPENWORLD_REDIRECT 2>/dev/null || true".to_string(),
+            "iptables -t nat -F OPENWORLD_REDIRECT".to_string(),
+            format!(
+                "iptables -t nat -A OPENWORLD_REDIRECT -p tcp -j REDIRECT --to-ports {}",
+                self.config.inbound_port
+            ),
+            "iptables -t nat -C PREROUTING -p tcp -j OPENWORLD_REDIRECT 2>/dev/null || iptables -t nat -A PREROUTING -p tcp -j OPENWORLD_REDIRECT".to_string(),
+        ];
+
+        match self.config.mode {
+            TransparentProxyMode::Redirect => {}
+            TransparentProxyMode::TProxyTcp => {
+                cmds.push("iptables -t mangle -N OPENWORLD_TPROXY 2>/dev/null || true".to_string());
+                cmds.push("iptables -t mangle -F OPENWORLD_TPROXY".to_string());
+                cmds.push(format!(
+                    "iptables -t mangle -A OPENWORLD_TPROXY -p tcp -j TPROXY --on-port {} --tproxy-mark {}/0xffffffff",
+                    self.config.inbound_port, self.config.tproxy_mark
+                ));
+                cmds.push("iptables -t mangle -C PREROUTING -p tcp -j OPENWORLD_TPROXY 2>/dev/null || iptables -t mangle -A PREROUTING -p tcp -j OPENWORLD_TPROXY".to_string());
+                cmds.push(format!(
+                    "ip rule add fwmark {} lookup {} 2>/dev/null || true",
+                    self.config.tproxy_mark, self.config.tproxy_table
+                ));
+                cmds.push(format!(
+                    "ip route add local default dev lo table {} 2>/dev/null || true",
+                    self.config.tproxy_table
+                ));
+            }
+            TransparentProxyMode::TProxyUdp => {
+                cmds.push("iptables -t mangle -N OPENWORLD_TPROXY 2>/dev/null || true".to_string());
+                cmds.push("iptables -t mangle -F OPENWORLD_TPROXY".to_string());
+                cmds.push(format!(
+                    "iptables -t mangle -A OPENWORLD_TPROXY -p udp -j TPROXY --on-port {} --tproxy-mark {}/0xffffffff",
+                    self.config.inbound_port, self.config.tproxy_mark
+                ));
+                cmds.push("iptables -t mangle -C PREROUTING -p udp -j OPENWORLD_TPROXY 2>/dev/null || iptables -t mangle -A PREROUTING -p udp -j OPENWORLD_TPROXY".to_string());
+                cmds.push(format!(
+                    "ip rule add fwmark {} lookup {} 2>/dev/null || true",
+                    self.config.tproxy_mark, self.config.tproxy_table
+                ));
+                cmds.push(format!(
+                    "ip route add local default dev lo table {} 2>/dev/null || true",
+                    self.config.tproxy_table
+                ));
+            }
+        }
+
+        if let Some(ref cgroup) = self.config.cgroup_path {
+            cmds.push(format!(
+                "iptables -t mangle -C OUTPUT -m cgroup --path {} -j RETURN 2>/dev/null || iptables -t mangle -A OUTPUT -m cgroup --path {} -j RETURN",
+                cgroup, cgroup
+            ));
+        }
+
+        cmds
+    }
+
+    #[cfg(target_os = "linux")]
+    fn generate_iptables_cleanup_commands(&self) -> Vec<String> {
+        vec![
+            "iptables -t nat -D PREROUTING -p tcp -j OPENWORLD_REDIRECT 2>/dev/null || true".to_string(),
+            "iptables -t nat -F OPENWORLD_REDIRECT 2>/dev/null || true".to_string(),
+            "iptables -t nat -X OPENWORLD_REDIRECT 2>/dev/null || true".to_string(),
+            "iptables -t mangle -D PREROUTING -p tcp -j OPENWORLD_TPROXY 2>/dev/null || true".to_string(),
+            "iptables -t mangle -D PREROUTING -p udp -j OPENWORLD_TPROXY 2>/dev/null || true".to_string(),
+            "iptables -t mangle -F OPENWORLD_TPROXY 2>/dev/null || true".to_string(),
+            "iptables -t mangle -X OPENWORLD_TPROXY 2>/dev/null || true".to_string(),
+            format!(
+                "ip rule del fwmark {} lookup {} 2>/dev/null || true",
+                self.config.tproxy_mark, self.config.tproxy_table
+            ),
+            format!(
+                "ip route del local default dev lo table {} 2>/dev/null || true",
+                self.config.tproxy_table
+            ),
+        ]
+    }
+
+    #[cfg(target_os = "linux")]
+    fn generate_nftables_apply_commands(&self) -> Vec<String> {
+        let mut cmds = vec![
+            "nft add table inet openworld 2>/dev/null || true".to_string(),
+            "nft add chain inet openworld prerouting '{ type filter hook prerouting priority mangle; policy accept; }' 2>/dev/null || true".to_string(),
+            "nft flush chain inet openworld prerouting".to_string(),
+        ];
+
+        match self.config.mode {
+            TransparentProxyMode::Redirect => cmds.push(format!(
+                "nft add rule inet openworld prerouting tcp dport != {} redirect to :{}",
+                self.config.inbound_port, self.config.inbound_port
+            )),
+            TransparentProxyMode::TProxyTcp => cmds.push(format!(
+                "nft add rule inet openworld prerouting tcp tproxy to :{} meta mark set {}",
+                self.config.inbound_port, self.config.tproxy_mark
+            )),
+            TransparentProxyMode::TProxyUdp => cmds.push(format!(
+                "nft add rule inet openworld prerouting udp tproxy to :{} meta mark set {}",
+                self.config.inbound_port, self.config.tproxy_mark
+            )),
+        }
+
+        cmds.push(format!(
+            "ip rule add fwmark {} lookup {} 2>/dev/null || true",
+            self.config.tproxy_mark, self.config.tproxy_table
+        ));
+        cmds.push(format!(
+            "ip route add local default dev lo table {} 2>/dev/null || true",
+            self.config.tproxy_table
+        ));
+
+        cmds
+    }
+
+    #[cfg(target_os = "linux")]
+    fn generate_nftables_cleanup_commands(&self) -> Vec<String> {
+        vec![
+            "nft delete table inet openworld 2>/dev/null || true".to_string(),
+            format!(
+                "ip rule del fwmark {} lookup {} 2>/dev/null || true",
+                self.config.tproxy_mark, self.config.tproxy_table
+            ),
+            format!(
+                "ip route del local default dev lo table {} 2>/dev/null || true",
+                self.config.tproxy_table
+            ),
+        ]
+    }
+}
+
+fn run_platform_shell_command(command: &str) -> Result<()> {
+    #[cfg(target_os = "windows")]
+    {
+        let status = Command::new("cmd")
+            .args(["/C", command])
+            .status()
+            .with_context(|| format!("failed to execute command: {}", command))?;
+        if !status.success() {
+            anyhow::bail!("command failed with status {}: {}", status, command);
+        }
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let status = Command::new("sh")
+            .args(["-c", command])
+            .status()
+            .with_context(|| format!("failed to execute command: {}", command))?;
+        if !status.success() {
+            anyhow::bail!("command failed with status {}: {}", status, command);
+        }
+        return Ok(());
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        let _ = command;
+        Ok(())
     }
 }
 
@@ -2512,5 +2893,49 @@ mod tests {
         assert!(cmds[0].contains("ip link set"));
         assert!(cmds[1].contains("ip addr add 198.18.0.1/15"));
         assert!(cmds[2].contains("mtu 1500"));
+    }
+
+    #[test]
+    fn transparent_proxy_config_defaults() {
+        let cfg = TransparentProxyConfig::new(7893, TransparentProxyMode::Redirect);
+        assert_eq!(cfg.inbound_port, 7893);
+        assert_eq!(cfg.mode, TransparentProxyMode::Redirect);
+        assert_eq!(cfg.backend, FirewallBackend::Iptables);
+        assert_eq!(cfg.tproxy_mark, 1);
+        assert_eq!(cfg.tproxy_table, 100);
+    }
+
+    #[test]
+    fn transparent_proxy_config_builder_chain() {
+        let cfg = TransparentProxyConfig::new(7894, TransparentProxyMode::TProxyUdp)
+            .with_backend(FirewallBackend::Nftables)
+            .with_cgroup_path(Some("/sys/fs/cgroup/openworld".to_string()))
+            .with_tproxy_routing(10, 200);
+        assert_eq!(cfg.backend, FirewallBackend::Nftables);
+        assert_eq!(cfg.cgroup_path.as_deref(), Some("/sys/fs/cgroup/openworld"));
+        assert_eq!(cfg.tproxy_mark, 10);
+        assert_eq!(cfg.tproxy_table, 200);
+    }
+
+    #[test]
+    fn transparent_proxy_manager_generates_commands() {
+        let manager = TransparentProxyManager::new(TransparentProxyConfig::new(
+            7895,
+            TransparentProxyMode::TProxyTcp,
+        ));
+        let apply_cmds = manager.generate_apply_commands();
+        let cleanup_cmds = manager.generate_cleanup_commands();
+
+        #[cfg(target_os = "linux")]
+        {
+            assert!(!apply_cmds.is_empty());
+            assert!(!cleanup_cmds.is_empty());
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = apply_cmds;
+            let _ = cleanup_cmds;
+        }
     }
 }

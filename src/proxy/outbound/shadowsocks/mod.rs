@@ -14,11 +14,11 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::{TcpStream, UdpSocket};
 use tracing::debug;
 
-use crate::common::{Address, BoxUdpTransport, ProxyStream, UdpPacket, UdpTransport};
+use crate::common::{Address, BoxUdpTransport, Dialer, DialerConfig, ProxyStream, UdpPacket, UdpTransport};
 use crate::config::types::OutboundConfig;
 use crate::proxy::{OutboundHandler, Session};
 
-use crypto::{derive_subkey, evp_bytes_to_key, ss2022_password_to_key, AeadCipher, CipherKind};
+use crypto::{derive_identity_subkey_2022, derive_subkey, derive_subkey_2022, evp_bytes_to_key, is_aead_2022, ss2022_password_to_key, AeadCipher, CipherKind};
 
 /// Maximum payload size per AEAD frame (0x3FFF = 16383)
 const MAX_PAYLOAD_SIZE: usize = 0x3FFF;
@@ -34,9 +34,12 @@ pub struct ShadowsocksOutbound {
     server_port: u16,
     cipher_kind: CipherKind,
     key: Vec<u8>,
+    /// iPSK (identity PSK) for SIP022 multi-user
+    identity_key: Option<Vec<u8>>,
     plugin: Option<String>,
     plugin_opts: Option<String>,
     plugin_runtime: Option<Arc<Mutex<Sip003Runtime>>>,
+    dialer_config: Option<DialerConfig>,
 }
 
 impl ShadowsocksOutbound {
@@ -71,6 +74,19 @@ impl ShadowsocksOutbound {
                 ss2022_password_to_key(password, cipher_kind.key_len())?
             }
             _ => evp_bytes_to_key(password.as_bytes(), cipher_kind.key_len()),
+        };
+
+        // Parse iPSK (identity key) for SIP022 multi-user
+        let identity_key = if let Some(ref ipsk) = settings.identity_key {
+            if !is_aead_2022(cipher_kind) {
+                bail!(
+                    "shadowsocks outbound '{}': identity_key requires a 2022 cipher method",
+                    config.tag
+                );
+            }
+            Some(ss2022_password_to_key(ipsk, cipher_kind.key_len())?)
+        } else {
+            None
         };
 
         let plugin = settings.plugin.clone();
@@ -112,9 +128,11 @@ impl ShadowsocksOutbound {
             server_port: port,
             cipher_kind,
             key,
+            identity_key,
             plugin,
             plugin_opts,
             plugin_runtime,
+            dialer_config: settings.dialer.clone(),
         })
     }
 }
@@ -236,7 +254,7 @@ impl OutboundHandler for ShadowsocksOutbound {
     }
 
     async fn connect(&self, session: &Session) -> Result<ProxyStream> {
-        let server = if let (Some(plugin), Some(runtime)) = (&self.plugin, &self.plugin_runtime) {
+        let (server, use_dialer) = if let (Some(plugin), Some(runtime)) = (&self.plugin, &self.plugin_runtime) {
             let addr = ensure_plugin_runtime_alive(
                 runtime,
                 plugin,
@@ -245,13 +263,21 @@ impl OutboundHandler for ShadowsocksOutbound {
                 self.server_port,
             )?;
             debug!(plugin = plugin, plugin_opts = ?self.plugin_opts, proxy = %addr, "shadowsocks plugin active");
-            addr
+            (addr, false) // Plugin uses local address, no dialer needed
         } else {
-            format!("{}:{}", self.server_addr, self.server_port)
+            (format!("{}:{}", self.server_addr, self.server_port), true)
         };
         debug!(target = %session.target, server = %server, "shadowsocks connecting");
 
-        let mut stream = TcpStream::connect(&server).await?;
+        let mut stream = if use_dialer {
+            let dialer = match &self.dialer_config {
+                Some(cfg) => Dialer::new(cfg.clone()),
+                None => Dialer::default_dialer(),
+            };
+            dialer.connect_host(&self.server_addr, self.server_port).await?
+        } else {
+            TcpStream::connect(&server).await?
+        };
 
         // Generate random salt
         let salt_len = self.cipher_kind.salt_len();
@@ -259,11 +285,26 @@ impl OutboundHandler for ShadowsocksOutbound {
         rand::thread_rng().fill(&mut salt[..]);
 
         // Derive subkey for sending direction
-        let subkey = derive_subkey(&self.key, &salt, self.cipher_kind.key_len())?;
+        let subkey = if is_aead_2022(self.cipher_kind) {
+            derive_subkey_2022(&self.key, &salt, self.cipher_kind.key_len())?
+        } else {
+            derive_subkey(&self.key, &salt, self.cipher_kind.key_len())?
+        };
         let mut encoder = AeadCipher::new(self.cipher_kind, subkey);
 
         // Send salt
         stream.write_all(&salt).await?;
+
+        // SIP022: send iPSK identity header if identity_key is set
+        if let Some(ref identity_key) = self.identity_key {
+            let key_len = self.cipher_kind.key_len();
+            let id_subkey = derive_identity_subkey_2022(identity_key, &salt, key_len);
+            let mut id_cipher = AeadCipher::new(self.cipher_kind, id_subkey);
+            // Identity header payload = user's PSK (first key_len bytes)
+            let id_payload = &self.key[..key_len];
+            let encrypted_id = id_cipher.encrypt(id_payload)?;
+            stream.write_all(&encrypted_id).await?;
+        }
 
         // Encode target address in SOCKS5 format
         let mut addr_buf = BytesMut::new();
@@ -293,6 +334,7 @@ impl OutboundHandler for ShadowsocksOutbound {
             server_addr,
             cipher_kind: self.cipher_kind,
             key: self.key.clone(),
+            identity_key: self.identity_key.clone(),
         }))
     }
 }
@@ -426,8 +468,12 @@ impl AsyncRead for AeadStream {
                     }
 
                     // Salt fully read, derive subkey and initialize decoder
-                    let subkey = derive_subkey(&this.key, salt_buf, this.cipher_kind.key_len())
-                        .map_err(|e| std::io::Error::other(e.to_string()))?;
+                    let subkey = if is_aead_2022(this.cipher_kind) {
+                        derive_subkey_2022(&this.key, salt_buf, this.cipher_kind.key_len())
+                    } else {
+                        derive_subkey(&this.key, salt_buf, this.cipher_kind.key_len())
+                    }
+                    .map_err(|e| std::io::Error::other(e.to_string()))?;
                     this.decoder = Some(AeadCipher::new(this.cipher_kind, subkey));
 
                     // Transition to reading length
@@ -632,6 +678,7 @@ struct ShadowsocksUdpTransport {
     server_addr: String,
     cipher_kind: CipherKind,
     key: Vec<u8>,
+    identity_key: Option<Vec<u8>>,
 }
 
 #[async_trait]
@@ -643,20 +690,46 @@ impl UdpTransport for ShadowsocksUdpTransport {
         rand::thread_rng().fill(&mut salt[..]);
 
         // Derive subkey
-        let subkey = derive_subkey(&self.key, &salt, self.cipher_kind.key_len())?;
+        let subkey = if is_aead_2022(self.cipher_kind) {
+            derive_subkey_2022(&self.key, &salt, self.cipher_kind.key_len())?
+        } else {
+            derive_subkey(&self.key, &salt, self.cipher_kind.key_len())?
+        };
         let mut cipher = AeadCipher::new(self.cipher_kind, subkey);
 
-        // Build payload: socks5_addr + data
+        // Build payload
         let mut payload_buf = BytesMut::new();
+        if is_aead_2022(self.cipher_kind) {
+            // SIP022 UDP: [type=0x00][timestamp_u64_be][socks5_addr][data]
+            payload_buf.put_u8(0x00); // client request type
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            payload_buf.put_u64(ts);
+            // padding length = 0 (no padding for outbound client)
+            payload_buf.put_u16(0);
+        }
         packet.addr.encode_socks5(&mut payload_buf);
         payload_buf.put_slice(&packet.data);
 
         // Encrypt the entire payload as one AEAD operation
         let encrypted = cipher.encrypt(&payload_buf)?;
 
-        // Build final packet: salt + encrypted
-        let mut out = Vec::with_capacity(salt_len + encrypted.len());
+        // Build final packet: salt + [identity header] + encrypted
+        let mut out = Vec::with_capacity(salt_len + encrypted.len() + 64);
         out.extend_from_slice(&salt);
+
+        // SIP022: send iPSK identity header for UDP
+        if let Some(ref identity_key) = self.identity_key {
+            let key_len = self.cipher_kind.key_len();
+            let id_subkey = derive_identity_subkey_2022(identity_key, &salt, key_len);
+            let mut id_cipher = AeadCipher::new(self.cipher_kind, id_subkey);
+            let id_payload = &self.key[..key_len];
+            let encrypted_id = id_cipher.encrypt(id_payload)?;
+            out.extend_from_slice(&encrypted_id);
+        }
+
         out.extend_from_slice(&encrypted);
 
         // Resolve server address and send
@@ -685,13 +758,30 @@ impl UdpTransport for ShadowsocksUdpTransport {
         let encrypted = &buf[salt_len..];
 
         // Derive subkey and decrypt
-        let subkey = derive_subkey(&self.key, salt, self.cipher_kind.key_len())?;
+        let subkey = if is_aead_2022(self.cipher_kind) {
+            derive_subkey_2022(&self.key, salt, self.cipher_kind.key_len())?
+        } else {
+            derive_subkey(&self.key, salt, self.cipher_kind.key_len())?
+        };
         let mut cipher = AeadCipher::new(self.cipher_kind, subkey);
         let decrypted = cipher.decrypt(encrypted)?;
 
+        // SIP022: skip type header for 2022 ciphers
+        let payload_start = if is_aead_2022(self.cipher_kind) {
+            // Server response: [type=0x01][timestamp_u64_be][client_session_id_u64_be][padding_len_u16][padding][addr][data]
+            // Minimum: 1 + 8 + 8 + 2 = 19 bytes header
+            if decrypted.len() < 19 {
+                bail!("SIP022 UDP response too short");
+            }
+            let padding_len = u16::from_be_bytes([decrypted[17], decrypted[18]]) as usize;
+            19 + padding_len
+        } else {
+            0
+        };
+
         // Parse socks5 address from decrypted payload
-        let (addr, consumed) = Address::parse_socks5_udp_addr(&decrypted)?;
-        let data = decrypted[consumed..].to_vec();
+        let (addr, consumed) = Address::parse_socks5_udp_addr(&decrypted[payload_start..])?;
+        let data = decrypted[payload_start + consumed..].to_vec();
 
         Ok(UdpPacket {
             addr,

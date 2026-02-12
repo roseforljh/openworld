@@ -2,10 +2,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::net::TcpStream;
 use tracing::debug;
 
-use crate::common::{Address, ProxyStream};
+use crate::common::{Address, DialerConfig, ProxyStream};
 use crate::config::types::TlsConfig;
 use crate::proxy::outbound::vless::reality;
 
@@ -19,10 +18,11 @@ pub struct RealityTransport {
     server_port: u16,
     reality_config: reality::RealityConfig,
     sni: String,
+    dialer_config: Option<DialerConfig>,
 }
 
 impl RealityTransport {
-    pub fn new(server_addr: String, server_port: u16, config: &TlsConfig) -> Result<Self> {
+    pub fn new(server_addr: String, server_port: u16, config: &TlsConfig, dialer_config: Option<DialerConfig>) -> Result<Self> {
         let public_key_str = config
             .public_key
             .as_ref()
@@ -57,6 +57,7 @@ impl RealityTransport {
                 server_name,
             },
             sni,
+            dialer_config,
         })
     }
 
@@ -72,6 +73,7 @@ impl RealityTransport {
             server_port,
             reality_config,
             sni,
+            dialer_config: None,
         }
     }
 }
@@ -79,8 +81,7 @@ impl RealityTransport {
 #[async_trait]
 impl StreamTransport for RealityTransport {
     async fn connect(&self, _addr: &Address) -> Result<ProxyStream> {
-        let addr = format!("{}:{}", self.server_addr, self.server_port);
-        let tcp = TcpStream::connect(&addr).await?;
+        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config).await?;
 
         let (tls_config, handshake_ctx) = reality::build_reality_config(&self.reality_config)?;
         let connector = tokio_rustls::TlsConnector::from(Arc::new(tls_config));

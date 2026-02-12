@@ -154,6 +154,7 @@ mod tests {
                 port: 1080,
                 sniffing: SniffingConfig::default(),
                 settings: InboundSettings::default(),
+                max_connections: None,
             }],
             outbounds: vec![OutboundConfig {
                 tag: "direct".to_string(),
@@ -165,6 +166,7 @@ mod tests {
             subscriptions: vec![],
             api: None,
             dns: None,
+            max_connections: 10000,
         }
     }
 
@@ -199,6 +201,7 @@ mod tests {
             listen: "0.0.0.0".to_string(),
             port: 9090,
             secret: None,
+            external_ui: None,
         });
         let report = audit_config(&config);
         assert!(report.blocked);
@@ -212,6 +215,7 @@ mod tests {
             listen: "127.0.0.1".to_string(),
             port: 9090,
             secret: None,
+            external_ui: None,
         });
         let report = audit_config(&config);
         assert!(!report.blocked);

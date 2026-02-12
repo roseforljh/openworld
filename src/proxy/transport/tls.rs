@@ -2,10 +2,9 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::net::TcpStream;
 use tracing::debug;
 
-use crate::common::{Address, ProxyStream};
+use crate::common::{Address, DialerConfig, ProxyStream};
 use crate::config::types::TlsConfig;
 
 use super::{ech, fingerprint, StreamTransport};
@@ -14,47 +13,61 @@ use super::{ech, fingerprint, StreamTransport};
 pub struct TlsTransport {
     server_addr: String,
     server_port: u16,
-    tls_config: Arc<rustls::ClientConfig>,
+    /// Pre-built TLS config (None when ech_auto requires lazy initialization)
+    static_tls_config: Option<Arc<rustls::ClientConfig>>,
+    /// Cached auto-resolved TLS config (populated on first connect when ech_auto)
+    auto_tls_config: tokio::sync::OnceCell<Arc<rustls::ClientConfig>>,
     sni: String,
+    dialer_config: Option<DialerConfig>,
+    raw_tls_config: TlsConfig,
 }
 
 impl TlsTransport {
-    pub fn new(server_addr: String, server_port: u16, config: &TlsConfig) -> Result<Self> {
+    pub fn new(server_addr: String, server_port: u16, config: &TlsConfig, dialer_config: Option<DialerConfig>) -> Result<Self> {
         let sni = config.sni.clone().unwrap_or_else(|| server_addr.clone());
 
-        let alpn: Option<Vec<&str>> = config
-            .alpn
-            .as_ref()
-            .map(|v| v.iter().map(|s| s.as_str()).collect());
+        let static_tls_config = if config.ech_auto {
+            // Defer TLS config building to connect() for DNS-based ECH auto-fetch
+            None
+        } else {
+            let alpn: Option<Vec<&str>> = config
+                .alpn
+                .as_ref()
+                .map(|v| v.iter().map(|s| s.as_str()).collect());
 
-        let fingerprint = config
-            .fingerprint
-            .as_deref()
-            .map(fingerprint::FingerprintType::from_str)
-            .unwrap_or(fingerprint::FingerprintType::None);
-
-        let ech_settings = ech::EchSettings {
-            config_list: config
-                .ech_config
+            let fp = config
+                .fingerprint
                 .as_deref()
-                .map(ech::parse_ech_config_base64)
-                .transpose()?,
-            grease: config.ech_grease,
-            outer_sni: config.ech_outer_sni.clone(),
-        };
+                .map(fingerprint::FingerprintType::from_str)
+                .unwrap_or(fingerprint::FingerprintType::None);
 
-        let tls_config = ech::build_ech_tls_config(
-            &ech_settings,
-            fingerprint,
-            config.allow_insecure,
-            alpn.as_deref(),
-        )?;
+            let ech_settings = ech::EchSettings {
+                config_list: config
+                    .ech_config
+                    .as_deref()
+                    .map(ech::parse_ech_config_base64)
+                    .transpose()?,
+                grease: config.ech_grease,
+                outer_sni: config.ech_outer_sni.clone(),
+            };
+
+            let tls_config = ech::build_ech_tls_config(
+                &ech_settings,
+                fp,
+                config.allow_insecure,
+                alpn.as_deref(),
+            )?;
+            Some(Arc::new(tls_config))
+        };
 
         Ok(Self {
             server_addr,
             server_port,
-            tls_config: Arc::new(tls_config),
+            static_tls_config,
+            auto_tls_config: tokio::sync::OnceCell::new(),
             sni,
+            dialer_config,
+            raw_tls_config: config.clone(),
         })
     }
 
@@ -70,19 +83,58 @@ impl TlsTransport {
         Ok(Self {
             server_addr,
             server_port,
-            tls_config: Arc::new(tls_config),
+            static_tls_config: Some(Arc::new(tls_config)),
+            auto_tls_config: tokio::sync::OnceCell::new(),
             sni,
+            dialer_config: None,
+            raw_tls_config: TlsConfig::default(),
         })
+    }
+
+    /// Get or build the TLS config, resolving ECH from DNS if needed
+    async fn get_tls_config(&self) -> Result<Arc<rustls::ClientConfig>> {
+        if let Some(ref cfg) = self.static_tls_config {
+            return Ok(cfg.clone());
+        }
+
+        self.auto_tls_config
+            .get_or_try_init(|| async {
+                let ech_settings =
+                    ech::resolve_ech_settings(&self.raw_tls_config, &self.sni).await?;
+
+                let alpn: Option<Vec<&str>> = self
+                    .raw_tls_config
+                    .alpn
+                    .as_ref()
+                    .map(|v| v.iter().map(|s| s.as_str()).collect());
+
+                let fp = self
+                    .raw_tls_config
+                    .fingerprint
+                    .as_deref()
+                    .map(fingerprint::FingerprintType::from_str)
+                    .unwrap_or(fingerprint::FingerprintType::None);
+
+                let tls_config = ech::build_ech_tls_config(
+                    &ech_settings,
+                    fp,
+                    self.raw_tls_config.allow_insecure,
+                    alpn.as_deref(),
+                )?;
+                Ok(Arc::new(tls_config))
+            })
+            .await
+            .cloned()
     }
 }
 
 #[async_trait]
 impl StreamTransport for TlsTransport {
     async fn connect(&self, _addr: &Address) -> Result<ProxyStream> {
-        let addr = format!("{}:{}", self.server_addr, self.server_port);
-        let tcp = TcpStream::connect(&addr).await?;
+        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config).await?;
 
-        let connector = tokio_rustls::TlsConnector::from(self.tls_config.clone());
+        let tls_config = self.get_tls_config().await?;
+        let connector = tokio_rustls::TlsConnector::from(tls_config);
         let server_name = rustls::pki_types::ServerName::try_from(self.sni.clone())?;
         let tls_stream = connector.connect(server_name, tcp).await?;
 

@@ -112,6 +112,7 @@ impl InboundHandler for TrojanInbound {
             inbound_tag: self.tag.clone(),
             network,
             sniff: false,
+            detected_protocol: None,
         };
 
         Ok(InboundResult {
@@ -139,6 +140,7 @@ mod tests {
                 password: Some(password.to_string()),
                 ..Default::default()
             },
+            max_connections: None,
         }
     }
 
@@ -159,6 +161,7 @@ mod tests {
             port: 443,
             sniffing: SniffingConfig::default(),
             settings: InboundSettings::default(),
+            max_connections: None,
         };
         assert!(TrojanInbound::new(&cfg).is_err());
     }

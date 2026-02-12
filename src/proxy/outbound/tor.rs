@@ -3,34 +3,42 @@ use async_trait::async_trait;
 use tokio::net::TcpStream;
 use tracing::debug;
 
-use crate::common::{Address, BoxUdpTransport, ProxyStream};
+use crate::common::{Address, BoxUdpTransport, Dialer, DialerConfig, ProxyStream};
 use crate::config::types::OutboundConfig;
 use crate::proxy::{OutboundHandler, Session};
 
 /// Tor 出站：通过本地 SOCKS5 代理连接 Tor 网络
 pub struct TorOutbound {
     tag: String,
-    socks_addr: String,
+    socks_host: String,
+    socks_port: u16,
+    dialer_config: Option<DialerConfig>,
 }
 
 impl TorOutbound {
     pub fn new(config: &OutboundConfig) -> Result<Self> {
         let socks_port = config.settings.socks_port.unwrap_or(9050);
-        let socks_host = config.settings.address.as_deref().unwrap_or("127.0.0.1");
+        let socks_host = config.settings.address.as_deref().unwrap_or("127.0.0.1").to_string();
         let socks_addr = format!("{}:{}", socks_host, socks_port);
 
         debug!(tag = config.tag, addr = %socks_addr, "tor outbound created");
 
         Ok(Self {
             tag: config.tag.clone(),
-            socks_addr,
+            socks_host,
+            socks_port,
+            dialer_config: config.settings.dialer.clone(),
         })
     }
 
     /// 执行 SOCKS5 握手连接到 Tor 代理
     async fn socks5_connect(&self, target: &Address) -> Result<TcpStream> {
-        let stream = TcpStream::connect(&self.socks_addr).await
-            .map_err(|e| anyhow::anyhow!("failed to connect to tor socks5 at {}: {}", self.socks_addr, e))?;
+        let dialer = match &self.dialer_config {
+            Some(cfg) => Dialer::new(cfg.clone()),
+            None => Dialer::default_dialer(),
+        };
+        let stream = dialer.connect_host(&self.socks_host, self.socks_port).await
+            .map_err(|e| anyhow::anyhow!("failed to connect to tor socks5 at {}:{}: {}", self.socks_host, self.socks_port, e))?;
 
         // SOCKS5 握手: 无认证
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -130,7 +138,8 @@ mod tests {
         };
         let outbound = TorOutbound::new(&config).unwrap();
         assert_eq!(outbound.tag(), "tor");
-        assert_eq!(outbound.socks_addr, "127.0.0.1:9050");
+        assert_eq!(outbound.socks_host, "127.0.0.1");
+        assert_eq!(outbound.socks_port, 9050);
     }
 
     #[test]
@@ -145,7 +154,8 @@ mod tests {
             },
         };
         let outbound = TorOutbound::new(&config).unwrap();
-        assert_eq!(outbound.socks_addr, "192.168.1.1:9150");
+        assert_eq!(outbound.socks_host, "192.168.1.1");
+        assert_eq!(outbound.socks_port, 9150);
     }
 
     #[test]
@@ -159,6 +169,6 @@ mod tests {
             },
         };
         let outbound = TorOutbound::new(&config).unwrap();
-        assert!(outbound.socks_addr.contains("9050"));
+        assert_eq!(outbound.socks_port, 9050);
     }
 }

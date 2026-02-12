@@ -43,6 +43,9 @@ pub fn detect_protocol(data: &[u8]) -> Option<&'static str> {
     if is_stun(data) {
         return Some("stun");
     }
+    if is_ssh(data) {
+        return Some("ssh");
+    }
     None
 }
 
@@ -367,6 +370,12 @@ fn is_dtls(data: &[u8]) -> bool {
     // DTLS version: 0xFEFF (1.0) or 0xFEFD (1.2)
     let version = u16::from_be_bytes([data[1], data[2]]);
     matches!(version, 0xFEFF | 0xFEFD)
+}
+
+/// 检测 SSH 协议 (RFC 4253)
+/// SSH 握手以 "SSH-" 开头，后跟版本号
+fn is_ssh(data: &[u8]) -> bool {
+    data.len() >= 4 && data.starts_with(b"SSH-")
 }
 
 /// 检查是否为 HTTP 请求

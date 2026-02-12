@@ -1,6 +1,7 @@
 pub mod chain;
 pub mod direct;
 pub mod http;
+pub mod reject;
 pub mod hysteria2;
 pub mod pool;
 pub mod shadowsocks;

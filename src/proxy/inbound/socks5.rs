@@ -15,11 +15,18 @@ use crate::proxy::{InboundHandler, InboundResult, Network, Session};
 pub struct Socks5Inbound {
     tag: String,
     listen: String,
+    /// 认证用户列表 (username, password)，为空则不要求认证
+    auth_users: Vec<(String, String)>,
 }
 
 impl Socks5Inbound {
     pub fn new(tag: String, listen: String) -> Self {
-        Self { tag, listen }
+        Self { tag, listen, auth_users: Vec::new() }
+    }
+
+    pub fn with_auth(mut self, users: Vec<(String, String)>) -> Self {
+        self.auth_users = users;
+        self
     }
 }
 
@@ -42,8 +49,48 @@ impl InboundHandler for Socks5Inbound {
         let mut methods = vec![0u8; nmethods];
         stream.read_exact(&mut methods).await?;
 
-        // 回复：选择无认证 (0x00)
-        stream.write_all(&[0x05, 0x00]).await?;
+        if !self.auth_users.is_empty() {
+            // 需要认证：检查客户端是否支持 0x02 (USERNAME/PASSWORD)
+            if !methods.contains(&0x02) {
+                // 客户端不支持用户名/密码认证
+                stream.write_all(&[0x05, 0xFF]).await?;
+                bail!("SOCKS5 client does not support username/password auth");
+            }
+
+            // 选择方法 0x02
+            stream.write_all(&[0x05, 0x02]).await?;
+
+            // RFC 1929: 用户名/密码子协商
+            let auth_ver = read_u8(&mut stream).await?;
+            if auth_ver != 0x01 {
+                bail!("unsupported SOCKS5 auth version: 0x{:02x}", auth_ver);
+            }
+
+            let ulen = read_u8(&mut stream).await? as usize;
+            let mut username = vec![0u8; ulen];
+            stream.read_exact(&mut username).await?;
+            let username = String::from_utf8_lossy(&username).to_string();
+
+            let plen = read_u8(&mut stream).await? as usize;
+            let mut password = vec![0u8; plen];
+            stream.read_exact(&mut password).await?;
+            let password = String::from_utf8_lossy(&password).to_string();
+
+            let authenticated = self.auth_users.iter().any(|(u, p)| u == &username && p == &password);
+
+            if !authenticated {
+                // 认证失败
+                stream.write_all(&[0x01, 0x01]).await?;
+                bail!("SOCKS5 auth failed for user '{}'", username);
+            }
+
+            // 认证成功
+            stream.write_all(&[0x01, 0x00]).await?;
+            debug!(user = %username, "SOCKS5 auth success");
+        } else {
+            // 无认证要求：选择 0x00
+            stream.write_all(&[0x05, 0x00]).await?;
+        }
 
         // === 阶段 2: 请求 ===
         let ver = read_u8(&mut stream).await?;
@@ -73,6 +120,7 @@ impl InboundHandler for Socks5Inbound {
                     inbound_tag: self.tag.clone(),
                     network: Network::Tcp,
                     sniff: false,
+                    detected_protocol: None,
                 };
 
                 Ok(InboundResult {
@@ -121,6 +169,7 @@ impl InboundHandler for Socks5Inbound {
                     inbound_tag: self.tag.clone(),
                     network: Network::Udp,
                     sniff: false,
+                    detected_protocol: None,
                 };
 
                 Ok(InboundResult {

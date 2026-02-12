@@ -7,10 +7,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::net::TcpStream;
 use tracing::debug;
 
-use crate::common::{Address, ProxyStream};
+use crate::common::{Address, DialerConfig, ProxyStream};
 use crate::config::types::TlsConfig;
 
 use super::{ech, fingerprint, StreamTransport};
@@ -25,6 +24,7 @@ pub struct H2Transport {
     path: String,
     host: String,
     tls_config: Option<TlsConfig>,
+    dialer_config: Option<DialerConfig>,
 }
 
 impl H2Transport {
@@ -34,6 +34,7 @@ impl H2Transport {
         path: Option<String>,
         host: Option<String>,
         tls_config: Option<TlsConfig>,
+        dialer_config: Option<DialerConfig>,
     ) -> Self {
         let host = host.unwrap_or_else(|| server_addr.clone());
         let path = path.unwrap_or_else(|| "/".to_string());
@@ -43,6 +44,7 @@ impl H2Transport {
             path,
             host,
             tls_config,
+            dialer_config,
         }
     }
 }
@@ -50,8 +52,7 @@ impl H2Transport {
 #[async_trait]
 impl StreamTransport for H2Transport {
     async fn connect(&self, _addr: &Address) -> Result<ProxyStream> {
-        let tcp_addr = format!("{}:{}", self.server_addr, self.server_port);
-        let tcp = TcpStream::connect(&tcp_addr).await?;
+        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config).await?;
 
         let stream: ProxyStream = if let Some(ref tls_cfg) = self.tls_config {
             let sni = tls_cfg.sni.as_deref().unwrap_or(&self.server_addr);
@@ -61,15 +62,7 @@ impl StreamTransport for H2Transport {
                 .as_deref()
                 .map(fingerprint::FingerprintType::from_str)
                 .unwrap_or(fingerprint::FingerprintType::None);
-            let ech_settings = ech::EchSettings {
-                config_list: tls_cfg
-                    .ech_config
-                    .as_deref()
-                    .map(ech::parse_ech_config_base64)
-                    .transpose()?,
-                grease: tls_cfg.ech_grease,
-                outer_sni: tls_cfg.ech_outer_sni.clone(),
-            };
+            let ech_settings = ech::resolve_ech_settings(tls_cfg, sni).await?;
             let rustls_config =
                 ech::build_ech_tls_config(&ech_settings, fp, tls_cfg.allow_insecure, Some(&alpn))?;
             let connector = tokio_rustls::TlsConnector::from(Arc::new(rustls_config));

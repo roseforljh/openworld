@@ -118,6 +118,58 @@ impl DnsResolver for RaceResolver {
     }
 }
 
+/// Prefer-IPv4 解析器：优先返回 IPv4 地址
+pub struct PreferIpv4Resolver {
+    inner: Box<dyn DnsResolver>,
+}
+
+impl PreferIpv4Resolver {
+    pub fn new(inner: Box<dyn DnsResolver>) -> Self {
+        Self { inner }
+    }
+}
+
+#[async_trait]
+impl DnsResolver for PreferIpv4Resolver {
+    async fn resolve(&self, host: &str) -> Result<Vec<IpAddr>> {
+        let addrs = self.inner.resolve(host).await?;
+        let mut v4: Vec<IpAddr> = addrs.iter().filter(|a| a.is_ipv4()).copied().collect();
+        let v6: Vec<IpAddr> = addrs.iter().filter(|a| a.is_ipv6()).copied().collect();
+        // IPv4 优先，IPv6 追加
+        v4.extend(v6);
+        if v4.is_empty() {
+            anyhow::bail!("no addresses resolved for {}", host);
+        }
+        Ok(v4)
+    }
+}
+
+/// Prefer-IPv6 解析器：优先返回 IPv6 地址
+pub struct PreferIpv6Resolver {
+    inner: Box<dyn DnsResolver>,
+}
+
+impl PreferIpv6Resolver {
+    pub fn new(inner: Box<dyn DnsResolver>) -> Self {
+        Self { inner }
+    }
+}
+
+#[async_trait]
+impl DnsResolver for PreferIpv6Resolver {
+    async fn resolve(&self, host: &str) -> Result<Vec<IpAddr>> {
+        let addrs = self.inner.resolve(host).await?;
+        let v4: Vec<IpAddr> = addrs.iter().filter(|a| a.is_ipv4()).copied().collect();
+        let mut v6: Vec<IpAddr> = addrs.iter().filter(|a| a.is_ipv6()).copied().collect();
+        // IPv6 优先，IPv4 追加
+        v6.extend(v4);
+        if v6.is_empty() {
+            anyhow::bail!("no addresses resolved for {}", host);
+        }
+        Ok(v6)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,5 +308,39 @@ mod tests {
             vec![Box::new(FailResolver), Box::new(FailResolver)];
         let race = RaceResolver::new(resolvers);
         assert!(race.resolve("test.com").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn prefer_ipv4_resolver_orders_correctly() {
+        let mixed: Vec<IpAddr> = vec![
+            "::1".parse().unwrap(),
+            "1.2.3.4".parse().unwrap(),
+            "2001:db8::1".parse().unwrap(),
+            "5.6.7.8".parse().unwrap(),
+        ];
+        let resolver = PreferIpv4Resolver::new(Box::new(MockResolver(mixed)));
+        let addrs = resolver.resolve("test.com").await.unwrap();
+        // IPv4 应该在前面
+        assert!(addrs[0].is_ipv4());
+        assert!(addrs[1].is_ipv4());
+        assert!(addrs[2].is_ipv6());
+        assert!(addrs[3].is_ipv6());
+    }
+
+    #[tokio::test]
+    async fn prefer_ipv6_resolver_orders_correctly() {
+        let mixed: Vec<IpAddr> = vec![
+            "1.2.3.4".parse().unwrap(),
+            "::1".parse().unwrap(),
+            "5.6.7.8".parse().unwrap(),
+            "2001:db8::1".parse().unwrap(),
+        ];
+        let resolver = PreferIpv6Resolver::new(Box::new(MockResolver(mixed)));
+        let addrs = resolver.resolve("test.com").await.unwrap();
+        // IPv6 应该在前面
+        assert!(addrs[0].is_ipv6());
+        assert!(addrs[1].is_ipv6());
+        assert!(addrs[2].is_ipv4());
+        assert!(addrs[3].is_ipv4());
     }
 }

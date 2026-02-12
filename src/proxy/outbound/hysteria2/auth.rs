@@ -5,7 +5,8 @@ use tracing::debug;
 
 /// 通过 HTTP/3 POST /auth 进行 Hysteria2 认证
 /// 成功状态码: 233
-pub async fn authenticate(conn: &quinn::Connection, password: &str) -> Result<()> {
+/// `down_bps`: 客户端下行带宽 (bytes/sec)，用于服务端 Brutal CC，0 表示不限速
+pub async fn authenticate(conn: &quinn::Connection, password: &str, down_bps: u64) -> Result<()> {
     // 构建 h3 连接
     let h3_conn = h3_quinn::Connection::new(conn.clone());
     let (mut driver, mut send_request) = h3::client::new(h3_conn).await?;
@@ -28,7 +29,7 @@ pub async fn authenticate(conn: &quinn::Connection, password: &str) -> Result<()
     // 构建 POST /auth 请求
     let req = Request::post("https://hysteria/auth")
         .header("Hysteria-Auth", password)
-        .header("Hysteria-CC-RX", "0")
+        .header("Hysteria-CC-RX", down_bps.to_string())
         .header("Hysteria-Padding", &padding)
         .body(())?;
 

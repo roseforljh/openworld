@@ -171,6 +171,7 @@ impl InboundHandler for VmessInbound {
             inbound_tag: self.tag.clone(),
             network,
             sniff: false,
+            detected_protocol: None,
         };
 
         Ok(InboundResult {
@@ -198,6 +199,7 @@ mod tests {
                 uuid: Some("550e8400-e29b-41d4-a716-446655440000".to_string()),
                 ..Default::default()
             },
+            max_connections: None,
         };
         let inbound = VmessInbound::new(&config).unwrap();
         assert_eq!(inbound.tag(), "vmess-in");
@@ -225,6 +227,7 @@ mod tests {
                 ]),
                 ..Default::default()
             },
+            max_connections: None,
         };
         let inbound = VmessInbound::new(&config).unwrap();
         assert_eq!(inbound.user_count(), 2);
@@ -239,6 +242,7 @@ mod tests {
             port: 10086,
             sniffing: Default::default(),
             settings: InboundSettings::default(),
+            max_connections: None,
         };
         assert!(VmessInbound::new(&config).is_err());
     }
@@ -255,6 +259,7 @@ mod tests {
                 uuid: Some("not-a-valid-uuid".to_string()),
                 ..Default::default()
             },
+            max_connections: None,
         };
         assert!(VmessInbound::new(&config).is_err());
     }

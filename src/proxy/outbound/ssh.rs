@@ -1,10 +1,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 use tracing::debug;
 
-use crate::common::{BoxUdpTransport, ProxyStream};
+use crate::common::{BoxUdpTransport, Dialer, DialerConfig, ProxyStream};
 use crate::config::types::OutboundConfig;
 use crate::proxy::{OutboundHandler, Session};
 
@@ -20,6 +19,7 @@ pub struct SshOutbound {
     server_port: u16,
     username: String,
     auth_method: SshAuthMethod,
+    dialer_config: Option<DialerConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +62,7 @@ impl SshOutbound {
             server_port: port,
             username,
             auth_method,
+            dialer_config: settings.dialer.clone(),
         })
     }
 
@@ -98,8 +99,11 @@ impl OutboundHandler for SshOutbound {
         );
 
         // 连接到 SSH 服务器
-        let addr = format!("{}:{}", self.server_addr, self.server_port);
-        let mut stream = TcpStream::connect(&addr).await?;
+        let dialer = match &self.dialer_config {
+            Some(cfg) => Dialer::new(cfg.clone()),
+            None => Dialer::default_dialer(),
+        };
+        let mut stream = dialer.connect_host(&self.server_addr, self.server_port).await?;
 
         // SSH 版本交换
         let client_version = format!("{}\r\n", SSH_CLIENT_VERSION);

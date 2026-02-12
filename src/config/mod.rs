@@ -11,11 +11,7 @@ use std::path::Path;
 pub use types::Config;
 
 fn has_enhance_markers(content: &str) -> bool {
-    content.contains("${")
-        || content.contains("!include ")
-        || content.contains("#include ")
-        || content.contains("\nmerge:")
-        || content.starts_with("merge:")
+    content.contains("\nmerge:") || content.starts_with("merge:")
 }
 
 fn apply_merge_if_present(content: &str) -> Result<String> {
@@ -58,18 +54,7 @@ fn apply_merge_if_present(content: &str) -> Result<String> {
 }
 
 pub fn load_config(path: &str) -> Result<Config> {
-    let raw_content = std::fs::read_to_string(Path::new(path))?;
-    let content = if has_enhance_markers(&raw_content) {
-        let base_dir = Path::new(path)
-            .parent()
-            .and_then(|p| p.to_str())
-            .unwrap_or(".");
-        let included = enhance::process_includes(&raw_content, base_dir)?;
-        let expanded = enhance::expand_env_vars(&included);
-        apply_merge_if_present(&expanded)?
-    } else {
-        raw_content
-    };
+    let content = load_config_content(path)?;
 
     // Try OpenWorld native format first, fall back to Clash compat
     let mut config: Config = match serde_yml::from_str(&content) {
@@ -90,4 +75,55 @@ pub fn load_config(path: &str) -> Result<Config> {
 
     config.validate()?;
     Ok(config)
+}
+
+pub fn load_config_content(path: &str) -> Result<String> {
+    let raw_content = std::fs::read_to_string(Path::new(path))?;
+    let base_dir = Path::new(path)
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or(".");
+
+    let mut transformed = enhance::process_includes(&raw_content, base_dir)?;
+    transformed = enhance::expand_env_vars(&transformed);
+
+    if has_enhance_markers(&transformed) {
+        apply_merge_if_present(&transformed)
+    } else {
+        Ok(transformed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_config_content_applies_include_and_env_without_merge_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        let include_path = dir.path().join("inbounds.yaml");
+        std::fs::write(
+            &include_path,
+            "inbounds:\n  - tag: socks-in\n    protocol: socks5\n    listen: \"127.0.0.1\"\n    port: 1080\n",
+        )
+        .unwrap();
+
+        std::env::set_var("OW_TEST_DEFAULT_OUTBOUND", "direct");
+
+        let config_path = dir.path().join("config.yaml");
+        std::fs::write(
+            &config_path,
+            format!(
+                "!include {}\noutbounds:\n  - tag: direct\n    protocol: direct\nrouter:\n  default: $OW_TEST_DEFAULT_OUTBOUND\n",
+                include_path.display()
+            ),
+        )
+        .unwrap();
+
+        let loaded = load_config_content(config_path.to_str().unwrap()).unwrap();
+        assert!(loaded.contains("socks-in"));
+        assert!(loaded.contains("default: direct"));
+
+        std::env::remove_var("OW_TEST_DEFAULT_OUTBOUND");
+    }
 }

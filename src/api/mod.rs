@@ -9,9 +9,10 @@ use axum::extract::Request;
 use axum::http::{header, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::Response;
-use axum::routing::{delete, get, patch};
+use axum::routing::{delete, get, post, put};
 use tokio::task::JoinHandle;
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
 use tracing::info;
 
 use crate::app::dispatcher::Dispatcher;
@@ -47,15 +48,41 @@ pub fn start(
             get(handlers::get_connections).delete(handlers::close_all_connections),
         )
         .route("/connections/{id}", delete(handlers::close_connection))
+        .route("/connections/ws", get(handlers::connections_ws))
         .route("/traffic", get(handlers::traffic_ws))
+        .route("/traffic/sse", get(handlers::traffic_sse))
+        .route("/connections/sse", get(handlers::connections_sse))
         .route("/rules", get(handlers::get_rules))
         .route("/stats", get(handlers::get_stats))
+        .route("/metrics", get(handlers::get_metrics))
         .route("/memory", get(handlers::get_memory))
         .route("/uptime", get(handlers::get_uptime))
         .route("/providers/rules", get(handlers::get_rule_providers))
+        .route("/providers/proxies", get(handlers::get_proxy_providers))
+        .route("/dns/query", get(handlers::dns_query))
+        .route("/dns/flush", post(handlers::flush_dns))
         .route("/logs", get(handlers::logs_ws))
-        .route("/configs", patch(handlers::reload_config))
+        .route("/configs", get(handlers::get_configs).patch(handlers::reload_config))
+        .route(
+            "/providers/rules/{name}",
+            get(handlers::get_rule_provider).put(handlers::refresh_rule_provider),
+        )
+        .route(
+            "/providers/proxies/{name}",
+            put(handlers::refresh_proxy_provider),
+        )
         .layer(CorsLayer::permissive());
+
+    // 挂载静态文件服务（Web 面板支持）
+    if let Some(ref ui_path) = config.external_ui {
+        let path = std::path::Path::new(ui_path);
+        if path.is_dir() {
+            app = app.nest_service("/ui", ServeDir::new(ui_path));
+            info!(path = ui_path.as_str(), "external UI mounted at /ui");
+        } else {
+            tracing::warn!(path = ui_path.as_str(), "external-ui path is not a directory, skipping");
+        }
+    }
 
     // 如果配置了 secret，添加认证中间件
     if let Some(secret) = config.secret.clone() {

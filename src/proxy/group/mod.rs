@@ -80,7 +80,30 @@ pub fn build_proxy_groups(
                     .unwrap_or_else(|| "http://www.gstatic.com/generate_204".to_string()),
                 config.interval,
             )),
-            "load-balance" => Arc::new(loadbalance::LoadBalanceGroup::new(
+            "load-balance" => {
+                let strategy = loadbalance::LbStrategy::from_str_opt(
+                    config.strategy.as_deref(),
+                );
+                Arc::new(loadbalance::LoadBalanceGroup::new(
+                    config.name.clone(),
+                    proxies,
+                    proxy_names,
+                    strategy,
+                ))
+            }
+            "latency-weighted" => Arc::new(latency_weighted::LatencyWeightedGroup::new(
+                config.name.clone(),
+                proxies,
+                proxy_names,
+                config
+                    .url
+                    .clone()
+                    .unwrap_or_else(|| "http://www.gstatic.com/generate_204".to_string()),
+                config.interval,
+                20,
+                2.0,
+            )),
+            "sticky" => Arc::new(sticky::StickyGroup::new(
                 config.name.clone(),
                 proxies,
                 proxy_names,
@@ -96,4 +119,57 @@ pub fn build_proxy_groups(
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::types::ProxyGroupConfig;
+    use crate::proxy::outbound::direct::DirectOutbound;
+
+    #[tokio::test]
+    async fn build_latency_weighted_group() {
+        let mut existing: HashMap<String, Arc<dyn OutboundHandler>> = HashMap::new();
+        existing.insert(
+            "direct-a".to_string(),
+            Arc::new(DirectOutbound::new("direct-a".to_string())),
+        );
+
+        let configs = vec![ProxyGroupConfig {
+            name: "weighted".to_string(),
+            group_type: "latency-weighted".to_string(),
+            proxies: vec!["direct-a".to_string()],
+            url: None,
+            interval: 300,
+            tolerance: 150,
+            strategy: None,
+        }];
+
+        let groups = build_proxy_groups(&configs, &existing).unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0, "weighted");
+    }
+
+    #[tokio::test]
+    async fn build_sticky_group() {
+        let mut existing: HashMap<String, Arc<dyn OutboundHandler>> = HashMap::new();
+        existing.insert(
+            "direct-a".to_string(),
+            Arc::new(DirectOutbound::new("direct-a".to_string())),
+        );
+
+        let configs = vec![ProxyGroupConfig {
+            name: "sticky-g".to_string(),
+            group_type: "sticky".to_string(),
+            proxies: vec!["direct-a".to_string()],
+            url: None,
+            interval: 300,
+            tolerance: 150,
+            strategy: None,
+        }];
+
+        let groups = build_proxy_groups(&configs, &existing).unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0, "sticky-g");
+    }
 }
