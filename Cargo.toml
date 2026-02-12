@@ -37,6 +37,7 @@ webpki-roots = "0.26"
 http = "1"
 async-trait = "0.1"
 rand = "0.8"
+rand_chacha = "0.3"
 regex = "1"
 futures-lite = "2"
 x25519-dalek = { version = "2", features = ["static_secrets"] }

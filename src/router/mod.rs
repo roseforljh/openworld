@@ -19,9 +19,10 @@ use geoip::GeoIpDb;
 use geosite::GeoSiteDb;
 use provider::RuleProvider;
 use rules::Rule;
+use rules::RuleAction;
 
 pub struct Router {
-    rules: Vec<(Rule, String)>,
+    rules: Vec<(Rule, RuleAction)>,
     default: String,
     domain_trie: trie::DomainTrie,
     ip_trie: trie::IpPrefixTrie,
@@ -77,7 +78,8 @@ impl Router {
                         name: provider_name.clone(),
                         data: data.clone(),
                     };
-                    rules.push((rule, rule_config.outbound.clone()));
+                    let action = RuleAction::from_config(rule_config);
+                    rules.push((rule, action));
                 }
             } else {
                 let rule = Rule::from_config(rule_config)?;
@@ -95,7 +97,7 @@ impl Router {
                     }
                     _ => {}
                 }
-                rules.push((rule, rule_config.outbound.clone()));
+                rules.push((rule, RuleAction::from_config(rule_config)));
             }
         }
         Ok(Self {
@@ -157,11 +159,13 @@ impl Router {
         };
 
         if let Some(idx) = selected_idx {
-            let (rule, outbound_tag) = &self.rules[idx];
+            let (rule, action) = &self.rules[idx];
             let rule_desc = rule.to_string();
+            let outbound_tag = action.outbound_tag().unwrap_or(&self.default);
             debug!(
                 dest = %session.target,
                 rule = %rule_desc,
+                action = %action,
                 outbound = outbound_tag,
                 "route matched"
             );
@@ -182,7 +186,7 @@ impl Router {
     }
 
     /// 获取所有规则（供 API 使用）
-    pub fn rules(&self) -> &[(Rule, String)] {
+    pub fn rules(&self) -> &[(Rule, RuleAction)] {
         &self.rules
     }
 

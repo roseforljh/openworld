@@ -423,10 +423,10 @@ pub async fn get_rules(State(state): State<AppState>) -> Json<RulesResponse> {
     let rules: Vec<RuleItem> = router
         .rules()
         .iter()
-        .map(|(rule, outbound)| RuleItem {
+        .map(|(rule, action)| RuleItem {
             rule_type: rule_type_name(rule),
             payload: format!("{}", rule),
-            proxy: outbound.clone(),
+            proxy: action.outbound_tag().unwrap_or("reject").to_string(),
         })
         .collect();
 

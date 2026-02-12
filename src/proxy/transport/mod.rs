@@ -1,4 +1,5 @@
 pub mod brutal;
+pub mod fragment;
 pub mod ech;
 pub mod fingerprint;
 pub mod grpc;
@@ -10,6 +11,7 @@ pub mod tcp;
 pub mod tls;
 pub mod anytls;
 pub mod ws;
+pub mod sudoku;
 
 use anyhow::Result;
 use async_trait::async_trait;

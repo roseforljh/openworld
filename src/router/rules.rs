@@ -169,6 +169,79 @@ pub enum Rule {
     WifiSsid(Vec<String>),
 }
 
+/// 路由规则动作 (sing-box Rule Action 系统)
+#[derive(Debug, Clone)]
+pub enum RuleAction {
+    /// 路由到指定出站（Final）
+    Route(String),
+    /// 拒绝连接（Final）
+    Reject,
+    /// 丢弃连接（Final）
+    RejectDrop,
+    /// 绕过代理/直连（Final）
+    Bypass,
+    /// 劫持 DNS 请求（Final）
+    HijackDns,
+    /// 覆盖目标地址/端口（Non-final）
+    RouteOptions {
+        override_address: Option<String>,
+        override_port: Option<u16>,
+    },
+    /// 触发协议嗅探（Non-final）
+    Sniff,
+    /// 触发 DNS 解析（Non-final）
+    Resolve {
+        strategy: Option<String>,
+    },
+}
+
+impl RuleAction {
+    pub fn from_config(config: &crate::config::types::RuleConfig) -> Self {
+        match config.action.as_str() {
+            "reject" => RuleAction::Reject,
+            "reject-drop" => RuleAction::RejectDrop,
+            "bypass" | "direct" => RuleAction::Bypass,
+            "hijack-dns" => RuleAction::HijackDns,
+            "route-options" => RuleAction::RouteOptions {
+                override_address: config.override_address.clone(),
+                override_port: config.override_port,
+            },
+            "sniff" => RuleAction::Sniff,
+            "resolve" => RuleAction::Resolve {
+                strategy: config.resolve_strategy.clone(),
+            },
+            _ => RuleAction::Route(config.outbound.clone()),
+        }
+    }
+
+    pub fn is_final(&self) -> bool {
+        matches!(self, RuleAction::Route(_) | RuleAction::Reject | RuleAction::RejectDrop | RuleAction::Bypass | RuleAction::HijackDns)
+    }
+
+    pub fn outbound_tag(&self) -> Option<&str> {
+        match self {
+            RuleAction::Route(tag) => Some(tag),
+            RuleAction::Bypass => Some("direct"),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for RuleAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RuleAction::Route(tag) => write!(f, "route({})", tag),
+            RuleAction::Reject => write!(f, "reject"),
+            RuleAction::RejectDrop => write!(f, "reject-drop"),
+            RuleAction::Bypass => write!(f, "bypass"),
+            RuleAction::HijackDns => write!(f, "hijack-dns"),
+            RuleAction::RouteOptions { .. } => write!(f, "route-options"),
+            RuleAction::Sniff => write!(f, "sniff"),
+            RuleAction::Resolve { .. } => write!(f, "resolve"),
+        }
+    }
+}
+
 impl Rule {
     pub fn from_config(config: &RuleConfig) -> Result<Self> {
         match config.rule_type.as_str() {
@@ -245,6 +318,7 @@ impl Rule {
                             rule_type: parts[0].to_string(),
                             values: vec![parts[1].to_string()],
                             outbound: config.outbound.clone(),
+                            ..Default::default()
                         };
                         Rule::from_config(&sub_config)
                     })
@@ -264,6 +338,7 @@ impl Rule {
                             rule_type: parts[0].to_string(),
                             values: vec![parts[1].to_string()],
                             outbound: config.outbound.clone(),
+                            ..Default::default()
                         };
                         Rule::from_config(&sub_config)
                     })
@@ -283,6 +358,7 @@ impl Rule {
                     rule_type: parts[0].to_string(),
                     values: vec![parts[1].to_string()],
                     outbound: config.outbound.clone(),
+                    ..Default::default()
                 };
                 Ok(Rule::Not(Box::new(Rule::from_config(&sub_config)?)))
             }
@@ -591,6 +667,7 @@ mod tests {
             rule_type: "domain-suffix".to_string(),
             values: vec!["cn".to_string(), "baidu.com".to_string()],
             outbound: "direct".to_string(),
+            ..Default::default()
         };
         let rule = Rule::from_config(&config).unwrap();
         assert!(rule.matches(&domain("www.baidu.com", 443), None, None));
@@ -603,6 +680,7 @@ mod tests {
             rule_type: "unknown-type".to_string(),
             values: vec![],
             outbound: "direct".to_string(),
+            ..Default::default()
         };
         assert!(Rule::from_config(&config).is_err());
     }
@@ -613,6 +691,7 @@ mod tests {
             rule_type: "ip-cidr".to_string(),
             values: vec!["not-a-cidr".to_string()],
             outbound: "direct".to_string(),
+            ..Default::default()
         };
         assert!(Rule::from_config(&config).is_err());
     }
@@ -634,6 +713,7 @@ mod tests {
                 "dst-port:443".to_string(),
             ],
             outbound: "proxy".to_string(),
+            ..Default::default()
         };
         let rule = Rule::from_config(&config).unwrap();
         assert!(rule.matches(&domain("www.example.com", 443), None, None));
@@ -660,6 +740,7 @@ mod tests {
                 "domain-suffix:google.com".to_string(),
             ],
             outbound: "proxy".to_string(),
+            ..Default::default()
         };
         let rule = Rule::from_config(&config).unwrap();
         assert!(rule.matches(&domain("www.example.com", 443), None, None));
@@ -674,6 +755,7 @@ mod tests {
             rule_type: "not".to_string(),
             values: vec!["domain-suffix:cn".to_string()],
             outbound: "proxy".to_string(),
+            ..Default::default()
         };
         let rule = Rule::from_config(&config).unwrap();
         assert!(!rule.matches(&domain("baidu.cn", 80), None, None));
@@ -687,6 +769,7 @@ mod tests {
             rule_type: "process-name".to_string(),
             values: vec!["chrome.exe".to_string()],
             outbound: "direct".to_string(),
+            ..Default::default()
         };
         let rule = Rule::from_config(&config).unwrap();
         // Process name matching is a stub, always returns false
@@ -811,6 +894,7 @@ mod tests {
             rule_type: "process-path".to_string(),
             values: vec!["/usr/bin/curl".to_string()],
             outbound: "direct".to_string(),
+            ..Default::default()
         };
         let rule = Rule::from_config(&config).unwrap();
         // Stub — always false
@@ -830,6 +914,7 @@ mod tests {
             rule_type: "ip-asn".to_string(),
             values: vec!["13335".to_string(), "15169".to_string()],
             outbound: "proxy".to_string(),
+            ..Default::default()
         };
         let rule = Rule::from_config(&config).unwrap();
         // Stub — always false
@@ -842,6 +927,7 @@ mod tests {
             rule_type: "ip-asn".to_string(),
             values: vec!["not-a-number".to_string()],
             outbound: "proxy".to_string(),
+            ..Default::default()
         };
         assert!(Rule::from_config(&config).is_err());
     }
@@ -895,6 +981,7 @@ mod tests {
             rule_type: "uid".to_string(),
             values: vec!["1000".to_string(), "10086".to_string()],
             outbound: "direct".to_string(),
+            ..Default::default()
         };
         let rule = Rule::from_config(&config).unwrap();
         // Stub — always false
@@ -907,6 +994,7 @@ mod tests {
             rule_type: "uid".to_string(),
             values: vec!["not-a-uid".to_string()],
             outbound: "direct".to_string(),
+            ..Default::default()
         };
         assert!(Rule::from_config(&config).is_err());
     }
@@ -935,6 +1023,7 @@ mod tests {
             rule_type: "domain-regex".to_string(),
             values: vec![r".*\.ad\..*".to_string(), r"^tracker\.".to_string()],
             outbound: "reject".to_string(),
+            ..Default::default()
         };
         let rule = Rule::from_config(&config).unwrap();
         assert!(rule.matches(&domain("cdn.ad.example.com", 80), None, None));
@@ -948,6 +1037,7 @@ mod tests {
             rule_type: "domain-regex".to_string(),
             values: vec![r"[invalid".to_string()],
             outbound: "reject".to_string(),
+            ..Default::default()
         };
         assert!(Rule::from_config(&config).is_err());
     }

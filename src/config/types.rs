@@ -338,6 +338,7 @@ impl OutboundSettings {
             ech_grease: false,
             ech_outer_sni: None,
             ech_auto: false,
+            fragment: None,
         }
     }
 }
@@ -430,6 +431,10 @@ pub struct TlsConfig {
     /// 自动从 DNS HTTPS 记录获取 ECH 配置
     #[serde(default, rename = "ech-auto")]
     pub ech_auto: bool,
+
+    /// TLS 分片: 将 ClientHello 拆分成多个小 TCP 段发送（绕过 DPI）
+    #[serde(default, rename = "fragment")]
+    pub fragment: Option<TlsFragmentConfig>,
 }
 
 impl Default for TlsConfig {
@@ -448,9 +453,32 @@ impl Default for TlsConfig {
             ech_grease: false,
             ech_outer_sni: None,
             ech_auto: false,
+            fragment: None,
         }
     }
 }
+
+/// TLS 分片配置
+#[derive(Debug, Deserialize, Clone)]
+pub struct TlsFragmentConfig {
+    /// 分片大小范围下限（字节），默认 10
+    #[serde(default = "default_fragment_min")]
+    pub min_length: usize,
+    /// 分片大小范围上限（字节），默认 100
+    #[serde(default = "default_fragment_max")]
+    pub max_length: usize,
+    /// 分片间延迟下限（毫秒），默认 10
+    #[serde(default = "default_fragment_delay_min")]
+    pub min_delay_ms: u64,
+    /// 分片间延迟上限（毫秒），默认 50
+    #[serde(default = "default_fragment_delay_max")]
+    pub max_delay_ms: u64,
+}
+
+fn default_fragment_min() -> usize { 10 }
+fn default_fragment_max() -> usize { 100 }
+fn default_fragment_delay_min() -> u64 { 10 }
+fn default_fragment_delay_max() -> u64 { 50 }
 
 /// API 配置（Clash 兼容）
 #[derive(Debug, Deserialize, Clone)]
@@ -646,8 +674,41 @@ pub struct RuleConfig {
     #[serde(rename = "type")]
     pub rule_type: String,
     pub values: Vec<String>,
+    #[serde(default)]
     pub outbound: String,
+    /// Rule Action: route(默认) / reject / reject-drop / bypass / hijack-dns
+    #[serde(default = "default_rule_action")]
+    pub action: String,
+    /// 覆盖目标地址
+    #[serde(default, rename = "override-address")]
+    pub override_address: Option<String>,
+    /// 覆盖目标端口
+    #[serde(default, rename = "override-port")]
+    pub override_port: Option<u16>,
+    /// 启用协议嗅探
+    #[serde(default)]
+    pub sniff: bool,
+    /// DNS 解析策略
+    #[serde(default, rename = "resolve-strategy")]
+    pub resolve_strategy: Option<String>,
 }
+
+impl Default for RuleConfig {
+    fn default() -> Self {
+        Self {
+            rule_type: String::new(),
+            values: Vec::new(),
+            outbound: String::new(),
+            action: "route".to_string(),
+            override_address: None,
+            override_port: None,
+            sniff: false,
+            resolve_strategy: None,
+        }
+    }
+}
+
+fn default_rule_action() -> String { "route".to_string() }
 
 /// 规则提供者配置（Clash 兼容）
 #[derive(Debug, Deserialize, Clone)]
@@ -758,6 +819,7 @@ mod tests {
             rule_type: "domain-suffix".to_string(),
             values: vec!["example.com".to_string()],
             outbound: "nonexistent".to_string(),
+        ..Default::default()
         });
         assert!(config.validate().is_err());
     }
@@ -769,6 +831,7 @@ mod tests {
             rule_type: "domain-suffix".to_string(),
             values: vec!["example.com".to_string()],
             outbound: "direct".to_string(),
+        ..Default::default()
         });
         assert!(config.validate().is_ok());
     }
@@ -884,6 +947,7 @@ router:
             rule_type: "ip-asn".to_string(),
             values: vec!["13335".to_string()],
             outbound: "direct".to_string(),
+        ..Default::default()
         });
         assert!(config.validate().is_err());
     }
@@ -895,6 +959,7 @@ router:
             rule_type: "uid".to_string(),
             values: vec!["1000".to_string()],
             outbound: "direct".to_string(),
+        ..Default::default()
         });
         assert!(config.validate().is_err());
     }

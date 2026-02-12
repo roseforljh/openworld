@@ -266,6 +266,7 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                     rule_type: "domain-suffix".into(),
                     values: domains.clone(),
                     outbound: r.outbound.clone(),
+                ..Default::default()
                 });
             }
             if let Some(domains) = &r.domain_keyword {
@@ -273,6 +274,7 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                     rule_type: "domain-keyword".into(),
                     values: domains.clone(),
                     outbound: r.outbound.clone(),
+                ..Default::default()
                 });
             }
             if let Some(cidrs) = &r.ip_cidr {
@@ -280,6 +282,7 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                     rule_type: "ip-cidr".into(),
                     values: cidrs.clone(),
                     outbound: r.outbound.clone(),
+                ..Default::default()
                 });
             }
             if let Some(geoips) = &r.geoip {
@@ -287,6 +290,7 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                     rule_type: "geoip".into(),
                     values: geoips.clone(),
                     outbound: r.outbound.clone(),
+                ..Default::default()
                 });
             }
             if let Some(geosites) = &r.geosite {
@@ -294,6 +298,7 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                     rule_type: "geosite".into(),
                     values: geosites.clone(),
                     outbound: r.outbound.clone(),
+                ..Default::default()
                 });
             }
         }

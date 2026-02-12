@@ -5,9 +5,9 @@ use async_trait::async_trait;
 use tracing::{debug, info};
 
 use crate::common::{Address, DialerConfig, ProxyStream};
-use crate::config::types::TlsConfig;
+use crate::config::types::{TlsConfig, TlsFragmentConfig};
 
-use super::{ech, fingerprint, StreamTransport};
+use super::{ech, fingerprint, fragment::FragmentStream, StreamTransport};
 
 /// TLS 传输
 pub struct TlsTransport {
@@ -20,6 +20,8 @@ pub struct TlsTransport {
     sni: String,
     dialer_config: Option<DialerConfig>,
     raw_tls_config: TlsConfig,
+    /// TLS 分片配置（反审查）
+    fragment_config: Option<TlsFragmentConfig>,
 }
 
 impl TlsTransport {
@@ -67,6 +69,7 @@ impl TlsTransport {
             auto_tls_config: tokio::sync::OnceCell::new(),
             sni,
             dialer_config,
+            fragment_config: config.fragment.clone(),
             raw_tls_config: config.clone(),
         })
     }
@@ -87,6 +90,7 @@ impl TlsTransport {
             auto_tls_config: tokio::sync::OnceCell::new(),
             sni,
             dialer_config: None,
+            fragment_config: None,
             raw_tls_config: TlsConfig::default(),
         })
     }
@@ -145,9 +149,23 @@ impl StreamTransport for TlsTransport {
         let tls_config = self.get_tls_config().await?;
         let connector = tokio_rustls::TlsConnector::from(tls_config);
         let server_name = rustls::pki_types::ServerName::try_from(self.sni.clone())?;
-        let tls_stream = connector.connect(server_name, tcp).await?;
 
-        debug!(sni = self.sni, "TLS handshake completed");
-        Ok(Box::new(tls_stream))
+        // 如果配置了 TLS 分片，包装 TCP 流
+        if let Some(ref frag_config) = self.fragment_config {
+            debug!(
+                sni = self.sni,
+                min_len = frag_config.min_length,
+                max_len = frag_config.max_length,
+                "TLS fragment enabled"
+            );
+            let frag_stream = FragmentStream::new(tcp, frag_config.clone());
+            let tls_stream = connector.connect(server_name, frag_stream).await?;
+            debug!(sni = self.sni, "TLS handshake completed (fragmented)");
+            Ok(Box::new(tls_stream))
+        } else {
+            let tls_stream = connector.connect(server_name, tcp).await?;
+            debug!(sni = self.sni, "TLS handshake completed");
+            Ok(Box::new(tls_stream))
+        }
     }
 }

@@ -322,6 +322,7 @@ mod tests {
                 rule_type: "ip-cidr".to_string(),
                 values: vec!["1.1.1.0/24".to_string()],
                 outbound: "proxy-a".to_string(),
+            ..Default::default()
             }],
             default: "direct".to_string(),
             geoip_db: None,

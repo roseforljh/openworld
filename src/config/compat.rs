@@ -448,6 +448,7 @@ fn convert_clash_rules(rules: &[String]) -> (Vec<RuleConfig>, String) {
             rule_type: mapped_type.to_string(),
             values: vec![value],
             outbound,
+            ..Default::default()
         });
     }
 
