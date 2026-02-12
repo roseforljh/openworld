@@ -57,9 +57,21 @@ impl VlessOutbound {
         if !tls_config.enabled && settings.security.is_some() {
             tls_config.enabled = true;
         }
+        let ech_enabled = tls_config.ech_config.is_some() || tls_config.ech_auto || tls_config.ech_grease;
+        if ech_enabled && !tls_config.enabled {
+            tls_config.enabled = true;
+            debug!("VLESS ECH is configured; force-enabling TLS transport");
+        }
         // 如果 SNI 未设置，使用服务器地址
         if tls_config.sni.is_none() {
             tls_config.sni = Some(address.clone());
+        }
+        if ech_enabled && tls_config.ech_outer_sni.is_some() {
+            tls_config.sni = tls_config.ech_outer_sni.clone();
+            debug!(
+                sni = tls_config.sni.as_deref().unwrap_or(""),
+                "VLESS ECH enabled: using outer SNI for TLS handshake"
+            );
         }
         // Vision flow 需要 ALPN
         if flow.as_deref() == Some(XRV) && tls_config.alpn.is_none() {

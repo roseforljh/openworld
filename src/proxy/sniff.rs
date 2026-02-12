@@ -43,6 +43,9 @@ pub fn detect_protocol(data: &[u8]) -> Option<&'static str> {
     if is_stun(data) {
         return Some("stun");
     }
+    if is_quic_initial(data) {
+        return Some("quic");
+    }
     if is_ssh(data) {
         return Some("ssh");
     }
@@ -219,115 +222,21 @@ fn parse_http_host(data: &[u8]) -> Option<String> {
     None
 }
 
-/// 从 QUIC Initial 包中提取 SNI
-///
-/// QUIC Initial 包结构（简化）：
-/// - 第一个字节高 2 位 = 11 (Long Header)
-/// - Version (4 bytes)
-/// - DCID Len (1) + DCID + SCID Len (1) + SCID
-/// - Token Length (varint) + Token
-/// - Payload Length (varint) + Payload
-/// - Payload 包含 CRYPTO frame → TLS ClientHello
-///
-/// 我们直接在整个包中搜索 TLS ClientHello 签名
 fn parse_quic_sni(data: &[u8]) -> Option<String> {
-    if data.len() < 5 {
+    const MAX_SCAN_BYTES: usize = 1400;
+    let scan = &data[..data.len().min(MAX_SCAN_BYTES)];
+
+    if !is_quic_initial(scan) {
         return None;
     }
 
-    // 检查 QUIC Long Header: 第一个字节高位 = 1, Form bit
-    let first = data[0];
-    if first & 0x80 == 0 {
-        return None; // Short header, not Initial
-    }
-
-    // QUIC version (bytes 1-4), 跳过 0x00000000 (version negotiation)
-    let version = u32::from_be_bytes([data[1], data[2], data[3], data[4]]);
-    if version == 0 {
-        return None;
-    }
-
-    // 在 QUIC payload 中搜索 TLS ClientHello 标记 (0x01 + 3字节长度 + version)
-    // 由于 QUIC CRYPTO frame 中直接包含 TLS handshake 消息（不含 TLS record header），
-    // 我们搜索 Handshake Type = ClientHello (0x01)
-    for i in 5..data.len().saturating_sub(40) {
-        // TLS Handshake: type(1) + length(3) + client_version(2) + random(32) ...
-        if data[i] == 0x01 {
-            // 检查后续是否有合理的 length
-            if i + 4 > data.len() {
-                continue;
-            }
-            let hs_len = ((data[i + 1] as usize) << 16)
-                | ((data[i + 2] as usize) << 8)
-                | (data[i + 3] as usize);
-            if hs_len < 38 || i + 4 + hs_len > data.len() + 100 {
-                // hs_len 不合理（允许略大于剩余数据，因为可能被截断）
-                continue;
-            }
-            // 尝试跳过到 extensions 并提取 SNI
-            // client_version(2) + random(32) = 34 bytes
-            let session_id_offset = i + 4 + 34;
-            if session_id_offset >= data.len() {
-                continue;
-            }
-            let session_id_len = data[session_id_offset] as usize;
-            let cipher_offset = session_id_offset + 1 + session_id_len;
-            if cipher_offset + 2 > data.len() {
-                continue;
-            }
-            let cipher_len =
-                ((data[cipher_offset] as usize) << 8) | (data[cipher_offset + 1] as usize);
-            let comp_offset = cipher_offset + 2 + cipher_len;
-            if comp_offset + 1 > data.len() {
-                continue;
-            }
-            let comp_len = data[comp_offset] as usize;
-            let ext_offset = comp_offset + 1 + comp_len;
-            if ext_offset + 2 > data.len() {
-                continue;
-            }
-            let ext_total =
-                ((data[ext_offset] as usize) << 8) | (data[ext_offset + 1] as usize);
-            let mut pos = ext_offset + 2;
-            let ext_end = pos + ext_total;
-
-            while pos + 4 <= data.len() && pos + 4 <= ext_end {
-                let ext_type = ((data[pos] as u16) << 8) | data[pos + 1] as u16;
-                let ext_len =
-                    ((data[pos + 2] as usize) << 8) | (data[pos + 3] as usize);
-                pos += 4;
-
-                if ext_type == 0x0000 {
-                    // SNI extension
-                    if pos + 5 <= data.len() && pos + ext_len <= data.len() {
-                        let sni_list_len =
-                            ((data[pos] as usize) << 8) | (data[pos + 1] as usize);
-                        let _ = sni_list_len;
-                        let name_type = data[pos + 2];
-                        if name_type == 0x00 {
-                            let name_len = ((data[pos + 3] as usize) << 8)
-                                | (data[pos + 4] as usize);
-                            if pos + 5 + name_len <= data.len() {
-                                let name =
-                                    String::from_utf8_lossy(&data[pos + 5..pos + 5 + name_len]);
-                                if !name.is_empty()
-                                    && name.contains('.')
-                                    && name.is_ascii()
-                                {
-                                    return Some(name.to_string());
-                                }
-                            }
-                        }
-                    }
-                    break;
-                }
-
-                pos += ext_len;
-            }
+    if let Some(payload) = parse_quic_initial_payload(scan) {
+        if let Some(host) = find_client_hello_sni(payload) {
+            return Some(host);
         }
     }
 
-    None
+    find_client_hello_sni(scan)
 }
 
 /// 检测 BitTorrent 协议
@@ -357,6 +266,22 @@ fn is_stun(data: &[u8]) -> bool {
     data[4] == 0x21 && data[5] == 0x12 && data[6] == 0xA4 && data[7] == 0x42
 }
 
+fn is_quic_initial(data: &[u8]) -> bool {
+    if data.len() < 6 {
+        return false;
+    }
+
+    let first = data[0];
+    let is_long_header = first & 0x80 != 0;
+    let long_packet_type = (first >> 4) & 0x03;
+    if !is_long_header || long_packet_type != 0x00 {
+        return false;
+    }
+
+    let version = u32::from_be_bytes([data[1], data[2], data[3], data[4]]);
+    version != 0
+}
+
 /// 检测 DTLS ClientHello
 /// DTLS record: ContentType=0x16, version 0xFEFF(1.0) 或 0xFEFD(1.2)
 fn is_dtls(data: &[u8]) -> bool {
@@ -375,14 +300,208 @@ fn is_dtls(data: &[u8]) -> bool {
 /// 检测 SSH 协议 (RFC 4253)
 /// SSH 握手以 "SSH-" 开头，后跟版本号
 fn is_ssh(data: &[u8]) -> bool {
-    data.len() >= 4 && data.starts_with(b"SSH-")
+    if !data.starts_with(b"SSH-") {
+        return false;
+    }
+
+    let window = &data[..data.len().min(255)];
+    let Some(newline_pos) = window.iter().position(|&b| b == b'\n') else {
+        return false;
+    };
+
+    let mut line = &window[..newline_pos];
+    if let Some(stripped) = line.strip_suffix(b"\r") {
+        line = stripped;
+    }
+
+    if line.len() < 9 {
+        return false;
+    }
+
+    let Some(rest) = line.strip_prefix(b"SSH-") else {
+        return false;
+    };
+    let Some(version_sep) = rest.iter().position(|&b| b == b'-') else {
+        return false;
+    };
+
+    let proto = &rest[..version_sep];
+    if proto != b"2.0" && proto != b"1.99" {
+        return false;
+    }
+
+    let software = &rest[version_sep + 1..];
+    !software.is_empty()
+        && software
+            .iter()
+            .all(|b| b.is_ascii() && !b.is_ascii_control())
+}
+
+fn parse_quic_initial_payload(data: &[u8]) -> Option<&[u8]> {
+    if !is_quic_initial(data) {
+        return None;
+    }
+
+    let mut pos = 5;
+    let dcid_len = *data.get(pos)? as usize;
+    pos += 1;
+    pos = pos.checked_add(dcid_len)?;
+
+    let scid_len = *data.get(pos)? as usize;
+    pos += 1;
+    pos = pos.checked_add(scid_len)?;
+
+    let (token_len, token_len_bytes) = parse_quic_varint(data.get(pos..)?)?;
+    pos = pos.checked_add(token_len_bytes)?;
+    pos = pos.checked_add(token_len)?;
+
+    let (payload_len, payload_len_bytes) = parse_quic_varint(data.get(pos..)?)?;
+    pos = pos.checked_add(payload_len_bytes)?;
+
+    let pn_len = ((data[0] & 0x03) + 1) as usize;
+    pos = pos.checked_add(pn_len)?;
+
+    let payload_end = pos.checked_add(payload_len.saturating_sub(pn_len))?;
+    data.get(pos..payload_end)
+}
+
+fn parse_quic_varint(data: &[u8]) -> Option<(usize, usize)> {
+    let first = *data.first()?;
+    let prefix = first >> 6;
+    let len = 1usize << prefix;
+    let slice = data.get(..len)?;
+
+    let value = match len {
+        1 => (slice[0] & 0x3f) as u64,
+        2 => (((slice[0] & 0x3f) as u64) << 8) | slice[1] as u64,
+        4 => {
+            (((slice[0] & 0x3f) as u64) << 24)
+                | ((slice[1] as u64) << 16)
+                | ((slice[2] as u64) << 8)
+                | (slice[3] as u64)
+        }
+        8 => {
+            (((slice[0] & 0x3f) as u64) << 56)
+                | ((slice[1] as u64) << 48)
+                | ((slice[2] as u64) << 40)
+                | ((slice[3] as u64) << 32)
+                | ((slice[4] as u64) << 24)
+                | ((slice[5] as u64) << 16)
+                | ((slice[6] as u64) << 8)
+                | (slice[7] as u64)
+        }
+        _ => return None,
+    };
+
+    usize::try_from(value).ok().map(|v| (v, len))
+}
+
+fn find_client_hello_sni(data: &[u8]) -> Option<String> {
+    let scan_len = data.len().min(1200);
+    for i in 0..scan_len.saturating_sub(4) {
+        if data[i] != 0x01 {
+            continue;
+        }
+
+        let hs_len =
+            ((data[i + 1] as usize) << 16) | ((data[i + 2] as usize) << 8) | (data[i + 3] as usize);
+        if hs_len < 40 {
+            continue;
+        }
+
+        let body_start = i + 4;
+        let body_end = body_start + hs_len;
+        let body = if let Some(body) = data.get(body_start..body_end) {
+            body
+        } else {
+            continue;
+        };
+
+        if let Some(host) = parse_client_hello_body_sni(body) {
+            return Some(host);
+        }
+    }
+    None
+}
+
+fn parse_client_hello_body_sni(body: &[u8]) -> Option<String> {
+    if body.len() < 34 {
+        return None;
+    }
+
+    let mut pos = 34;
+    let session_id_len = *body.get(pos)? as usize;
+    pos += 1 + session_id_len;
+
+    if pos + 2 > body.len() {
+        return None;
+    }
+    let cipher_suites_len = u16::from_be_bytes([body[pos], body[pos + 1]]) as usize;
+    pos += 2 + cipher_suites_len;
+
+    if pos >= body.len() {
+        return None;
+    }
+    let compression_len = body[pos] as usize;
+    pos += 1 + compression_len;
+
+    if pos + 2 > body.len() {
+        return None;
+    }
+    let extensions_len = u16::from_be_bytes([body[pos], body[pos + 1]]) as usize;
+    pos += 2;
+    let extensions_end = pos + extensions_len;
+    if extensions_end > body.len() {
+        return None;
+    }
+
+    while pos + 4 <= extensions_end {
+        let ext_type = u16::from_be_bytes([body[pos], body[pos + 1]]);
+        let ext_len = u16::from_be_bytes([body[pos + 2], body[pos + 3]]) as usize;
+        pos += 4;
+
+        if pos + ext_len > extensions_end {
+            return None;
+        }
+
+        if ext_type == 0x0000 {
+            return parse_sni_extension(&body[pos..pos + ext_len]).and_then(validate_domain_like);
+        }
+
+        pos += ext_len;
+    }
+
+    None
+}
+
+fn validate_domain_like(host: String) -> Option<String> {
+    if host.is_empty() || host.len() > 253 {
+        return None;
+    }
+    if !host.is_ascii() || !host.contains('.') {
+        return None;
+    }
+    if host
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+    {
+        Some(host)
+    } else {
+        None
+    }
 }
 
 /// 检查是否为 HTTP 请求
 fn is_http_request(data: &[u8]) -> bool {
     let methods: &[&[u8]] = &[
-        b"GET ", b"POST ", b"PUT ", b"HEAD ",
-        b"DELETE ", b"OPTIONS ", b"PATCH ", b"CONNECT ",
+        b"GET ",
+        b"POST ",
+        b"PUT ",
+        b"HEAD ",
+        b"DELETE ",
+        b"OPTIONS ",
+        b"PATCH ",
+        b"CONNECT ",
     ];
     methods.iter().any(|m| data.starts_with(m))
 }
@@ -438,6 +557,8 @@ impl SniffResult {
             "tls" => Some(443),
             "http" => Some(80),
             "dtls" => Some(443),
+            "quic" => Some(443),
+            "ssh" => Some(22),
             _ => None,
         });
         Self {
@@ -468,9 +589,7 @@ impl SniffResult {
                 let port = self.inferred_port.unwrap_or(original_port);
                 (original_host.to_string(), port)
             }
-            SniffOverrideStrategy::RouteOnly => {
-                (original_host.to_string(), original_port)
-            }
+            SniffOverrideStrategy::RouteOnly => (original_host.to_string(), original_port),
         }
     }
 }
@@ -648,18 +767,24 @@ mod tests {
     #[test]
     fn detect_stun_binding_request() {
         let mut data = vec![0u8; 20];
-        data[0] = 0x00; data[1] = 0x01; // Binding Request
-        data[2] = 0x00; data[3] = 0x00; // Length = 0
-        data[4] = 0x21; data[5] = 0x12; data[6] = 0xA4; data[7] = 0x42; // Magic Cookie
+        data[0] = 0x00;
+        data[1] = 0x01; // Binding Request
+        data[2] = 0x00;
+        data[3] = 0x00; // Length = 0
+        data[4] = 0x21;
+        data[5] = 0x12;
+        data[6] = 0xA4;
+        data[7] = 0x42; // Magic Cookie
         assert_eq!(detect_protocol(&data), Some("stun"));
         assert!(is_stun(&data));
     }
 
     #[test]
     fn detect_stun_no_magic_cookie() {
-        let data = vec![0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                       0x00, 0x00, 0x00, 0x00];
+        let data = vec![
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
         assert!(!is_stun(&data));
     }
 
@@ -667,7 +792,8 @@ mod tests {
     fn detect_dtls_client_hello() {
         let mut data = vec![0u8; 20];
         data[0] = 0x16; // Handshake
-        data[1] = 0xFE; data[2] = 0xFD; // DTLS 1.2
+        data[1] = 0xFE;
+        data[2] = 0xFD; // DTLS 1.2
         assert_eq!(detect_protocol(&data), Some("dtls"));
         assert!(is_dtls(&data));
     }
@@ -676,7 +802,8 @@ mod tests {
     fn detect_dtls_1_0() {
         let mut data = vec![0u8; 20];
         data[0] = 0x16;
-        data[1] = 0xFE; data[2] = 0xFF; // DTLS 1.0
+        data[1] = 0xFE;
+        data[2] = 0xFF; // DTLS 1.0
         assert!(is_dtls(&data));
     }
 
@@ -684,7 +811,8 @@ mod tests {
     fn detect_dtls_not_handshake() {
         let mut data = vec![0u8; 20];
         data[0] = 0x17; // Application Data, not Handshake
-        data[1] = 0xFE; data[2] = 0xFD;
+        data[1] = 0xFE;
+        data[2] = 0xFD;
         assert!(!is_dtls(&data));
     }
 
@@ -705,6 +833,43 @@ mod tests {
     #[test]
     fn detect_unknown_protocol() {
         assert_eq!(detect_protocol(b"random junk"), None);
+    }
+
+    #[test]
+    fn quic_initial_sni_best_effort() {
+        let packet = build_fake_quic_initial_with_client_hello(b"quic.example.com");
+        assert_eq!(
+            parse_quic_sni(&packet),
+            Some("quic.example.com".to_string())
+        );
+        assert_eq!(sniff(&packet), Some("quic.example.com".to_string()));
+    }
+
+    #[test]
+    fn detect_quic_protocol() {
+        let packet = build_fake_quic_initial_with_client_hello(b"quic.example.com");
+        assert_eq!(detect_protocol(&packet), Some("quic"));
+    }
+
+    #[test]
+    fn detect_ssh_protocol() {
+        let banner = b"SSH-2.0-OpenSSH_9.6\r\n";
+        assert!(is_ssh(banner));
+        assert_eq!(detect_protocol(banner), Some("ssh"));
+    }
+
+    #[test]
+    fn detect_ssh_protocol_compat_199() {
+        let banner = b"SSH-1.99-dropbear_2024.86\n";
+        assert!(is_ssh(banner));
+        assert_eq!(detect_protocol(banner), Some("ssh"));
+    }
+
+    #[test]
+    fn detect_ssh_protocol_invalid() {
+        assert!(!is_ssh(b"SSH-2.0-OpenSSH_9.6"));
+        assert!(!is_ssh(b"SSH-3.0-foo\r\n"));
+        assert!(!is_ssh(b"SSH-2.0-\r\n"));
     }
 
     /// 构造测试用的 TLS ClientHello（仅包含 SNI extension）
@@ -756,18 +921,92 @@ mod tests {
         record
     }
 
+    fn encode_quic_varint(v: u64) -> Vec<u8> {
+        if v < 64 {
+            return vec![v as u8];
+        }
+        if v < 16384 {
+            let b0 = 0x40 | ((v >> 8) as u8 & 0x3f);
+            let b1 = (v & 0xff) as u8;
+            return vec![b0, b1];
+        }
+        if v < (1 << 30) {
+            let b0 = 0x80 | ((v >> 24) as u8 & 0x3f);
+            let b1 = ((v >> 16) & 0xff) as u8;
+            let b2 = ((v >> 8) & 0xff) as u8;
+            let b3 = (v & 0xff) as u8;
+            return vec![b0, b1, b2, b3];
+        }
+        let b0 = 0xc0 | ((v >> 56) as u8 & 0x3f);
+        let b1 = ((v >> 48) & 0xff) as u8;
+        let b2 = ((v >> 40) & 0xff) as u8;
+        let b3 = ((v >> 32) & 0xff) as u8;
+        let b4 = ((v >> 24) & 0xff) as u8;
+        let b5 = ((v >> 16) & 0xff) as u8;
+        let b6 = ((v >> 8) & 0xff) as u8;
+        let b7 = (v & 0xff) as u8;
+        vec![b0, b1, b2, b3, b4, b5, b6, b7]
+    }
+
+    fn build_fake_quic_initial_with_client_hello(sni: &[u8]) -> Vec<u8> {
+        let tls_record = build_test_client_hello(sni);
+        let handshake = tls_record[5..].to_vec();
+
+        let mut packet = Vec::new();
+        packet.push(0xC0);
+        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+
+        packet.push(8);
+        packet.extend_from_slice(b"12345678");
+        packet.push(8);
+        packet.extend_from_slice(b"abcdefgh");
+
+        packet.push(0x00);
+
+        let payload_len = 1u64 + handshake.len() as u64;
+        packet.extend_from_slice(&encode_quic_varint(payload_len));
+
+        packet.push(0x01);
+        packet.extend_from_slice(&handshake);
+        packet
+    }
+
     // --- Sniff Override Strategy tests ---
 
     #[test]
     fn sniff_override_strategy_from_str() {
-        assert_eq!(SniffOverrideStrategy::from_str("full"), SniffOverrideStrategy::Full);
-        assert_eq!(SniffOverrideStrategy::from_str("override"), SniffOverrideStrategy::Full);
-        assert_eq!(SniffOverrideStrategy::from_str("domain-only"), SniffOverrideStrategy::DomainOnly);
-        assert_eq!(SniffOverrideStrategy::from_str("domain"), SniffOverrideStrategy::DomainOnly);
-        assert_eq!(SniffOverrideStrategy::from_str("port-only"), SniffOverrideStrategy::PortOnly);
-        assert_eq!(SniffOverrideStrategy::from_str("route-only"), SniffOverrideStrategy::RouteOnly);
-        assert_eq!(SniffOverrideStrategy::from_str("none"), SniffOverrideStrategy::RouteOnly);
-        assert_eq!(SniffOverrideStrategy::from_str("unknown"), SniffOverrideStrategy::Full);
+        assert_eq!(
+            SniffOverrideStrategy::from_str("full"),
+            SniffOverrideStrategy::Full
+        );
+        assert_eq!(
+            SniffOverrideStrategy::from_str("override"),
+            SniffOverrideStrategy::Full
+        );
+        assert_eq!(
+            SniffOverrideStrategy::from_str("domain-only"),
+            SniffOverrideStrategy::DomainOnly
+        );
+        assert_eq!(
+            SniffOverrideStrategy::from_str("domain"),
+            SniffOverrideStrategy::DomainOnly
+        );
+        assert_eq!(
+            SniffOverrideStrategy::from_str("port-only"),
+            SniffOverrideStrategy::PortOnly
+        );
+        assert_eq!(
+            SniffOverrideStrategy::from_str("route-only"),
+            SniffOverrideStrategy::RouteOnly
+        );
+        assert_eq!(
+            SniffOverrideStrategy::from_str("none"),
+            SniffOverrideStrategy::RouteOnly
+        );
+        assert_eq!(
+            SniffOverrideStrategy::from_str("unknown"),
+            SniffOverrideStrategy::Full
+        );
     }
 
     #[test]
@@ -823,7 +1062,8 @@ mod tests {
             protocol: Some("tls"),
             inferred_port: Some(443),
         };
-        let (host, port) = result.apply_override(SniffOverrideStrategy::DomainOnly, "1.2.3.4", 8080);
+        let (host, port) =
+            result.apply_override(SniffOverrideStrategy::DomainOnly, "1.2.3.4", 8080);
         assert_eq!(host, "sniffed.com");
         assert_eq!(port, 8080);
     }

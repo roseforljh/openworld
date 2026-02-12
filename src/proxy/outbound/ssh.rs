@@ -1,36 +1,49 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::debug;
 
-use crate::common::{BoxUdpTransport, Dialer, DialerConfig, ProxyStream};
+use crate::common::{BoxUdpTransport, ProxyStream};
 use crate::config::types::OutboundConfig;
 use crate::proxy::{OutboundHandler, Session};
 
 /// SSH 隧道出站
 ///
-/// 通过 SSH 连接建立 TCP 端口转发隧道 (类似 ssh -L)。
-/// 简化实现：使用 SSH 协议握手后的直连通道。
+/// 通过 SSH 连接建立 TCP 端口转发隧道 (类似 ssh -L / direct-tcpip)。
+/// 需要 feature = "ssh" 启用 russh 依赖。
 ///
-/// 完整实现需要 SSH 密钥交换、认证等，这里提供框架和直连模式。
+/// 每次 `connect()` 调用创建独立的 SSH 连接和 direct-tcpip 通道。
 pub struct SshOutbound {
     tag: String,
     server_addr: String,
     server_port: u16,
     username: String,
     auth_method: SshAuthMethod,
-    dialer_config: Option<DialerConfig>,
 }
 
 #[derive(Debug, Clone)]
 pub enum SshAuthMethod {
     Password(String),
-    PrivateKey { key_path: String, passphrase: Option<String> },
+    PrivateKey { key_data: String, passphrase: Option<String> },
     None,
 }
 
-/// SSH 协议版本交换的标识字符串
-const SSH_CLIENT_VERSION: &str = "SSH-2.0-OpenWorld_0.1";
+#[cfg(feature = "ssh")]
+struct SshHandler;
+
+#[cfg(feature = "ssh")]
+#[async_trait]
+impl russh::client::Handler for SshHandler {
+    type Error = anyhow::Error;
+
+    async fn check_server_key(
+        &mut self,
+        _server_public_key: &ssh_key::PublicKey,
+    ) -> std::result::Result<bool, Self::Error> {
+        // Accept all host keys (like StrictHostKeyChecking=no)
+        // TODO: implement known_hosts verification
+        Ok(true)
+    }
+}
 
 impl SshOutbound {
     pub fn new(config: &OutboundConfig) -> Result<Self> {
@@ -49,7 +62,7 @@ impl SshOutbound {
             SshAuthMethod::Password(pw.clone())
         } else if let Some(ref key) = settings.private_key {
             SshAuthMethod::PrivateKey {
-                key_path: key.clone(),
+                key_data: key.clone(),
                 passphrase: settings.private_key_passphrase.clone(),
             }
         } else {
@@ -62,7 +75,6 @@ impl SshOutbound {
             server_port: port,
             username,
             auth_method,
-            dialer_config: settings.dialer.clone(),
         })
     }
 
@@ -90,49 +102,118 @@ impl OutboundHandler for SshOutbound {
     }
 
     async fn connect(&self, session: &Session) -> Result<ProxyStream> {
-        debug!(
-            tag = self.tag,
-            dest = %session.target,
-            server = %self.server_addr,
-            port = self.server_port,
-            "SSH tunnel connecting"
-        );
+        #[cfg(feature = "ssh")]
+        {
+            // === 1. 建立 SSH 连接 ===
+            let ssh_config = russh::client::Config {
+                ..Default::default()
+            };
 
-        // 连接到 SSH 服务器
-        let dialer = match &self.dialer_config {
-            Some(cfg) => Dialer::new(cfg.clone()),
-            None => Dialer::default_dialer(),
-        };
-        let mut stream = dialer.connect_host(&self.server_addr, self.server_port).await?;
+            let addr = format!("{}:{}", self.server_addr, self.server_port);
+            let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host(&addr)
+                .await?
+                .collect();
+            if addrs.is_empty() {
+                anyhow::bail!("ssh: failed to resolve {}", addr);
+            }
 
-        // SSH 版本交换
-        let client_version = format!("{}\r\n", SSH_CLIENT_VERSION);
-        stream.write_all(client_version.as_bytes()).await?;
-        stream.flush().await?;
+            debug!(
+                server = %self.server_addr,
+                port = self.server_port,
+                "SSH connecting"
+            );
 
-        // 读取服务器版本
-        let mut server_version_buf = vec![0u8; 256];
-        let n = stream.read(&mut server_version_buf).await?;
-        let server_version = String::from_utf8_lossy(&server_version_buf[..n]);
-        debug!(
-            server_version = %server_version.trim(),
-            "SSH server version received"
-        );
+            let mut handle = russh::client::connect(
+                std::sync::Arc::new(ssh_config),
+                addrs[0],
+                SshHandler {},
+            )
+            .await?;
 
-        if !server_version.starts_with("SSH-2.0") {
-            anyhow::bail!("unsupported SSH version: {}", server_version.trim());
+            // === 2. 认证 ===
+            match &self.auth_method {
+                SshAuthMethod::Password(password) => {
+                    let auth_ok = handle
+                        .authenticate_password(&self.username, password)
+                        .await?;
+                    if !auth_ok {
+                        anyhow::bail!("ssh: password authentication failed for user '{}'", self.username);
+                    }
+                }
+                SshAuthMethod::PrivateKey { key_data, passphrase } => {
+                    let key = if let Some(pass) = passphrase {
+                        russh_keys::decode_secret_key(key_data, Some(pass))?
+                    } else {
+                        russh_keys::decode_secret_key(key_data, None)?
+                    };
+                    let auth_ok = handle
+                        .authenticate_publickey(&self.username, std::sync::Arc::new(key))
+                        .await?;
+                    if !auth_ok {
+                        anyhow::bail!("ssh: public key authentication failed for user '{}'", self.username);
+                    }
+                }
+                SshAuthMethod::None => {
+                    let auth_ok = handle
+                        .authenticate_none(&self.username)
+                        .await?;
+                    if !auth_ok {
+                        anyhow::bail!("ssh: none authentication failed for user '{}'", self.username);
+                    }
+                }
+            }
+
+            debug!(
+                server = %self.server_addr,
+                user = %self.username,
+                "SSH authenticated"
+            );
+
+            // === 3. 打开 direct-tcpip 通道 ===
+            let (host, port) = match &session.target {
+                crate::common::Address::Ip(addr) => (addr.ip().to_string(), addr.port()),
+                crate::common::Address::Domain(domain, port) => (domain.clone(), *port),
+            };
+
+            debug!(
+                tag = self.tag,
+                dest_host = %host,
+                dest_port = port,
+                "SSH direct-tcpip channel opening"
+            );
+
+            let channel = handle
+                .channel_open_direct_tcpip(
+                    &host,
+                    port.into(),
+                    "127.0.0.1",
+                    0,
+                )
+                .await?;
+
+            debug!(
+                tag = self.tag,
+                dest = %session.target,
+                "SSH channel established"
+            );
+
+            // === 4. 使用 Channel::into_stream() 直接转为 AsyncRead + AsyncWrite ===
+            let stream = channel.into_stream();
+
+            // 将 handle 移入后台保活（Handle 实现了 Future，连接断开时完成）
+            tokio::spawn(async move {
+                let _ = handle.await;
+                debug!("SSH connection handle closed");
+            });
+
+            Ok(Box::new(stream))
         }
 
-        // 注意：完整的 SSH 实现需要密钥交换、认证、通道建立等
-        // 这里返回底层 TCP 流作为隧道
-        // 实际使用时应集成 russh 或类似库
-        debug!(
-            tag = self.tag,
-            dest = %session.target,
-            "SSH connection established (simplified tunnel)"
-        );
-
-        Ok(Box::new(stream))
+        #[cfg(not(feature = "ssh"))]
+        {
+            let _ = session;
+            anyhow::bail!("SSH support requires the 'ssh' feature to be enabled")
+        }
     }
 
     async fn connect_udp(&self, _session: &Session) -> Result<BoxUdpTransport> {
@@ -143,6 +224,7 @@ impl OutboundHandler for SshOutbound {
         self
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -198,6 +280,28 @@ mod tests {
     }
 
     #[test]
+    fn ssh_auth_method_private_key() {
+        let config = OutboundConfig {
+            tag: "ssh-test".to_string(),
+            protocol: "ssh".to_string(),
+            settings: OutboundSettings {
+                address: Some("host.com".to_string()),
+                private_key: Some("-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----".to_string()),
+                private_key_passphrase: Some("mypass".to_string()),
+                ..Default::default()
+            },
+        };
+        let outbound = SshOutbound::new(&config).unwrap();
+        match outbound.auth_method() {
+            SshAuthMethod::PrivateKey { key_data, passphrase } => {
+                assert!(key_data.contains("OPENSSH"));
+                assert_eq!(passphrase.as_deref(), Some("mypass"));
+            }
+            _ => panic!("expected private key auth"),
+        }
+    }
+
+    #[test]
     fn ssh_auth_method_none() {
         let config = OutboundConfig {
             tag: "ssh-test".to_string(),
@@ -212,10 +316,5 @@ mod tests {
             SshAuthMethod::None => {}
             _ => panic!("expected none auth"),
         }
-    }
-
-    #[test]
-    fn ssh_client_version_string() {
-        assert!(SSH_CLIENT_VERSION.starts_with("SSH-2.0"));
     }
 }

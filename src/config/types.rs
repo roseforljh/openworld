@@ -167,7 +167,7 @@ pub struct InboundConfig {
     #[serde(default)]
     pub settings: InboundSettings,
     /// 此入站的最大连接数限制（可选，不设则仅受全局限制）
-    #[serde(default, rename = "max-connections")]
+    #[serde(default, rename = "max-connections", alias = "max_connections")]
     pub max_connections: Option<u32>,
 }
 

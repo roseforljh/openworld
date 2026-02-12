@@ -3,6 +3,18 @@ name = "openworld"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "openworld"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["cli", "ech", "ssh"]
+ech = []
+cli = ["clap", "notify"]
+android = ["jni", "android_logger"]
+ssh = ["russh", "russh-keys", "ssh-key"]
+
+
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 quinn = "0.11"
@@ -47,8 +59,21 @@ md-5 = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 socket2 = { version = "0.5", features = ["all"] }
 blake3 = "1.8.3"
-clap = { version = "4", features = ["derive"] }
-notify = { version = "8.2.0", features = ["macos_fsevent"] }
+log = "0.4"
+
+# CLI-only deps (excluded on Android)
+clap = { version = "4", features = ["derive"], optional = true }
+notify = { version = "8.2.0", features = ["macos_fsevent"], optional = true }
+
+# Android-only deps
+jni = { version = "0.21", optional = true }
+android_logger = { version = "0.14", optional = true }
+
+# SSH tunnel support (optional, heavy dep)
+russh = { version = "0.48", optional = true }
+russh-keys = { version = "0.48", optional = true }
+ssh-key = { version = "0.6", optional = true }
+
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
@@ -69,3 +94,10 @@ harness = false
 [[bench]]
 name = "mux_throughput"
 harness = false
+
+[profile.release]
+opt-level = "z"       # 优化体积而非速度
+lto = true            # 全量链接时优化，去除未用代码
+codegen-units = 1     # 单编译单元，更深优化
+panic = "abort"       # 不生成 unwind 表，减小体积
+strip = true          # 去除所有调试符号

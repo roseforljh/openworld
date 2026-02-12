@@ -8,19 +8,28 @@
 /// - Automatic ECH config fetching from DNS HTTPS records
 /// - GREASE ECH for anti-ossification when no ECH config is available
 /// - Integration with the fingerprint system
+#[cfg(feature = "ech")]
 use std::sync::Arc;
 
 use anyhow::Result;
-use rustls::client::{EchConfig, EchGreaseConfig, EchMode};
-use rustls::crypto::hpke::Hpke;
-use rustls::pki_types::EchConfigListBytes;
 use rustls::ClientConfig;
 use tracing::debug;
+
+#[cfg(not(feature = "ech"))]
+use tracing::warn;
+
+#[cfg(feature = "ech")]
+use rustls::client::{EchConfig, EchGreaseConfig, EchMode};
+#[cfg(feature = "ech")]
+use rustls::crypto::hpke::Hpke;
+#[cfg(feature = "ech")]
+use rustls::pki_types::EchConfigListBytes;
 
 use super::fingerprint::{self, FingerprintType};
 use crate::config::types::TlsConfig;
 
 /// HPKE suites supported for ECH
+#[cfg(feature = "ech")]
 fn supported_hpke_suites() -> &'static [&'static dyn Hpke] {
     // rustls 0.23 ECH HPKE suites are provided by aws-lc-rs backend
     rustls::crypto::aws_lc_rs::hpke::ALL_SUPPORTED_SUITES
@@ -72,41 +81,64 @@ pub fn build_ech_tls_config(
         );
     }
 
-    let ech_mode = build_ech_mode(ech)?;
-
-    let provider = Arc::new(build_ech_provider(fingerprint));
-
-    let mut root_store = rustls::RootCertStore::empty();
-    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
-    // ECH requires TLS 1.3 only
-    let mut config = if allow_insecure {
-        ClientConfig::builder_with_provider(provider)
-            .with_protocol_versions(&[&rustls::version::TLS13])
-            .map_err(|e| anyhow::anyhow!("TLS config error: {}", e))?
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(crate::common::tls::NoVerifier))
-            .with_no_client_auth()
-    } else {
-        ClientConfig::builder_with_provider(provider)
-            .with_ech(ech_mode)
-            .map_err(|e| anyhow::anyhow!("ECH config error: {}", e))?
-            .with_root_certificates(root_store)
-            .with_no_client_auth()
-    };
-
-    // Set ALPN
-    if let Some(protocols) = alpn_override {
-        config.alpn_protocols = protocols.iter().map(|p| p.as_bytes().to_vec()).collect();
-    } else {
-        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    #[cfg(not(feature = "ech"))]
+    {
+        warn!(
+            grease = ech.grease,
+            has_config = ech.config_list.is_some(),
+            "ECH requested but 'ech' cargo feature is disabled; falling back to normal TLS"
+        );
+        return fingerprint::build_fingerprinted_tls_config(
+            fingerprint,
+            allow_insecure,
+            alpn_override,
+        );
     }
 
-    debug!(grease = ech.grease, has_config = ech.config_list.is_some(), "built ECH TLS config");
-    Ok(config)
+    #[cfg(feature = "ech")]
+    {
+        let ech_mode = build_ech_mode(ech)?;
+
+        let provider = Arc::new(build_ech_provider(fingerprint));
+
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+        // ECH requires TLS 1.3 only
+        let mut config = if allow_insecure {
+            ClientConfig::builder_with_provider(provider)
+                .with_ech(ech_mode)
+                .map_err(|e| anyhow::anyhow!("ECH config error: {}", e))?
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(crate::common::tls::NoVerifier))
+                .with_no_client_auth()
+        } else {
+            ClientConfig::builder_with_provider(provider)
+                .with_ech(ech_mode)
+                .map_err(|e| anyhow::anyhow!("ECH config error: {}", e))?
+                .with_root_certificates(root_store)
+                .with_no_client_auth()
+        };
+
+        // Set ALPN
+        if let Some(protocols) = alpn_override {
+            config.alpn_protocols = protocols.iter().map(|p| p.as_bytes().to_vec()).collect();
+        } else {
+            config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+        }
+
+        debug!(
+            grease = ech.grease,
+            has_config = ech.config_list.is_some(),
+            outer_sni = ech.outer_sni.as_deref().unwrap_or(""),
+            "built ECH TLS config"
+        );
+        Ok(config)
+    }
 }
 
 /// Build the ECH mode from settings
+#[cfg(feature = "ech")]
 fn build_ech_mode(ech: &EchSettings) -> Result<EchMode> {
     if let Some(ref config_bytes) = ech.config_list {
         let config_list = EchConfigListBytes::from(config_bytes.clone());
@@ -127,43 +159,15 @@ fn build_ech_mode(ech: &EchSettings) -> Result<EchMode> {
 }
 
 /// Build a CryptoProvider suitable for ECH (with optional fingerprinting)
+#[cfg(feature = "ech")]
 fn build_ech_provider(fingerprint: FingerprintType) -> rustls::crypto::CryptoProvider {
-    use rustls::crypto::ring as ring_provider;
-
-    let default = ring_provider::default_provider();
-
-    if fingerprint == FingerprintType::None {
-        return default;
+    if fingerprint != FingerprintType::None {
+        debug!(
+            fingerprint = ?fingerprint,
+            "ECH enabled: using aws-lc-rs provider, fingerprint customization is best-effort"
+        );
     }
-
-    // Use fingerprinted cipher suites but keep the rest from ring
-    let cipher_suites = match fingerprint {
-        FingerprintType::Chrome | FingerprintType::Edge | FingerprintType::Android => {
-            use rustls::crypto::ring::cipher_suite;
-            vec![
-                cipher_suite::TLS13_AES_128_GCM_SHA256,
-                cipher_suite::TLS13_AES_256_GCM_SHA384,
-                cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
-            ]
-        }
-        FingerprintType::Firefox => {
-            use rustls::crypto::ring::cipher_suite;
-            vec![
-                cipher_suite::TLS13_AES_128_GCM_SHA256,
-                cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
-                cipher_suite::TLS13_AES_256_GCM_SHA384,
-            ]
-        }
-        _ => default.cipher_suites.clone(),
-    };
-
-    rustls::crypto::CryptoProvider {
-        cipher_suites,
-        kx_groups: default.kx_groups,
-        signature_verification_algorithms: default.signature_verification_algorithms,
-        secure_random: default.secure_random,
-        key_provider: default.key_provider,
-    }
+    rustls::crypto::aws_lc_rs::default_provider()
 }
 
 /// Parse base64-encoded ECH config list
@@ -213,6 +217,14 @@ pub async fn resolve_ech_from_dns(domain: &str) -> Result<Option<Vec<u8>>> {
 ///
 /// Priority: manual `ech-config` > `ech-auto` DNS fetch > `ech-grease`.
 pub async fn resolve_ech_settings(config: &TlsConfig, domain: &str) -> Result<EchSettings> {
+    #[cfg(not(feature = "ech"))]
+    if config.ech_config.is_some() || config.ech_auto || config.ech_grease {
+        warn!(
+            domain = domain,
+            "ECH config detected but 'ech' cargo feature is disabled; settings will be ignored"
+        );
+    }
+
     let manual_config = config
         .ech_config
         .as_deref()
@@ -298,6 +310,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "ech")]
     fn test_build_ech_mode_grease() {
         let settings = EchSettings {
             grease: true,
@@ -308,6 +321,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "ech")]
     fn test_build_ech_mode_disabled() {
         let settings = EchSettings::default();
         let mode = build_ech_mode(&settings);
@@ -315,16 +329,17 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "ech")]
     fn test_build_ech_provider_none() {
         let provider = build_ech_provider(FingerprintType::None);
         assert!(!provider.cipher_suites.is_empty());
     }
 
     #[test]
+    #[cfg(feature = "ech")]
     fn test_build_ech_provider_chrome() {
         let provider = build_ech_provider(FingerprintType::Chrome);
-        // ECH requires TLS 1.3 only, so only TLS 1.3 cipher suites
-        assert_eq!(provider.cipher_suites.len(), 3);
+        assert!(!provider.cipher_suites.is_empty());
     }
 
     #[test]

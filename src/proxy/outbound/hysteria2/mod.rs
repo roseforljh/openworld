@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::common::{Address, BoxUdpTransport, ProxyStream, UdpPacket, UdpTransport};
 use crate::config::types::OutboundConfig;
@@ -19,6 +19,7 @@ static NEXT_SESSION_ID: AtomicU32 = AtomicU32::new(1);
 pub struct Hysteria2Outbound {
     tag: String,
     password: String,
+    up_mbps: u64,
     down_mbps: u64,
     quic_manager: std::sync::Arc<tokio::sync::Mutex<quic::QuicManager>>,
 }
@@ -39,14 +40,24 @@ impl Hysteria2Outbound {
             .ok_or_else(|| anyhow::anyhow!("hysteria2: password is required"))?;
         let sni = settings.sni.clone().unwrap_or_else(|| address.clone());
         let allow_insecure = settings.allow_insecure;
+        let up_mbps = settings.up_mbps.unwrap_or(0);
         let down_mbps = settings.down_mbps.unwrap_or(0);
 
+        if up_mbps > 0 {
+            debug!(
+                up_mbps = up_mbps,
+                "Hysteria2 using Brutal congestion control with configured uplink bandwidth"
+            );
+        }
+
+        let brutal_mbps = if up_mbps > 0 { Some(up_mbps) } else { None };
         let quic_manager =
-            quic::QuicManager::new(address.clone(), port, sni.clone(), allow_insecure)?;
+            quic::QuicManager::with_brutal(address.clone(), port, sni.clone(), allow_insecure, brutal_mbps)?;
 
         Ok(Self {
             tag: config.tag.clone(),
             password: password.clone(),
+            up_mbps,
             down_mbps,
             quic_manager: std::sync::Arc::new(tokio::sync::Mutex::new(quic_manager)),
         })
@@ -59,6 +70,12 @@ impl Hysteria2Outbound {
 
         if is_new || !manager.is_authenticated() {
             let down_bps = self.down_mbps.saturating_mul(125_000);
+            debug!(
+                up_mbps = self.up_mbps,
+                down_mbps = self.down_mbps,
+                down_bps = down_bps,
+                "Hysteria2 authenticating with bandwidth hints"
+            );
             auth::authenticate(&conn, &self.password, down_bps).await?;
             manager.mark_authenticated();
         }

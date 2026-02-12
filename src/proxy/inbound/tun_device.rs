@@ -2126,6 +2126,142 @@ pub fn create_platform_tun_device(config: &TunConfig) -> Result<Box<dyn TunDevic
     }
 }
 
+/// 从 Android VpnService 传入的 fd 创建 TUN 设备
+///
+/// Android 上由 VpnService.establish() 返回 fd，
+/// OpenWorld 通过 FFI `openworld_set_tun_fd()` 接收此 fd，
+/// 然后用此函数创建可异步读写的 TUN 设备。
+///
+/// 注：fd 的配置（地址/路由/DNS）由 Android 侧完成，
+/// 此处只负责 read/write。
+#[cfg(target_os = "linux")]
+pub fn create_android_tun_from_fd(fd: i32, mtu: u16) -> Result<Box<dyn TunDevice>> {
+    if fd < 0 {
+        anyhow::bail!("invalid tun fd: {}", fd);
+    }
+    Ok(Box::new(AndroidFdTunDevice {
+        fd: Mutex::new(fd),
+        mtu: AtomicU16::new(mtu),
+    }))
+}
+
+/// Android fd-based TUN 设备
+///
+/// 与 `LinuxTunDevice` 的区别：
+/// - 不打开 `/dev/net/tun`，直接使用 VpnService 传入的 fd
+/// - 不执行 `ip addr/link/route` 配置（Android 侧已配置）
+/// - 关闭时不 close fd（由 Android VpnService 管理生命周期）
+#[cfg(target_os = "linux")]
+struct AndroidFdTunDevice {
+    fd: Mutex<i32>,
+    mtu: AtomicU16,
+}
+
+#[cfg(target_os = "linux")]
+#[async_trait]
+impl TunDevice for AndroidFdTunDevice {
+    fn name(&self) -> &str {
+        "tun-android"
+    }
+
+    async fn read_packet(&self, buf: &mut [u8]) -> Result<usize> {
+        if buf.is_empty() {
+            anyhow::bail!("tun read buffer is empty");
+        }
+
+        loop {
+            let fd = *self
+                .fd
+                .lock()
+                .map_err(|_| anyhow::anyhow!("android tun fd mutex poisoned"))?;
+            if fd < 0 {
+                anyhow::bail!("android tun fd not set");
+            }
+
+            let n = unsafe { read(fd, buf.as_mut_ptr().cast::<c_void>(), buf.len()) };
+            if n > 0 {
+                return Ok(n as usize);
+            }
+            if n == 0 {
+                sleep(Duration::from_millis(2)).await;
+                continue;
+            }
+
+            let err = std::io::Error::last_os_error();
+            match err.raw_os_error() {
+                Some(EAGAIN) | Some(EWOULDBLOCK) => {
+                    sleep(Duration::from_millis(2)).await;
+                }
+                _ => anyhow::bail!("read(android-tun) failed: {}", err),
+            }
+        }
+    }
+
+    async fn write_packet(&self, buf: &[u8]) -> Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        let mut written = 0usize;
+        while written < buf.len() {
+            let fd = *self
+                .fd
+                .lock()
+                .map_err(|_| anyhow::anyhow!("android tun fd mutex poisoned"))?;
+            if fd < 0 {
+                anyhow::bail!("android tun fd not set");
+            }
+
+            let n = unsafe {
+                write(
+                    fd,
+                    buf[written..].as_ptr().cast::<c_void>(),
+                    buf.len() - written,
+                )
+            };
+
+            if n > 0 {
+                written += n as usize;
+                continue;
+            }
+            if n == 0 {
+                sleep(Duration::from_millis(2)).await;
+                continue;
+            }
+
+            let err = std::io::Error::last_os_error();
+            match err.raw_os_error() {
+                Some(EAGAIN) | Some(EWOULDBLOCK) => {
+                    sleep(Duration::from_millis(2)).await;
+                }
+                _ => anyhow::bail!("write(android-tun) failed: {}", err),
+            }
+        }
+
+        Ok(written)
+    }
+
+    fn set_mtu(&self, mtu: u16) -> Result<()> {
+        self.mtu.store(mtu, Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn mtu(&self) -> u16 {
+        self.mtu.load(Ordering::Relaxed)
+    }
+
+    async fn close(&self) -> Result<()> {
+        // Android 侧管理 fd 生命周期，此处不 close
+        let mut fd_guard = self
+            .fd
+            .lock()
+            .map_err(|_| anyhow::anyhow!("android tun fd mutex poisoned"))?;
+        *fd_guard = -1;
+        Ok(())
+    }
+}
+
+
 /// 路由表操作抽象
 pub struct RouteManager {
     original_routes: Vec<RouteEntry>,

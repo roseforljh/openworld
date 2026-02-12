@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use tokio::net::TcpListener;
+use tokio::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
@@ -24,6 +25,7 @@ use crate::proxy::inbound::tun_stack::{TunStack, TunStackConfig};
 
 enum InboundEntry {
     Tcp {
+        tag: String,
         handler: Arc<dyn InboundHandler>,
         listen: String,
         port: u16,
@@ -69,6 +71,7 @@ impl InboundManager {
                             .with_auth(auth_users)
                     );
                     entries.push(InboundEntry::Tcp {
+                        tag: config.tag.clone(),
                         handler,
                         listen: config.listen.clone(),
                         port: config.port,
@@ -82,6 +85,7 @@ impl InboundManager {
                             .with_auth(auth_users)
                     );
                     entries.push(InboundEntry::Tcp {
+                        tag: config.tag.clone(),
                         handler,
                         listen: config.listen.clone(),
                         port: config.port,
@@ -95,6 +99,7 @@ impl InboundManager {
                             .with_auth(auth_users)
                     );
                     entries.push(InboundEntry::Tcp {
+                        tag: config.tag.clone(),
                         handler,
                         listen: config.listen.clone(),
                         port: config.port,
@@ -105,6 +110,7 @@ impl InboundManager {
                 "shadowsocks" | "ss" => {
                     let handler: Arc<dyn InboundHandler> = Arc::new(ShadowsocksInbound::new(config)?);
                     entries.push(InboundEntry::Tcp {
+                        tag: config.tag.clone(),
                         handler,
                         listen: config.listen.clone(),
                         port: config.port,
@@ -115,6 +121,7 @@ impl InboundManager {
                 "vless" => {
                     let handler: Arc<dyn InboundHandler> = Arc::new(VlessInbound::new(config)?);
                     entries.push(InboundEntry::Tcp {
+                        tag: config.tag.clone(),
                         handler,
                         listen: config.listen.clone(),
                         port: config.port,
@@ -125,6 +132,7 @@ impl InboundManager {
                 "trojan" => {
                     let handler: Arc<dyn InboundHandler> = Arc::new(TrojanInbound::new(config)?);
                     entries.push(InboundEntry::Tcp {
+                        tag: config.tag.clone(),
                         handler,
                         listen: config.listen.clone(),
                         port: config.port,
@@ -135,6 +143,7 @@ impl InboundManager {
                 "vmess" => {
                     let handler: Arc<dyn InboundHandler> = Arc::new(VmessInbound::new(config)?);
                     entries.push(InboundEntry::Tcp {
+                        tag: config.tag.clone(),
                         handler,
                         listen: config.listen.clone(),
                         port: config.port,
@@ -145,6 +154,7 @@ impl InboundManager {
                 "redirect" => {
                     let handler: Arc<dyn InboundHandler> = Arc::new(RedirectInbound::new(config)?);
                     entries.push(InboundEntry::Tcp {
+                        tag: config.tag.clone(),
                         handler,
                         listen: config.listen.clone(),
                         port: config.port,
@@ -155,6 +165,7 @@ impl InboundManager {
                 "tproxy" => {
                     let handler: Arc<dyn InboundHandler> = Arc::new(TProxyInbound::new(config)?);
                     entries.push(InboundEntry::Tcp {
+                        tag: config.tag.clone(),
                         handler,
                         listen: config.listen.clone(),
                         port: config.port,
@@ -210,6 +221,7 @@ impl InboundManager {
         for entry in self.entries {
             match entry {
                 InboundEntry::Tcp {
+                    tag,
                     handler,
                     listen,
                     port,
@@ -234,6 +246,19 @@ impl InboundManager {
                         info!(tag = handler.tag(), addr = bind_addr, "inbound listening");
 
                         loop {
+                            let global_max = global_limiter.max_connections().max(1) as u64;
+                            let global_active = global_limiter.active_count();
+                            if global_active.saturating_mul(100) >= global_max.saturating_mul(90) {
+                                let backpressure_delay = if global_active >= global_max { 50 } else { 10 };
+                                tokio::select! {
+                                    _ = tokio::time::sleep(Duration::from_millis(backpressure_delay)) => {}
+                                    _ = cancel.cancelled() => {
+                                        info!(tag = tag, "inbound shutting down");
+                                        break;
+                                    }
+                                }
+                            }
+
                             tokio::select! {
                                 result = listener.accept() => {
                                     let (tcp_stream, source) = match result {
@@ -250,6 +275,7 @@ impl InboundManager {
                                             warn!(
                                                 source = %source,
                                                 max = global_limiter.max_connections(),
+                                                active = global_limiter.active_count(),
                                                 "global connection limit reached, dropping"
                                             );
                                             continue;
@@ -262,8 +288,9 @@ impl InboundManager {
                                             None => {
                                                 warn!(
                                                     source = %source,
-                                                    tag = handler.tag(),
+                                                    tag = tag,
                                                     max = limiter.max_connections(),
+                                                    active = limiter.active_count(),
                                                     "per-inbound connection limit reached, dropping"
                                                 );
                                                 continue;
@@ -302,7 +329,7 @@ impl InboundManager {
                                     });
                                 }
                                 _ = cancel.cancelled() => {
-                                    info!(tag = handler.tag(), "inbound shutting down");
+                                    info!(tag = tag, "inbound shutting down");
                                     break;
                                 }
                             }

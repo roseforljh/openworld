@@ -23,6 +23,20 @@ impl QuicManager {
         sni: String,
         allow_insecure: bool,
     ) -> Result<Self> {
+        Self::with_brutal(server_addr, server_port, sni, allow_insecure, None)
+    }
+
+    /// 创建 QUIC 管理器，支持 Brutal 拥塞控制
+    ///
+    /// # Arguments
+    /// * `brutal_send_mbps` - 如设置，使用 Brutal 拥塞控制替代默认算法
+    pub fn with_brutal(
+        server_addr: String,
+        server_port: u16,
+        sni: String,
+        allow_insecure: bool,
+        brutal_send_mbps: Option<u64>,
+    ) -> Result<Self> {
         // Build TLS config with 0-RTT support and h3 ALPN
         let mut tls_config =
             crate::common::tls::build_tls_config(allow_insecure, Some(&["h3"]))?;
@@ -37,6 +51,14 @@ impl QuicManager {
         ));
         transport_config.keep_alive_interval(Some(std::time::Duration::from_secs(15)));
         transport_config.datagram_receive_buffer_size(Some(1350 * 256));
+
+        // 如果配置了上行带宽，使用 Brutal 拥塞控制
+        if let Some(mbps) = brutal_send_mbps {
+            tracing::debug!(send_mbps = mbps, "Using Brutal congestion control");
+            let factory = crate::proxy::transport::brutal::BrutalControllerFactory::new(mbps);
+            transport_config.congestion_controller_factory(Arc::new(factory));
+        }
+
         client_config.transport_config(Arc::new(transport_config));
 
         let mut endpoint = quinn::Endpoint::client("0.0.0.0:0".parse::<SocketAddr>()?)?;

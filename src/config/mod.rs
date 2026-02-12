@@ -1,6 +1,7 @@
 pub mod compat;
 pub mod encryption;
 pub mod enhance;
+pub mod json_compat;
 pub mod profile;
 pub mod subscription;
 pub mod types;

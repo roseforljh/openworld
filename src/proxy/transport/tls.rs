@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::common::{Address, DialerConfig, ProxyStream};
 use crate::config::types::TlsConfig;
@@ -101,6 +101,15 @@ impl TlsTransport {
             .get_or_try_init(|| async {
                 let ech_settings =
                     ech::resolve_ech_settings(&self.raw_tls_config, &self.sni).await?;
+                if ech_settings.is_enabled() {
+                    info!(
+                        server = %self.server_addr,
+                        sni = %self.sni,
+                        grease = ech_settings.grease,
+                        has_config = ech_settings.config_list.is_some(),
+                        "TLS transport will attempt ECH"
+                    );
+                }
 
                 let alpn: Option<Vec<&str>> = self
                     .raw_tls_config

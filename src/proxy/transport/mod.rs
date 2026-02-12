@@ -1,3 +1,4 @@
+pub mod brutal;
 pub mod ech;
 pub mod fingerprint;
 pub mod grpc;

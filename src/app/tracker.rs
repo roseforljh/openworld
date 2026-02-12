@@ -1,8 +1,9 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+use serde::Serialize;
 use tokio::sync::RwLock;
 use tracing::debug;
 
@@ -34,6 +35,14 @@ pub struct TrafficSnapshot {
     pub active_count: usize,
 }
 
+/// 按出站分组的流量统计
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct OutboundTraffic {
+    pub upload: u64,
+    pub download: u64,
+    pub connections: u32,
+}
+
 /// 连接跟踪器
 pub struct ConnectionTracker {
     connections: RwLock<HashMap<u64, TrackedConnection>>,
@@ -43,12 +52,15 @@ pub struct ConnectionTracker {
     error_stats: Mutex<HashMap<String, u64>>,
     latency_ring: Mutex<VecDeque<u64>>,
     latency_capacity: usize,
+    /// 按出站 tag 累积的流量（已关闭连接的流量也计入）
+    outbound_traffic: Mutex<HashMap<String, OutboundTraffic>>,
 }
 
 struct TrackedConnection {
     info: ConnectionInfo,
     upload: Arc<AtomicU64>,
     download: Arc<AtomicU64>,
+    last_activity: Arc<Mutex<Instant>>,
 }
 
 impl Default for ConnectionTracker {
@@ -67,6 +79,7 @@ impl ConnectionTracker {
             error_stats: Mutex::new(HashMap::new()),
             latency_ring: Mutex::new(VecDeque::new()),
             latency_capacity: 2048,
+            outbound_traffic: Mutex::new(HashMap::new()),
         }
     }
 
@@ -81,6 +94,7 @@ impl ConnectionTracker {
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let upload = Arc::new(AtomicU64::new(0));
         let download = Arc::new(AtomicU64::new(0));
+        let last_activity = Arc::new(Mutex::new(Instant::now()));
 
         let info = ConnectionInfo {
             id,
@@ -99,10 +113,18 @@ impl ConnectionTracker {
             },
         };
 
+        // 更新 per-outbound 连接计数
+        if let Ok(mut ot) = self.outbound_traffic.lock() {
+            ot.entry(outbound_tag.to_string())
+                .or_default()
+                .connections += 1;
+        }
+
         let tracked = TrackedConnection {
             info,
             upload: upload.clone(),
             download: download.clone(),
+            last_activity: last_activity.clone(),
         };
 
         self.record_route_hit(route_tag);
@@ -120,6 +142,7 @@ impl ConnectionTracker {
             id,
             upload,
             download,
+            last_activity,
             tracker: self,
         }
     }
@@ -157,9 +180,66 @@ impl ConnectionTracker {
         }
     }
 
+    /// 同步获取活跃连接数（FFI 使用）
+    pub fn active_count_sync(&self) -> usize {
+        self.connections
+            .try_read()
+            .map(|c| c.len())
+            .unwrap_or(0)
+    }
+
     /// 关闭指定连接（从跟踪中移除）
     pub async fn close(&self, id: u64) -> bool {
         self.connections.write().await.remove(&id).is_some()
+    }
+
+    /// 关闭空闲超过 max_idle 时间的连接
+    pub async fn close_idle(&self, max_idle: Duration) -> usize {
+        let now = Instant::now();
+        let mut conns = self.connections.write().await;
+        let before = conns.len();
+        conns.retain(|_id, tc| {
+            let last = tc.last_activity.lock().map(|t| *t).unwrap_or(now);
+            let idle = now.duration_since(last);
+            if idle > max_idle {
+                // 归档流量
+                let up = tc.upload.load(Ordering::Relaxed);
+                let down = tc.download.load(Ordering::Relaxed);
+                self.total_upload.fetch_add(up, Ordering::Relaxed);
+                self.total_download.fetch_add(down, Ordering::Relaxed);
+                self.accumulate_outbound_traffic(&tc.info.outbound_tag, up, down);
+                false
+            } else {
+                true
+            }
+        });
+        before - conns.len()
+    }
+
+    /// 重置全局流量统计
+    pub fn reset_traffic(&self) {
+        self.total_upload.store(0, Ordering::Relaxed);
+        self.total_download.store(0, Ordering::Relaxed);
+        if let Ok(mut ot) = self.outbound_traffic.lock() {
+            ot.clear();
+        }
+    }
+
+    /// 获取按出站分组的流量统计
+    pub fn per_outbound_traffic(&self) -> HashMap<String, OutboundTraffic> {
+        self.outbound_traffic
+            .lock()
+            .map(|m| m.clone())
+            .unwrap_or_default()
+    }
+
+    /// 累积出站流量
+    fn accumulate_outbound_traffic(&self, tag: &str, upload: u64, download: u64) {
+        if let Ok(mut ot) = self.outbound_traffic.lock() {
+            let entry = ot.entry(tag.to_string()).or_default();
+            entry.upload += upload;
+            entry.download += download;
+        }
     }
 
     /// 记录一次路由命中
@@ -236,6 +316,7 @@ pub struct ConnectionGuard<'a> {
     id: u64,
     pub upload: Arc<AtomicU64>,
     pub download: Arc<AtomicU64>,
+    last_activity: Arc<Mutex<Instant>>,
     tracker: &'a ConnectionTracker,
 }
 
@@ -247,11 +328,20 @@ impl<'a> ConnectionGuard<'a> {
     /// 记录上传字节数
     pub fn add_upload(&self, bytes: u64) {
         self.upload.fetch_add(bytes, Ordering::Relaxed);
+        self.touch();
     }
 
     /// 记录下载字节数
     pub fn add_download(&self, bytes: u64) {
         self.download.fetch_add(bytes, Ordering::Relaxed);
+        self.touch();
+    }
+
+    /// 更新最后活动时间
+    fn touch(&self) {
+        if let Ok(mut t) = self.last_activity.lock() {
+            *t = Instant::now();
+        }
     }
 }
 
@@ -267,6 +357,7 @@ impl<'a> Drop for ConnectionGuard<'a> {
                 let down = tc.download.load(Ordering::Relaxed);
                 tracker.total_upload.fetch_add(up, Ordering::Relaxed);
                 tracker.total_download.fetch_add(down, Ordering::Relaxed);
+                tracker.accumulate_outbound_traffic(&tc.info.outbound_tag, up, down);
             }
         }
     }

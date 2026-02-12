@@ -199,6 +199,7 @@ impl App {
 
         // Hot reload: file watcher + SIGHUP (Unix)
         if let Some(ref path) = self.config_path {
+            #[cfg(feature = "cli")]
             spawn_config_watcher(self.dispatcher.clone(), path.clone(), self.cancel_token.clone());
             #[cfg(unix)]
             spawn_sighup_reload(self.dispatcher.clone(), path.clone(), self.cancel_token.clone());
@@ -671,6 +672,7 @@ fn spawn_sighup_reload(
 }
 
 /// Spawn file watcher that reloads config when the file changes.
+#[cfg(feature = "cli")]
 fn spawn_config_watcher(
     dispatcher: Arc<Dispatcher>,
     config_path: String,
