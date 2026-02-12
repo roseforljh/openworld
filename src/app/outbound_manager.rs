@@ -21,6 +21,7 @@ use crate::proxy::outbound::vless::VlessOutbound;
 use crate::proxy::outbound::vmess::VmessOutbound;
 use crate::proxy::outbound::wireguard::WireGuardOutbound;
 use crate::proxy::outbound::http::HttpOutbound;
+use crate::proxy::outbound::socks5::Socks5Outbound;
 use crate::proxy::outbound::ssh::SshOutbound;
 use crate::proxy::outbound::tor::TorOutbound;
 use crate::proxy::OutboundHandler;
@@ -59,6 +60,7 @@ impl OutboundManager {
                 "vmess" => Arc::new(VmessOutbound::new(config)?),
                 "wireguard" | "wg" => Arc::new(WireGuardOutbound::new(config)?),
                 "http" | "https" => Arc::new(HttpOutbound::new(config)?),
+                "socks5" | "socks" => Arc::new(Socks5Outbound::new(config)?),
                 "ssh" => Arc::new(SshOutbound::new(config)?),
                 "tuic" => Arc::new(TuicOutbound::new(config)?),
                 "tor" => Arc::new(TorOutbound::new(config)?),

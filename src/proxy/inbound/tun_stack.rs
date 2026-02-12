@@ -290,7 +290,7 @@ impl TunStack {
 
                     // DNS 劫持
                     if self.config.dns_hijack_enabled && super::dns_hijack::is_dns_query(&parsed) {
-                        let resolver = dispatcher.resolver();
+                        let resolver = dispatcher.resolver().await;
                         if let Some(response) = super::dns_hijack::handle_dns_hijack(
                             &parsed,
                             packet_data,

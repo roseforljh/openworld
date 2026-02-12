@@ -5,6 +5,7 @@ pub mod reject;
 pub mod hysteria2;
 pub mod pool;
 pub mod shadowsocks;
+pub mod socks5;
 pub mod ssh;
 pub mod tor;
 pub mod trojan;

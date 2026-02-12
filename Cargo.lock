@@ -1233,6 +1233,21 @@ dependencies = [
 
 [[package]]
 name = "h3"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b83e1915177ea624b5bbbdb16bc54f0c106c9664892c695f995e53f5c6793b80"
+dependencies = [
+ "bytes",
+ "fastrand",
+ "futures-util",
+ "http 0.2.12",
+ "pin-project-lite",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "h3"
 version = "0.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10872b55cfb02a821b69dc7cf8dc6a71d6af25eb9a79662bec4a9d016056b3be"
@@ -1247,13 +1262,28 @@ dependencies = [
 
 [[package]]
 name = "h3-quinn"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac9675014d703c3d516a121757bbc02e53f1ee838e0729fc7534b35024a81ae4"
+dependencies = [
+ "bytes",
+ "futures",
+ "h3 0.0.3",
+ "quinn 0.10.2",
+ "quinn-proto 0.10.6",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "h3-quinn"
 version = "0.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b2e732c8d91a74731663ac8479ab505042fbf547b9a207213ab7fbcbfc4f8b4"
 dependencies = [
  "bytes",
  "futures",
- "h3",
+ "h3 0.0.8",
  "quinn 0.11.9",
  "tokio",
  "tokio-util",
@@ -1309,6 +1339,8 @@ dependencies = [
  "futures-io",
  "futures-util",
  "h2 0.3.27",
+ "h3 0.0.3",
+ "h3-quinn 0.0.4",
  "http 0.2.12",
  "idna",
  "ipnet",
@@ -2126,11 +2158,12 @@ dependencies = [
  "chacha20poly1305",
  "clap",
  "criterion",
+ "flate2",
  "futures-lite",
  "futures-util",
  "h2 0.4.13",
- "h3",
- "h3-quinn",
+ "h3 0.0.8",
+ "h3-quinn 0.0.10",
  "hickory-resolver",
  "hkdf",
  "hmac",
@@ -2145,6 +2178,7 @@ dependencies = [
  "quinn 0.11.9",
  "rand 0.8.5",
  "rcgen",
+ "regex",
  "reqwest",
  "russh",
  "russh-keys",
@@ -2438,6 +2472,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8cc2c5017e4b43d5995dcea317bc46c1e09404c0a9664d2908f7f02dfe943d75"
 dependencies = [
  "bytes",
+ "futures-io",
  "pin-project-lite",
  "quinn-proto 0.10.6",
  "quinn-udp 0.4.1",

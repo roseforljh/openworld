@@ -390,6 +390,12 @@ pub struct TransportConfig {
     pub headers: Option<HashMap<String, String>>,
     /// gRPC 服务名（仅 grpc 传输使用）
     pub service_name: Option<String>,
+    /// ShadowTLS v3 密码
+    #[serde(rename = "shadow-tls-password")]
+    pub shadow_tls_password: Option<String>,
+    /// ShadowTLS v3 握手 SNI
+    #[serde(rename = "shadow-tls-sni")]
+    pub shadow_tls_sni: Option<String>,
 }
 
 /// TLS 配置

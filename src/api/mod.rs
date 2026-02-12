@@ -43,6 +43,7 @@ pub fn start(
             get(handlers::get_proxy).put(handlers::select_proxy),
         )
         .route("/proxies/{name}/delay", get(handlers::test_proxy_delay))
+        .route("/proxies/{name}/healthcheck", get(handlers::healthcheck_proxy))
         .route(
             "/connections",
             get(handlers::get_connections).delete(handlers::close_all_connections),

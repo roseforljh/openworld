@@ -18,6 +18,8 @@ pub enum Rule {
     DomainKeyword(Vec<String>),
     /// 域名完全匹配
     DomainFull(Vec<String>),
+    /// 域名正则匹配
+    DomainRegex(Vec<regex::Regex>),
     /// IP CIDR 匹配
     IpCidr(Vec<IpNet>),
     /// GeoIP 国家代码匹配
@@ -61,6 +63,13 @@ impl Rule {
             "domain-suffix" => Ok(Rule::DomainSuffix(config.values.clone())),
             "domain-keyword" => Ok(Rule::DomainKeyword(config.values.clone())),
             "domain-full" => Ok(Rule::DomainFull(config.values.clone())),
+            "domain-regex" => {
+                let regexes: Result<Vec<regex::Regex>, _> =
+                    config.values.iter().map(|s| regex::Regex::new(s)).collect();
+                Ok(Rule::DomainRegex(
+                    regexes.map_err(|e| anyhow::anyhow!("invalid domain regex: {}", e))?,
+                ))
+            }
             "ip-cidr" => {
                 let nets: Result<Vec<IpNet>, _> =
                     config.values.iter().map(|s| s.parse::<IpNet>()).collect();
@@ -215,6 +224,13 @@ impl Rule {
                 if let Address::Domain(domain, _) = addr {
                     let domain_lower = domain.to_lowercase();
                     domains.iter().any(|d| d.to_lowercase() == domain_lower)
+                } else {
+                    false
+                }
+            }
+            Rule::DomainRegex(regexes) => {
+                if let Address::Domain(domain, _) = addr {
+                    regexes.iter().any(|re| re.is_match(domain))
                 } else {
                     false
                 }
@@ -780,6 +796,49 @@ mod tests {
         let rule = Rule::Uid(vec![1000, 10086]);
         assert_eq!(format!("{}", rule), "uid(1000,10086)");
     }
+
+    // Domain Regex
+    #[test]
+    fn domain_regex_match() {
+        let rule = Rule::DomainRegex(vec![
+            regex::Regex::new(r"^(www\.)?google\.com$").unwrap(),
+        ]);
+        assert!(rule.matches(&domain("google.com", 443), None, None));
+        assert!(rule.matches(&domain("www.google.com", 443), None, None));
+        assert!(!rule.matches(&domain("notgoogle.com", 443), None, None));
+        assert!(!rule.matches(&ip("8.8.8.8:53"), None, None));
+    }
+
+    #[test]
+    fn domain_regex_from_config() {
+        let config = RuleConfig {
+            rule_type: "domain-regex".to_string(),
+            values: vec![r".*\.ad\..*".to_string(), r"^tracker\.".to_string()],
+            outbound: "reject".to_string(),
+        };
+        let rule = Rule::from_config(&config).unwrap();
+        assert!(rule.matches(&domain("cdn.ad.example.com", 80), None, None));
+        assert!(rule.matches(&domain("tracker.example.com", 80), None, None));
+        assert!(!rule.matches(&domain("example.com", 80), None, None));
+    }
+
+    #[test]
+    fn domain_regex_invalid_pattern() {
+        let config = RuleConfig {
+            rule_type: "domain-regex".to_string(),
+            values: vec![r"[invalid".to_string()],
+            outbound: "reject".to_string(),
+        };
+        assert!(Rule::from_config(&config).is_err());
+    }
+
+    #[test]
+    fn domain_regex_display() {
+        let rule = Rule::DomainRegex(vec![
+            regex::Regex::new(r"^ad\.").unwrap(),
+        ]);
+        assert_eq!(format!("{}", rule), r"domain-regex(^ad\.)");
+    }
 }
 
 impl fmt::Display for Rule {
@@ -788,6 +847,10 @@ impl fmt::Display for Rule {
             Rule::DomainSuffix(v) => write!(f, "domain-suffix({})", v.join(",")),
             Rule::DomainKeyword(v) => write!(f, "domain-keyword({})", v.join(",")),
             Rule::DomainFull(v) => write!(f, "domain-full({})", v.join(",")),
+            Rule::DomainRegex(v) => {
+                let strs: Vec<String> = v.iter().map(|r| r.as_str().to_string()).collect();
+                write!(f, "domain-regex({})", strs.join(","))
+            }
             Rule::IpCidr(v) => {
                 let strs: Vec<String> = v.iter().map(|n| n.to_string()).collect();
                 write!(f, "ip-cidr({})", strs.join(","))

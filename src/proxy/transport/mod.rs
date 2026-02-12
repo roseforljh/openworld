@@ -3,7 +3,9 @@ pub mod ech;
 pub mod fingerprint;
 pub mod grpc;
 pub mod h2;
+pub mod httpupgrade;
 pub mod reality;
+pub mod shadowtls;
 pub mod tcp;
 pub mod tls;
 pub mod ws;
@@ -107,6 +109,39 @@ pub fn build_transport_with_dialer(
                 transport_config.service_name.clone(),
                 transport_config.host.clone(),
                 tls,
+                dialer_config,
+            );
+            Ok(Box::new(transport))
+        }
+        "httpupgrade" => {
+            let tls = if tls_config.enabled {
+                Some(tls_config.clone())
+            } else {
+                None
+            };
+            let transport = httpupgrade::HttpUpgradeTransport::new(
+                server_addr.to_string(),
+                server_port,
+                transport_config,
+                tls,
+                dialer_config,
+            );
+            Ok(Box::new(transport))
+        }
+        "shadow-tls" => {
+            let password = transport_config
+                .shadow_tls_password
+                .clone()
+                .unwrap_or_default();
+            let sni = transport_config
+                .shadow_tls_sni
+                .clone()
+                .unwrap_or_else(|| server_addr.to_string());
+            let transport = shadowtls::ShadowTlsTransport::new(
+                server_addr.to_string(),
+                server_port,
+                password,
+                sni,
                 dialer_config,
             );
             Ok(Box::new(transport))

@@ -59,29 +59,81 @@ impl DnsResolver for HickoryResolver {
     }
 }
 
+/// DNS 域名匹配规则
+#[derive(Debug, Clone)]
+pub enum DnsDomainRule {
+    /// 完全匹配
+    Full(String),
+    /// 后缀匹配（默认）
+    Suffix(String),
+    /// 关键字匹配
+    Keyword(String),
+    /// 正则匹配
+    Regex(regex::Regex),
+}
+
+impl DnsDomainRule {
+    /// 从配置字符串解析规则
+    /// 支持前缀语法: `domain:`, `domain_suffix:`, `domain_keyword:`, `domain_regex:`, `full:`
+    /// 无前缀时默认为后缀匹配
+    pub fn parse(s: &str) -> Result<Self> {
+        if let Some(val) = s.strip_prefix("full:") {
+            Ok(DnsDomainRule::Full(val.to_lowercase()))
+        } else if let Some(val) = s.strip_prefix("domain:") {
+            Ok(DnsDomainRule::Full(val.to_lowercase()))
+        } else if let Some(val) = s.strip_prefix("domain_suffix:") {
+            Ok(DnsDomainRule::Suffix(val.to_lowercase()))
+        } else if let Some(val) = s.strip_prefix("domain_keyword:") {
+            Ok(DnsDomainRule::Keyword(val.to_lowercase()))
+        } else if let Some(val) = s.strip_prefix("domain_regex:") {
+            let re = regex::Regex::new(val)
+                .map_err(|e| anyhow::anyhow!("invalid DNS domain regex '{}': {}", val, e))?;
+            Ok(DnsDomainRule::Regex(re))
+        } else if let Some(suffix) = s.strip_prefix("+.") {
+            Ok(DnsDomainRule::Suffix(suffix.to_lowercase()))
+        } else {
+            // 默认: 后缀匹配（Clash 兼容）
+            Ok(DnsDomainRule::Suffix(s.to_lowercase()))
+        }
+    }
+
+    /// 检查域名是否匹配规则
+    pub fn matches(&self, host: &str) -> bool {
+        let host_lower = host.to_lowercase();
+        match self {
+            DnsDomainRule::Full(domain) => host_lower == *domain,
+            DnsDomainRule::Suffix(suffix) => {
+                host_lower == *suffix || host_lower.ends_with(&format!(".{}", suffix))
+            }
+            DnsDomainRule::Keyword(keyword) => host_lower.contains(keyword.as_str()),
+            DnsDomainRule::Regex(re) => re.is_match(&host_lower),
+        }
+    }
+}
+
 /// 域名分流解析器
+///
+/// 支持多种域名匹配规则：完全匹配、后缀匹配、关键字匹配、正则匹配。
+/// 配置中可使用前缀语法指定规则类型，无前缀时默认为后缀匹配。
 pub struct SplitResolver {
-    /// (域名后缀列表, 解析器)
-    rules: Vec<(Vec<String>, Arc<dyn DnsResolver>)>,
+    /// (域名规则列表, 解析器)
+    rules: Vec<(Vec<DnsDomainRule>, Arc<dyn DnsResolver>)>,
     /// 默认解析器
     default: Arc<dyn DnsResolver>,
 }
 
 impl SplitResolver {
     pub fn new(
-        rules: Vec<(Vec<String>, Arc<dyn DnsResolver>)>,
+        rules: Vec<(Vec<DnsDomainRule>, Arc<dyn DnsResolver>)>,
         default: Arc<dyn DnsResolver>,
     ) -> Self {
         Self { rules, default }
     }
 
     fn find_resolver(&self, host: &str) -> &dyn DnsResolver {
-        let host_lower = host.to_lowercase();
-        for (suffixes, resolver) in &self.rules {
-            for suffix in suffixes {
-                let suffix_lower = suffix.to_lowercase();
-                if host_lower == suffix_lower || host_lower.ends_with(&format!(".{}", suffix_lower))
-                {
+        for (domain_rules, resolver) in &self.rules {
+            for rule in domain_rules {
+                if rule.matches(host) {
                     return resolver.as_ref();
                 }
             }
@@ -123,6 +175,34 @@ fn parse_dns_address(address: &str) -> Result<(ResolverConfig, ResolverOpts)> {
             socket_addr: std::net::SocketAddr::new(ip, port),
             protocol: Protocol::Tls,
             tls_dns_name: Some(ip.to_string()),
+            trust_negative_responses: true,
+            tls_config: None,
+            bind_addr: None,
+        };
+        let config =
+            ResolverConfig::from_parts(None, vec![], NameServerConfigGroup::from(vec![ns]));
+        Ok((config, opts))
+    } else if let Some(h3_addr) = address.strip_prefix("h3://") {
+        // DNS over HTTP/3 (DoH3)
+        // 格式: h3://ip 或 h3://ip:port 或 h3://host（已知服务商自动解析 IP）
+        let (ip, port, tls_name) = if let Ok((ip, port)) = parse_ip_port(h3_addr, 443) {
+            (ip, port, None)
+        } else {
+            // 尝试已知 DoH3 服务商
+            let host = h3_addr.split('/').next().unwrap_or(h3_addr);
+            let host = host.split(':').next().unwrap_or(host);
+            let (ip, tls_name) = match host {
+                "dns.google" | "dns.google.com" => ("8.8.8.8".parse().unwrap(), Some(host.to_string())),
+                "cloudflare-dns.com" => ("1.1.1.1".parse().unwrap(), Some(host.to_string())),
+                "dns.alidns.com" => ("223.5.5.5".parse().unwrap(), Some(host.to_string())),
+                _ => anyhow::bail!("DoH3 host '{}' is not a known provider; use IP address instead", host),
+            };
+            (ip, 443, tls_name)
+        };
+        let ns = NameServerConfig {
+            socket_addr: std::net::SocketAddr::new(ip, port),
+            protocol: Protocol::H3,
+            tls_dns_name: tls_name.or_else(|| Some(ip.to_string())),
             trust_negative_responses: true,
             tls_config: None,
             bind_addr: None,
@@ -337,7 +417,7 @@ fn build_nameserver_resolver(servers: &[crate::config::types::DnsServerConfig]) 
         return Ok(Box::new(HickoryResolver::new(&servers[0].address)?));
     }
 
-    let mut rules: Vec<(Vec<String>, Arc<dyn DnsResolver>)> = Vec::new();
+    let mut rules: Vec<(Vec<DnsDomainRule>, Arc<dyn DnsResolver>)> = Vec::new();
     let mut default: Option<Arc<dyn DnsResolver>> = None;
 
     for server in servers {
@@ -347,7 +427,21 @@ fn build_nameserver_resolver(servers: &[crate::config::types::DnsServerConfig]) 
                 default = Some(resolver);
             }
         } else {
-            rules.push((server.domains.clone(), resolver));
+            // 解析域名规则（支持前缀语法）
+            let domain_rules: Vec<DnsDomainRule> = server
+                .domains
+                .iter()
+                .filter_map(|s| match DnsDomainRule::parse(s) {
+                    Ok(rule) => Some(rule),
+                    Err(e) => {
+                        tracing::warn!(domain = s, error = %e, "跳过无效的 DNS 域名规则");
+                        None
+                    }
+                })
+                .collect();
+            if !domain_rules.is_empty() {
+                rules.push((domain_rules, resolver));
+            }
         }
     }
 
@@ -562,7 +656,10 @@ mod tests {
         let default_resolver = Arc::new(MockResolver("8.8.8.8".parse().unwrap()));
 
         let split = SplitResolver::new(
-            vec![(vec!["cn".to_string(), "baidu.com".to_string()], cn_resolver)],
+            vec![(vec![
+                DnsDomainRule::Suffix("cn".to_string()),
+                DnsDomainRule::Suffix("baidu.com".to_string()),
+            ], cn_resolver)],
             default_resolver,
         );
 
@@ -722,6 +819,36 @@ servers:
     }
 
     #[test]
+    fn parse_h3_address_ip() {
+        let (config, _) = parse_dns_address("h3://8.8.8.8").unwrap();
+        let ns = &config.name_servers()[0];
+        assert_eq!(ns.protocol, Protocol::H3);
+        assert_eq!(ns.socket_addr.port(), 443);
+    }
+
+    #[test]
+    fn parse_h3_address_google() {
+        let (config, _) = parse_dns_address("h3://dns.google").unwrap();
+        let ns = &config.name_servers()[0];
+        assert_eq!(ns.protocol, Protocol::H3);
+        assert_eq!(ns.socket_addr.ip(), "8.8.8.8".parse::<IpAddr>().unwrap());
+        assert_eq!(ns.tls_dns_name.as_deref(), Some("dns.google"));
+    }
+
+    #[test]
+    fn parse_h3_address_cloudflare() {
+        let (config, _) = parse_dns_address("h3://cloudflare-dns.com").unwrap();
+        let ns = &config.name_servers()[0];
+        assert_eq!(ns.protocol, Protocol::H3);
+        assert_eq!(ns.socket_addr.ip(), "1.1.1.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn parse_h3_unknown_host_fails() {
+        assert!(parse_dns_address("h3://unknown-host.example.com").is_err());
+    }
+
+    #[test]
     fn ecs_parse_ipv4_subnet() {
         let ecs = ecs::parse_ecs_subnet("1.2.3.0/24").unwrap();
         assert_eq!(ecs.family, 1);
@@ -795,5 +922,86 @@ edns-client-subnet: "1.2.3.0/24"
 "#;
         let config: DnsConfig = serde_yml::from_str(yaml).unwrap();
         assert_eq!(config.edns_client_subnet.as_deref(), Some("1.2.3.0/24"));
+    }
+
+    // --- DnsDomainRule 测试 ---
+
+    #[test]
+    fn dns_rule_parse_default_suffix() {
+        let rule = DnsDomainRule::parse("google.com").unwrap();
+        assert!(matches!(rule, DnsDomainRule::Suffix(_)));
+        assert!(rule.matches("google.com"));
+        assert!(rule.matches("www.google.com"));
+        assert!(!rule.matches("notgoogle.com"));
+    }
+
+    #[test]
+    fn dns_rule_parse_full_prefix() {
+        let rule = DnsDomainRule::parse("full:api.google.com").unwrap();
+        assert!(matches!(rule, DnsDomainRule::Full(_)));
+        assert!(rule.matches("api.google.com"));
+        assert!(!rule.matches("www.api.google.com"));
+        assert!(!rule.matches("google.com"));
+    }
+
+    #[test]
+    fn dns_rule_parse_domain_prefix() {
+        // `domain:` 等同于 `full:`
+        let rule = DnsDomainRule::parse("domain:example.com").unwrap();
+        assert!(matches!(rule, DnsDomainRule::Full(_)));
+        assert!(rule.matches("example.com"));
+        assert!(!rule.matches("sub.example.com"));
+    }
+
+    #[test]
+    fn dns_rule_parse_domain_suffix_prefix() {
+        let rule = DnsDomainRule::parse("domain_suffix:baidu.com").unwrap();
+        assert!(matches!(rule, DnsDomainRule::Suffix(_)));
+        assert!(rule.matches("baidu.com"));
+        assert!(rule.matches("www.baidu.com"));
+        assert!(!rule.matches("notbaidu.com"));
+    }
+
+    #[test]
+    fn dns_rule_parse_keyword_prefix() {
+        let rule = DnsDomainRule::parse("domain_keyword:google").unwrap();
+        assert!(matches!(rule, DnsDomainRule::Keyword(_)));
+        assert!(rule.matches("www.google.com"));
+        assert!(rule.matches("google.cn"));
+        assert!(rule.matches("mail.google.co.jp"));
+        assert!(!rule.matches("www.example.com"));
+    }
+
+    #[test]
+    fn dns_rule_parse_regex_prefix() {
+        let rule = DnsDomainRule::parse(r"domain_regex:^(www\.)?google\.com$").unwrap();
+        assert!(matches!(rule, DnsDomainRule::Regex(_)));
+        assert!(rule.matches("google.com"));
+        assert!(rule.matches("www.google.com"));
+        assert!(!rule.matches("mail.google.com"));
+    }
+
+    #[test]
+    fn dns_rule_parse_invalid_regex() {
+        assert!(DnsDomainRule::parse("domain_regex:[invalid").is_err());
+    }
+
+    #[test]
+    fn dns_rule_parse_plus_dot_prefix() {
+        // `+.` 是 Clash 风格的后缀语法
+        let rule = DnsDomainRule::parse("+.cn").unwrap();
+        assert!(matches!(rule, DnsDomainRule::Suffix(_)));
+        assert!(rule.matches("baidu.cn"));
+        assert!(rule.matches("www.baidu.cn"));
+        assert!(rule.matches("cn")); // 后缀本身也匹配
+        assert!(!rule.matches("com"));
+    }
+
+    #[test]
+    fn dns_rule_case_insensitive() {
+        let rule = DnsDomainRule::parse("Google.COM").unwrap();
+        assert!(rule.matches("google.com"));
+        assert!(rule.matches("GOOGLE.COM"));
+        assert!(rule.matches("www.Google.Com"));
     }
 }

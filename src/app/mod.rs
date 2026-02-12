@@ -177,7 +177,7 @@ impl App {
 
         self.spawn_rule_provider_refresh_tasks().await;
         self.dispatcher.spawn_pool_cleanup(self.cancel_token.clone()).await;
-        self.dispatcher.spawn_dns_prefetch(self.cancel_token.clone());
+        self.dispatcher.spawn_dns_prefetch(self.cancel_token.clone()).await;
 
         let _geo_updater_handle = self.geo_updater.as_ref().map(|u| u.clone().start());
 
@@ -620,7 +620,7 @@ mod tests {
     }
 }
 
-/// Reload config: rebuild Router and OutboundManager, hot-swap into Dispatcher.
+/// Reload config: rebuild Router, OutboundManager, and DNS resolver, hot-swap into Dispatcher.
 async fn do_reload_config(dispatcher: &Arc<Dispatcher>, config_path: &str) {
     info!(path = config_path, "reloading config");
     let config = match crate::config::load_config(config_path) {
@@ -644,6 +644,20 @@ async fn do_reload_config(dispatcher: &Arc<Dispatcher>, config_path: &str) {
             return;
         }
     };
+
+    // Rebuild DNS resolver if DNS config is present
+    if let Some(ref dns_config) = config.dns {
+        match crate::dns::resolver::build_resolver(dns_config) {
+            Ok((new_resolver, _fakeip_pool)) => {
+                dispatcher.update_resolver(new_resolver.into()).await;
+                info!("DNS resolver reloaded");
+            }
+            Err(e) => {
+                warn!(error = %e, "config reload: DNS rebuild failed, keeping old resolver");
+            }
+        }
+    }
+
     dispatcher.update_router(new_router).await;
     dispatcher.update_outbound_manager(new_om).await;
     info!("config reloaded successfully");

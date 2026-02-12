@@ -4,6 +4,7 @@ pub mod geo_update;
 pub mod process;
 pub mod provider;
 pub mod rules;
+pub mod srs;
 pub mod trie;
 
 use std::borrow::Cow;

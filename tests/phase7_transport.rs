@@ -55,6 +55,8 @@ fn build_transport_h2_ok() {
         host: Some("example.com".to_string()),
         headers: None,
         service_name: None,
+        shadow_tls_password: None,
+        shadow_tls_sni: None,
     };
     let tls = TlsConfig::default();
     assert!(build_transport("1.2.3.4", 443, &tc, &tls).is_ok());
@@ -68,6 +70,8 @@ fn build_transport_grpc_ok() {
         host: Some("example.com".to_string()),
         headers: None,
         service_name: Some("MyService".to_string()),
+        shadow_tls_password: None,
+        shadow_tls_sni: None,
     };
     let tls = TlsConfig::default();
     assert!(build_transport("1.2.3.4", 443, &tc, &tls).is_ok());
@@ -81,6 +85,8 @@ fn build_transport_unsupported_type_fails() {
         host: None,
         headers: None,
         service_name: None,
+        shadow_tls_password: None,
+        shadow_tls_sni: None,
     };
     let tls = TlsConfig::default();
     assert!(build_transport("1.2.3.4", 443, &tc, &tls).is_err());
@@ -94,6 +100,8 @@ fn build_transport_grpc_default_service_name() {
         host: None,
         headers: None,
         service_name: None, // 默认使用 GunService
+        shadow_tls_password: None,
+        shadow_tls_sni: None,
     };
     let tls = TlsConfig::default();
     assert!(build_transport("1.2.3.4", 443, &tc, &tls).is_ok());

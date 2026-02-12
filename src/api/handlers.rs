@@ -250,6 +250,69 @@ pub async fn test_proxy_delay(
     }
 }
 
+/// GET /proxies/:name/healthcheck - 代理组健康检查（并发测试组内所有代理延迟）
+pub async fn healthcheck_proxy(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let url = params
+        .get("url")
+        .cloned()
+        .unwrap_or_else(|| "http://www.gstatic.com/generate_204".to_string());
+    let timeout: u64 = params
+        .get("timeout")
+        .and_then(|t| t.parse().ok())
+        .unwrap_or(5000);
+
+    let outbound_manager = state.dispatcher.outbound_manager().await;
+    let handler = match outbound_manager.get(&name) {
+        Some(h) => h,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    // 获取组内代理列表
+    let any = handler.as_any();
+    let proxy_names = if let Some(selector) = any.downcast_ref::<SelectorGroup>() {
+        selector.proxy_names().to_vec()
+    } else if let Some(urltest) = any.downcast_ref::<UrlTestGroup>() {
+        urltest.proxy_names().to_vec()
+    } else if let Some(fallback) = any.downcast_ref::<FallbackGroup>() {
+        fallback.proxy_names().to_vec()
+    } else if let Some(lb) = any.downcast_ref::<LoadBalanceGroup>() {
+        lb.proxy_names().to_vec()
+    } else {
+        // 非代理组，直接测试单个代理
+        return match outbound_manager.test_delay(&name, &url, timeout).await {
+            Some(delay) => (StatusCode::OK, Json(serde_json::json!({"delay": delay}))).into_response(),
+            None => (StatusCode::REQUEST_TIMEOUT, Json(serde_json::json!({"message": "timeout"}))).into_response(),
+        };
+    };
+
+    // 并发测试所有代理
+    let mut tasks = Vec::new();
+    for pname in &proxy_names {
+        let om = outbound_manager.clone();
+        let pname = pname.clone();
+        let url = url.clone();
+        tasks.push(tokio::spawn(async move {
+            let delay = om.test_delay(&pname, &url, timeout).await;
+            (pname, delay)
+        }));
+    }
+
+    let mut results = HashMap::new();
+    for task in tasks {
+        if let Ok((pname, delay)) = task.await {
+            if let Some(d) = delay {
+                results.insert(pname, d);
+            }
+        }
+    }
+
+    (StatusCode::OK, Json(serde_json::json!(results))).into_response()
+}
+
 /// GET /connections
 pub async fn get_connections(State(state): State<AppState>) -> Json<ConnectionsResponse> {
     let tracker = state.dispatcher.tracker();
@@ -582,6 +645,7 @@ fn rule_type_name(rule: &crate::router::rules::Rule) -> String {
         Rule::DomainSuffix(_) => "DomainSuffix".to_string(),
         Rule::DomainKeyword(_) => "DomainKeyword".to_string(),
         Rule::DomainFull(_) => "Domain".to_string(),
+        Rule::DomainRegex(_) => "DomainRegex".to_string(),
         Rule::IpCidr(_) => "IPCIDR".to_string(),
         Rule::GeoIp(_) => "GeoIP".to_string(),
         Rule::GeoSite(_) => "GeoSite".to_string(),
@@ -717,7 +781,7 @@ pub async fn dns_query(
         }
     };
 
-    let resolver = state.dispatcher.resolver();
+    let resolver = state.dispatcher.resolver().await;
     match resolver.resolve(&name).await {
         Ok(addrs) => {
             let answers: Vec<serde_json::Value> = addrs
@@ -866,7 +930,7 @@ pub async fn get_proxy_providers(State(state): State<AppState>) -> Json<ProxyPro
 
 /// POST /dns/flush
 pub async fn flush_dns(State(state): State<AppState>) -> StatusCode {
-    state.dispatcher.resolver().flush_cache().await;
+    state.dispatcher.resolver().await.flush_cache().await;
     info!("DNS cache flushed via API");
     StatusCode::NO_CONTENT
 }

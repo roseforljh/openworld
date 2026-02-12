@@ -294,7 +294,7 @@ impl RuleProvider {
     }
 
     fn load_from_local_file(&self) -> Result<bool> {
-        let content = fs::read_to_string(&self.config.path).map_err(|e| {
+        let raw = fs::read(&self.config.path).map_err(|e| {
             anyhow::anyhow!(
                 "failed to read rule-provider '{}' from '{}': {}",
                 self.name,
@@ -302,7 +302,19 @@ impl RuleProvider {
                 e
             )
         })?;
-        let parsed = self.parse_content(&content)?;
+
+        let parsed = if super::srs::is_srs_format(&raw) {
+            super::srs::parse_srs(&raw)?
+        } else {
+            let content = String::from_utf8(raw).map_err(|e| {
+                anyhow::anyhow!(
+                    "rule-provider '{}' is not valid UTF-8 and not SRS format: {}",
+                    self.name,
+                    e
+                )
+            })?;
+            self.parse_content(&content)?
+        };
         self.replace_rules(parsed)
     }
 

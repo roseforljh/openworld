@@ -26,7 +26,7 @@ pub struct Dispatcher {
     router: tokio::sync::RwLock<Arc<Router>>,
     outbound_manager: tokio::sync::RwLock<Arc<OutboundManager>>,
     tracker: Arc<ConnectionTracker>,
-    resolver: Arc<dyn DnsResolver>,
+    resolver: tokio::sync::RwLock<Arc<dyn DnsResolver>>,
     retry_policy: RetryPolicy,
     circuit_breakers: tokio::sync::RwLock<HashMap<String, Arc<CircuitBreaker>>>,
     /// Full Cone NAT table for UDP
@@ -50,7 +50,7 @@ impl Dispatcher {
             router: tokio::sync::RwLock::new(router),
             outbound_manager: tokio::sync::RwLock::new(outbound_manager),
             tracker,
-            resolver,
+            resolver: tokio::sync::RwLock::new(resolver),
             retry_policy: RetryPolicy::default(),
             circuit_breakers: tokio::sync::RwLock::new(HashMap::new()),
             nat_table: Arc::new(NatTable::new()),
@@ -96,8 +96,8 @@ impl Dispatcher {
     }
 
     /// 获取 DNS resolver
-    pub fn resolver(&self) -> &Arc<dyn DnsResolver> {
-        &self.resolver
+    pub async fn resolver(&self) -> Arc<dyn DnsResolver> {
+        self.resolver.read().await.clone()
     }
 
     /// Spawn periodic cleanup tasks for connection pools in outbound handlers.
@@ -128,8 +128,8 @@ impl Dispatcher {
     }
 
     /// Spawn DNS prefetch background task to refresh popular domains before cache expiry.
-    pub fn spawn_dns_prefetch(&self, cancel_token: CancellationToken) {
-        let resolver = self.resolver.clone();
+    pub async fn spawn_dns_prefetch(&self, cancel_token: CancellationToken) {
+        let resolver = self.resolver.read().await.clone();
         
         // Check if resolver is a CachedResolver with prefetch support
         tokio::spawn(async move {
@@ -170,6 +170,11 @@ impl Dispatcher {
     /// 热更新 OutboundManager
     pub async fn update_outbound_manager(&self, new_om: Arc<OutboundManager>) {
         *self.outbound_manager.write().await = new_om;
+    }
+
+    /// 热更新 DNS resolver
+    pub async fn update_resolver(&self, new_resolver: Arc<dyn DnsResolver>) {
+        *self.resolver.write().await = new_resolver;
     }
 
     pub async fn dispatch(&self, result: InboundResult) -> Result<()> {
@@ -277,7 +282,8 @@ impl Dispatcher {
             let connect_session = if matches!(session.target, Address::Domain(_, _))
                 && outbound.as_any().is::<DirectOutbound>()
             {
-                let resolved = session.target.resolve_with(Some(self.resolver.as_ref())).await?;
+                let resolver = self.resolver.read().await.clone();
+                let resolved = session.target.resolve_with(Some(resolver.as_ref())).await?;
                 let mut s = session.clone();
                 s.target = Address::Ip(resolved);
                 debug!(
