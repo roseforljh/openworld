@@ -81,7 +81,7 @@ impl RealityTransport {
 #[async_trait]
 impl StreamTransport for RealityTransport {
     async fn connect(&self, _addr: &Address) -> Result<ProxyStream> {
-        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config).await?;
+        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config, None).await?;
 
         let (tls_config, handshake_ctx) = reality::build_reality_config(&self.reality_config)?;
         let connector = tokio_rustls::TlsConnector::from(Arc::new(tls_config));

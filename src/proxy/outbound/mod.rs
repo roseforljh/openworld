@@ -15,3 +15,4 @@ pub mod vmess;
 pub mod naive;
 pub mod hysteria_v1;
 pub mod wireguard;
+pub mod masque;

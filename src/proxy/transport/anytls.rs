@@ -122,7 +122,7 @@ impl AnyTlsTransport {
 impl StreamTransport for AnyTlsTransport {
     async fn connect(&self, addr: &Address) -> Result<ProxyStream> {
         // 1. 建立 TCP 连接
-        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config).await?;
+        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config, None).await?;
 
         // 2. TLS 握手
         let mut root_store = tokio_rustls::rustls::RootCertStore::empty();

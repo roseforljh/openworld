@@ -58,7 +58,7 @@ impl StreamTransport for WsTransport {
         let host = self.host.as_deref().unwrap_or(&self.server_addr);
 
         // 建立底层 TCP 连接（通过统一 Dialer）
-        let tcp_stream = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config).await?;
+        let tcp_stream = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config, None).await?;
 
         let stream: ProxyStream = if use_tls {
             let tls_cfg = self

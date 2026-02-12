@@ -156,15 +156,23 @@ pub async fn happy_eyeballs_connect(
     host: &str,
     port: u16,
     timeout_ms: u64,
+    resolver: Option<&dyn crate::dns::DnsResolver>,
 ) -> anyhow::Result<tokio::net::TcpStream> {
     use tokio::net::TcpStream;
     use std::net::ToSocketAddrs;
 
-    let addr_str = format!("{}:{}", host, port);
-    let addrs: Vec<std::net::SocketAddr> = addr_str
-        .to_socket_addrs()
-        .map(|iter| iter.collect())
-        .unwrap_or_default();
+    let addrs: Vec<std::net::SocketAddr> = if let Some(r) = resolver {
+        // Use custom resolver
+        let ips = r.resolve(host).await?;
+        ips.into_iter().map(|ip| std::net::SocketAddr::new(ip, port)).collect()
+    } else {
+        // Use system DNS
+        let addr_str = format!("{}:{}", host, port);
+        addr_str
+            .to_socket_addrs()
+            .map(|iter| iter.collect())
+            .unwrap_or_default()
+    };
 
     if addrs.is_empty() {
         anyhow::bail!("no addresses resolved for {}:{}", host, port);
@@ -417,14 +425,14 @@ mod tests {
     async fn happy_eyeballs_connect_localhost() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let result = happy_eyeballs_connect("127.0.0.1", addr.port(), 5000).await;
+        let result = happy_eyeballs_connect("127.0.0.1", addr.port(), 5000, None).await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn happy_eyeballs_connect_invalid_host() {
         // Use a domain that can't possibly resolve
-        let result = happy_eyeballs_connect("this-host-does-not-exist-at-all.invalid", 1, 100).await;
+        let result = happy_eyeballs_connect("this-host-does-not-exist-at-all.invalid", 1, 100, None).await;
         assert!(result.is_err());
     }
 

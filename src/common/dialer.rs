@@ -11,14 +11,18 @@
 //! - Happy Eyeballs (RFC 8305) connection racing
 //! - Connect timeout
 //! - Keep-alive settings
+//! - Per-outbound domain resolver (sing-box compatible)
 
 use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
 use serde::Deserialize;
 use tokio::net::TcpStream;
 use tracing::debug;
+
+use crate::dns::DnsResolver;
 
 #[allow(unused_imports)]
 use super::traffic::RoutingMark;
@@ -57,6 +61,11 @@ pub struct DialerConfig {
     /// Enable Happy Eyeballs (dual-stack connection racing).
     #[serde(rename = "happy-eyeballs")]
     pub happy_eyeballs: Option<bool>,
+
+    /// Per-outbound domain resolver name.
+    /// References a named DNS server from the dns.servers config.
+    #[serde(rename = "domain-resolver")]
+    pub domain_resolver: Option<String>,
 }
 
 impl DialerConfig {
@@ -72,17 +81,24 @@ impl DialerConfig {
 /// Unified dialer that applies socket options and connects.
 pub struct Dialer {
     config: DialerConfig,
+    resolver: Option<Arc<dyn DnsResolver>>,
 }
 
 impl Dialer {
     pub fn new(config: DialerConfig) -> Self {
-        Self { config }
+        Self { config, resolver: None }
+    }
+
+    /// Create a dialer with a custom domain resolver.
+    pub fn with_resolver(config: DialerConfig, resolver: Arc<dyn DnsResolver>) -> Self {
+        Self { config, resolver: Some(resolver) }
     }
 
     /// Create a dialer with default settings.
     pub fn default_dialer() -> Self {
         Self {
             config: DialerConfig::default(),
+            resolver: None,
         }
     }
 
@@ -111,21 +127,40 @@ impl Dialer {
     }
 
     /// Connect to a host:port with optional Happy Eyeballs.
+    /// Uses the custom domain resolver if configured, otherwise falls back to system DNS.
     pub async fn connect_host(&self, host: &str, port: u16) -> Result<TcpStream> {
         if self.config.happy_eyeballs_enabled() {
             let timeout_ms = self.config.connect_timeout_ms.unwrap_or(5000);
-            let stream =
-                super::traffic::happy_eyeballs_connect(host, port, timeout_ms).await?;
+            let stream = super::traffic::happy_eyeballs_connect(
+                host,
+                port,
+                timeout_ms,
+                self.resolver.as_deref(),
+            ).await?;
             self.apply_post_connect(&stream)?;
             Ok(stream)
         } else {
-            // Simple sequential connect
-            let addr_str = format!("{}:{}", host, port);
-            let addr: SocketAddr = tokio::net::lookup_host(&addr_str)
-                .await?
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("DNS resolution failed for {}", addr_str))?;
+            // Resolve using custom resolver or system DNS
+            let addr = self.resolve_host(host, port).await?;
             self.connect(addr).await
+        }
+    }
+
+    /// Resolve a host:port to a SocketAddr using the configured resolver.
+    async fn resolve_host(&self, host: &str, port: u16) -> Result<SocketAddr> {
+        if let Some(resolver) = &self.resolver {
+            let ips = resolver.resolve(host).await?;
+            let ip = ips.into_iter().next()
+                .ok_or_else(|| anyhow::anyhow!("DNS resolution failed for {}", host))?;
+            Ok(SocketAddr::new(ip, port))
+        } else {
+            let addr_str = format!("{}:{}", host, port);
+            let addrs = tokio::task::spawn_blocking(move || {
+                use std::net::ToSocketAddrs;
+                addr_str.to_socket_addrs()
+            }).await??;
+            addrs.into_iter().next()
+                .ok_or_else(|| anyhow::anyhow!("DNS resolution failed for {}:{}", host, port))
         }
     }
 

@@ -144,7 +144,7 @@ impl TlsTransport {
 #[async_trait]
 impl StreamTransport for TlsTransport {
     async fn connect(&self, _addr: &Address) -> Result<ProxyStream> {
-        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config).await?;
+        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config, None).await?;
 
         let tls_config = self.get_tls_config().await?;
         let connector = tokio_rustls::TlsConnector::from(tls_config);

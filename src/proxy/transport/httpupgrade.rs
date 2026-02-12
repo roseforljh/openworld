@@ -60,7 +60,7 @@ impl StreamTransport for HttpUpgradeTransport {
 
         // 1. 建立底层 TCP 连接
         let tcp_stream =
-            super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config).await?;
+            super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config, None).await?;
 
         // 2. 可选 TLS 层
         let use_tls = self.tls_config.as_ref().map_or(false, |c| c.enabled);

@@ -79,7 +79,7 @@ impl SudokuTransport {
 impl StreamTransport for SudokuTransport {
     async fn connect(&self, addr: &Address) -> Result<ProxyStream> {
         // 建立 TCP 连接
-        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config).await?;
+        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config, None).await?;
         // 将 TcpStream 包装为 ProxyStream
         let stream: ProxyStream = Box::new(tcp);
 

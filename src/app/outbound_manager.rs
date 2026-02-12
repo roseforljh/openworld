@@ -26,6 +26,7 @@ use crate::proxy::outbound::ssh::SshOutbound;
 use crate::proxy::outbound::naive::NaiveOutbound;
 use crate::proxy::outbound::hysteria_v1::HysteriaV1Outbound;
 use crate::proxy::outbound::tor::TorOutbound;
+use crate::proxy::outbound::masque::MasqueOutbound;
 use crate::proxy::OutboundHandler;
 
 /// 代理组元数据
@@ -70,6 +71,7 @@ impl OutboundManager {
                 "reject" | "block" => Arc::new(RejectOutbound::new(config.tag.clone())),
                 "naive" | "naiveproxy" => Arc::new(NaiveOutbound::new(config)?),
                 "blackhole" => Arc::new(BlackholeOutbound::new(config.tag.clone())),
+                "masque" => Arc::new(MasqueOutbound::new(config)?),
                 other => anyhow::bail!("unsupported outbound protocol: {}", other),
             };
             info!(

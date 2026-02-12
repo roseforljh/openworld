@@ -304,6 +304,10 @@ pub struct OutboundSettings {
     pub chain: Option<Vec<String>>,
     /// 统一 Dialer 配置（接口绑定、路由标记、TFO、MPTCP 等）
     pub dialer: Option<crate::common::DialerConfig>,
+    /// Per-outbound domain resolver — references a named DNS server.
+    /// Resolves the outbound server's domain name independently.
+    #[serde(rename = "domain-resolver")]
+    pub domain_resolver: Option<String>,
 }
 
 impl OutboundSettings {

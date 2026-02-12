@@ -25,7 +25,7 @@ impl TcpTransport {
 #[async_trait]
 impl StreamTransport for TcpTransport {
     async fn connect(&self, _addr: &Address) -> Result<ProxyStream> {
-        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config).await?;
+        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config, None).await?;
         Ok(Box::new(tcp))
     }
 }

@@ -18,6 +18,8 @@ use async_trait::async_trait;
 
 use crate::common::{Address, DialerConfig, ProxyStream};
 use crate::config::types::{TlsConfig, TransportConfig};
+use crate::dns::DnsResolver;
+use std::sync::Arc;
 
 /// 传输层抽象 trait
 ///
@@ -175,16 +177,19 @@ pub fn build_transport_with_dialer(
 }
 
 /// 使用 Dialer 建立 TCP 连接的辅助函数。
-/// 所有传输层共用此函数，确保 socket 选项统一应用。
+/// 所有传输层共用此函数，确保 socket 选项和 DNS 解析器统一应用。
 pub(crate) async fn dial_tcp(
     server_addr: &str,
     server_port: u16,
     dialer_config: &Option<DialerConfig>,
+    resolver: Option<Arc<dyn DnsResolver>>,
 ) -> Result<tokio::net::TcpStream> {
     use crate::common::Dialer;
-    let dialer = match dialer_config {
-        Some(cfg) => Dialer::new(cfg.clone()),
-        None => Dialer::default_dialer(),
+    let dialer = match (dialer_config, resolver) {
+        (Some(cfg), Some(r)) => Dialer::with_resolver(cfg.clone(), r),
+        (Some(cfg), None) => Dialer::new(cfg.clone()),
+        (None, Some(r)) => Dialer::with_resolver(DialerConfig::default(), r),
+        (None, None) => Dialer::default_dialer(),
     };
     dialer.connect_host(server_addr, server_port).await
 }

@@ -58,7 +58,7 @@ impl ShadowTlsTransport {
 impl StreamTransport for ShadowTlsTransport {
     async fn connect(&self, _addr: &Address) -> Result<ProxyStream> {
         let mut tcp =
-            super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config).await?;
+            super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config, None).await?;
 
         // === 阶段 1: TLS 握手 ===
         let server_random = do_shadow_tls_handshake(
