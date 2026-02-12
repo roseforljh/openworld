@@ -11,3 +11,4 @@ pub mod tun_device;
 pub mod tun_stack;
 pub mod vless;
 pub mod vmess;
+pub mod icmp;

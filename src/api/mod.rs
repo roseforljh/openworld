@@ -1,6 +1,7 @@
 pub mod handlers;
 pub mod log_broadcast;
 pub mod models;
+pub mod v2ray_stats;
 
 use std::sync::Arc;
 

@@ -254,7 +254,7 @@ fn range_to_cidr_v4(from: &[u8; 4], to: &[u8; 4]) -> Option<IpNet> {
 
     // 简化：计算 from 和 to 的 XOR，确定共同前缀
     let diff = from_u32 ^ to_u32;
-    let prefix_len = if diff == 0 {
+    let _prefix_len = if diff == 0 {
         32
     } else {
         32 - (diff.leading_zeros() as u8).min(32) - (32 - diff.leading_zeros() as u8)

@@ -662,6 +662,7 @@ fn rule_type_name(rule: &crate::router::rules::Rule) -> String {
         Rule::And(_) => "AND".to_string(),
         Rule::Or(_) => "OR".to_string(),
         Rule::Not(_) => "NOT".to_string(),
+        Rule::WifiSsid(_) => "WifiSSID".to_string(),
     }
 }
 

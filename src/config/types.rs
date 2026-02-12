@@ -296,6 +296,11 @@ pub struct OutboundSettings {
     /// TLS 配置（新格式）
     pub tls: Option<TlsConfig>,
     pub mux: Option<MuxConfig>,
+    /// Hysteria v1 混淆方式
+    pub obfs: Option<String>,
+    /// Hysteria v1 混淆密码
+    #[serde(rename = "obfs-password")]
+    pub obfs_password: Option<String>,
     pub chain: Option<Vec<String>>,
     /// 统一 Dialer 配置（接口绑定、路由标记、TFO、MPTCP 等）
     pub dialer: Option<crate::common::DialerConfig>,

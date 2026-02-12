@@ -193,8 +193,8 @@ impl ProxyProviderManager {
 fn parse_provider_content(content: &str) -> Result<Vec<ProxyNode>> {
     let format = subscription::detect_format(content);
     match format {
-        subscription::SubFormat::ClashYaml => subscription::parse_clash_yaml(content),
-        subscription::SubFormat::SingBoxJson => subscription::parse_singbox_json(content),
+        subscription::SubFormat::ClashYaml => subscription::parse_clash_yaml_nodes(content),
+        subscription::SubFormat::SingBoxJson => subscription::parse_singbox_json_nodes(content),
         subscription::SubFormat::Base64 => subscription::parse_base64(content),
         _ => {
             // Try line-by-line link parsing

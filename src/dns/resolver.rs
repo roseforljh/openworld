@@ -154,7 +154,19 @@ fn parse_dns_address(address: &str) -> Result<(ResolverConfig, ResolverOpts)> {
     let mut opts = ResolverOpts::default();
     opts.use_hosts_file = false;
 
-    if let Some(quic_addr) = address.strip_prefix("quic://") {
+    if let Some(iface) = address.strip_prefix("dhcp://") {
+        // DHCP DNS: 从系统网络接口获取 DNS 服务器
+        let iface_hint = if iface.is_empty() || iface == "auto" {
+            None
+        } else {
+            Some(iface)
+        };
+        let servers = super::dhcp::get_system_dns_servers(iface_hint)?;
+        let ips: Vec<IpAddr> = servers;
+        let group = NameServerConfigGroup::from_ips_clear(&ips, 53, true);
+        let config = ResolverConfig::from_parts(None, vec![], group);
+        Ok((config, opts))
+    } else if let Some(quic_addr) = address.strip_prefix("quic://") {
         // DNS over QUIC (RFC 9250)
         let (ip, port) = parse_ip_port(quic_addr, 853)?;
         let ns = NameServerConfig {

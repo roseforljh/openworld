@@ -20,8 +20,6 @@ use serde::Deserialize;
 use tokio::net::TcpStream;
 use tracing::debug;
 
-use super::traffic::MptcpConfig;
-
 #[allow(unused_imports)]
 use super::traffic::RoutingMark;
 
@@ -132,7 +130,20 @@ impl Dialer {
     }
 
     async fn connect_inner(&self, addr: SocketAddr) -> Result<TcpStream> {
-        let socket = if addr.is_ipv4() {
+        let socket = if self.config.mptcp {
+            // 尝试创建 MPTCP socket
+            match self.create_mptcp_socket(addr.is_ipv4()) {
+                Ok(s) => s,
+                Err(e) => {
+                    debug!(error = %e, "MPTCP socket creation failed, falling back to TCP");
+                    if addr.is_ipv4() {
+                        tokio::net::TcpSocket::new_v4()?
+                    } else {
+                        tokio::net::TcpSocket::new_v6()?
+                    }
+                }
+            }
+        } else if addr.is_ipv4() {
             tokio::net::TcpSocket::new_v4()?
         } else {
             tokio::net::TcpSocket::new_v6()?
@@ -154,16 +165,51 @@ impl Dialer {
             rm.apply_to_socket(socket.as_raw_fd())?;
         }
 
-        // Apply MPTCP
-        if self.config.mptcp {
-            let mptcp = MptcpConfig { enabled: true };
-            // Note: MPTCP needs to be set before connect on some platforms
-            debug!("MPTCP requested for connection to {}", addr);
-            let _ = mptcp; // Platform-specific application happens at socket level
-        }
-
         let stream = socket.connect(addr).await?;
         Ok(stream)
+    }
+
+    /// 创建 MPTCP socket。
+    ///
+    /// Linux: 使用 IPPROTO_MPTCP (协议号 262) 创建 socket。
+    /// 其他平台: 返回错误（将 fallback 到普通 TCP）。
+    fn create_mptcp_socket(&self, ipv4: bool) -> Result<tokio::net::TcpSocket> {
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::io::FromRawFd;
+
+            const IPPROTO_MPTCP: i32 = 262;
+
+            let domain = if ipv4 {
+                socket2::Domain::IPV4
+            } else {
+                socket2::Domain::IPV6
+            };
+
+            let socket = socket2::Socket::new_raw(
+                domain,
+                socket2::Type::STREAM,
+                Some(socket2::Protocol::from(IPPROTO_MPTCP)),
+            )?;
+
+            socket.set_nonblocking(true)?;
+
+            // 将 socket2::Socket 转为 tokio::net::TcpSocket
+            let std_stream = unsafe {
+                let fd = socket.into_raw_fd();
+                std::net::TcpStream::from_raw_fd(fd)
+            };
+
+            let tcp_socket = tokio::net::TcpSocket::from_std_stream(std_stream);
+            debug!("MPTCP socket created successfully");
+            Ok(tcp_socket)
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = ipv4;
+            anyhow::bail!("MPTCP is only supported on Linux kernel 5.6+");
+        }
     }
 
     fn apply_post_connect(&self, stream: &TcpStream) -> Result<()> {

@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::common::{Address, BoxUdpTransport, ProxyStream, UdpPacket, UdpTransport};
 use crate::config::types::OutboundConfig;

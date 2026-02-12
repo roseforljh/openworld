@@ -41,6 +41,7 @@ struct SingBoxDns {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct SingBoxDnsServer {
     #[serde(default)]
     tag: String,
@@ -48,6 +49,7 @@ struct SingBoxDnsServer {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct SingBoxInbound {
     #[serde(rename = "type")]
     inbound_type: String,
@@ -103,6 +105,7 @@ struct SingBoxOutbound {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct SingBoxTls {
     #[serde(default)]
     enabled: Option<bool>,
@@ -121,6 +124,7 @@ struct SingBoxRoute {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct SingBoxRouteRule {
     #[serde(default)]
     domain_suffix: Option<Vec<String>>,

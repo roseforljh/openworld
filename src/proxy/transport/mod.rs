@@ -8,6 +8,7 @@ pub mod reality;
 pub mod shadowtls;
 pub mod tcp;
 pub mod tls;
+pub mod anytls;
 pub mod ws;
 
 use anyhow::Result;
@@ -142,6 +143,27 @@ pub fn build_transport_with_dialer(
                 server_port,
                 password,
                 sni,
+                dialer_config,
+            );
+            Ok(Box::new(transport))
+        }
+        "anytls" | "any-tls" => {
+            let password = transport_config
+                .shadow_tls_password
+                .clone()
+                .unwrap_or_default();
+            let padding = true; // 默认启用
+            let tls = if tls_config.enabled {
+                Some(tls_config.clone())
+            } else {
+                None
+            };
+            let transport = anytls::AnyTlsTransport::new(
+                server_addr.to_string(),
+                server_port,
+                password,
+                padding,
+                tls,
                 dialer_config,
             );
             Ok(Box::new(transport))

@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod dhcp;
 pub mod fakeip;
 pub mod hosts;
 pub mod resolver;

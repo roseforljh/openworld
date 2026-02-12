@@ -23,6 +23,8 @@ use crate::proxy::outbound::wireguard::WireGuardOutbound;
 use crate::proxy::outbound::http::HttpOutbound;
 use crate::proxy::outbound::socks5::Socks5Outbound;
 use crate::proxy::outbound::ssh::SshOutbound;
+use crate::proxy::outbound::naive::NaiveOutbound;
+use crate::proxy::outbound::hysteria_v1::HysteriaV1Outbound;
 use crate::proxy::outbound::tor::TorOutbound;
 use crate::proxy::OutboundHandler;
 
@@ -55,6 +57,7 @@ impl OutboundManager {
                 "direct" => Arc::new(DirectOutbound::new(config.tag.clone()).with_dialer(config.settings.dialer.clone())),
                 "vless" => Arc::new(VlessOutbound::new(config)?),
                 "hysteria2" => Arc::new(Hysteria2Outbound::new(config)?),
+                "hysteria" | "hysteria1" => Arc::new(HysteriaV1Outbound::new(config)?),
                 "shadowsocks" | "ss" => Arc::new(ShadowsocksOutbound::new(config)?),
                 "trojan" => Arc::new(TrojanOutbound::new(config)?),
                 "vmess" => Arc::new(VmessOutbound::new(config)?),
@@ -65,6 +68,7 @@ impl OutboundManager {
                 "tuic" => Arc::new(TuicOutbound::new(config)?),
                 "tor" => Arc::new(TorOutbound::new(config)?),
                 "reject" | "block" => Arc::new(RejectOutbound::new(config.tag.clone())),
+                "naive" | "naiveproxy" => Arc::new(NaiveOutbound::new(config)?),
                 "blackhole" => Arc::new(BlackholeOutbound::new(config.tag.clone())),
                 other => anyhow::bail!("unsupported outbound protocol: {}", other),
             };

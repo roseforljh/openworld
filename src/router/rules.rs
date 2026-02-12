@@ -10,6 +10,116 @@ use crate::config::types::RuleConfig;
 use super::process::{extract_process_name, ProcessDetector};
 use super::provider::RuleProvider;
 
+/// 获取当前连接的 WIFI SSID（跨平台）。
+///
+/// - Windows: `netsh wlan show interfaces`
+/// - macOS: `/System/Library/PrivateFrameworks/Apple80211.framework/...`
+/// - Linux: `iwgetid -r` 或 `nmcli -t -f active,ssid dev wifi`
+/// - Android/iOS: 通过 FFI 回调获取（由宿主 app 设置）
+///
+/// 返回 `None` 表示未连接 WIFI 或无法检测。
+fn get_current_wifi_ssid() -> Option<String> {
+    // 优先检查 FFI 设置的 SSID（Android/iOS）
+    {
+        let guard = CURRENT_WIFI_SSID.lock().ok()?;
+        if let Some(ref ssid) = *guard {
+            return Some(ssid.clone());
+        }
+    }
+
+    // 平台原生检测
+    #[cfg(target_os = "windows")]
+    {
+        detect_wifi_ssid_windows()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        detect_wifi_ssid_macos()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        detect_wifi_ssid_linux()
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        None
+    }
+}
+
+/// FFI: 由宿主 app 设置当前 WIFI SSID（Android/iOS）
+static CURRENT_WIFI_SSID: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// 由 FFI 层调用，设置当前 WIFI SSID
+pub fn set_current_wifi_ssid(ssid: Option<String>) {
+    if let Ok(mut guard) = CURRENT_WIFI_SSID.lock() {
+        *guard = ssid;
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn detect_wifi_ssid_windows() -> Option<String> {
+    let output = std::process::Command::new("netsh")
+        .args(["wlan", "show", "interfaces"])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("SSID") && !trimmed.starts_with("SSID ") && !trimmed.contains("BSSID") {
+            // "SSID                   : MyWifi" 或 "SSID : MyWifi"
+            if let Some(pos) = trimmed.find(':') {
+                let ssid = trimmed[pos + 1..].trim();
+                if !ssid.is_empty() {
+                    return Some(ssid.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn detect_wifi_ssid_macos() -> Option<String> {
+    // macOS 14.4+: 使用 system_profiler
+    let output = std::process::Command::new("/usr/sbin/networksetup")
+        .args(["-getairportnetwork", "en0"])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // "Current Wi-Fi Network: MyWifi"
+    if let Some(pos) = stdout.find(": ") {
+        let ssid = stdout[pos + 2..].trim();
+        if !ssid.is_empty() {
+            return Some(ssid.to_string());
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn detect_wifi_ssid_linux() -> Option<String> {
+    // 方法1: iwgetid
+    if let Ok(output) = std::process::Command::new("iwgetid").arg("-r").output() {
+        let ssid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !ssid.is_empty() {
+            return Some(ssid);
+        }
+    }
+    // 方法2: nmcli
+    if let Ok(output) = std::process::Command::new("nmcli")
+        .args(["-t", "-f", "active,ssid", "dev", "wifi"])
+        .output()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if line.starts_with("yes:") {
+                return Some(line[4..].to_string());
+            }
+        }
+    }
+    None
+}
+
 /// 路由规则
 pub enum Rule {
     /// 域名后缀匹配
@@ -55,6 +165,8 @@ pub enum Rule {
     Or(Vec<Rule>),
     /// 逻辑 NOT: inner rule must NOT match
     Not(Box<Rule>),
+    /// WIFI SSID 匹配
+    WifiSsid(Vec<String>),
 }
 
 impl Rule {
@@ -174,6 +286,7 @@ impl Rule {
                 };
                 Ok(Rule::Not(Box::new(Rule::from_config(&sub_config)?)))
             }
+            "wifi-ssid" | "ssid" => Ok(Rule::WifiSsid(config.values.clone())),
             other => anyhow::bail!("unsupported rule type: {}", other),
         }
     }
@@ -340,6 +453,13 @@ impl Rule {
             }),
             Rule::Not(inner) => {
                 !inner.matches_session(addr, geoip_db, geosite_db, source, network, inbound_tag, detected_protocol)
+            }
+            Rule::WifiSsid(ssids) => {
+                if let Some(current) = get_current_wifi_ssid() {
+                    ssids.iter().any(|s| s.eq_ignore_ascii_case(&current))
+                } else {
+                    false
+                }
             }
         }
     }
@@ -888,6 +1008,7 @@ impl fmt::Display for Rule {
                 write!(f, "or({})", strs.join(","))
             }
             Rule::Not(inner) => write!(f, "not({})", inner),
+            Rule::WifiSsid(v) => write!(f, "wifi-ssid({})", v.join(",")),
         }
     }
 }
