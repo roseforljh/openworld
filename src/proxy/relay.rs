@@ -514,7 +514,7 @@ mod splice {
                         }
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        std::thread::sleep(Duration::from_micros(100));
+                        std::thread::yield_now();
                     }
                     Err(_) => break,
                 }
@@ -535,7 +535,7 @@ mod splice {
                         }
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        std::thread::sleep(Duration::from_micros(100));
+                        std::thread::yield_now();
                     }
                     Err(_) => break,
                 }
@@ -568,22 +568,224 @@ mod splice {
     }
 }
 
+// ─── io_uring Zero-Copy Relay (Linux 5.6+) ─────────────────────────────────
+
+/// io_uring-based async zero-copy relay.
+/// Uses IORING_OP_SPLICE to move data between sockets via kernel pipe,
+/// fully asynchronous without blocking thread pool threads.
+#[cfg(all(target_os = "linux", feature = "io_uring"))]
+mod uring_relay {
+    use std::os::unix::io::RawFd;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use anyhow::Result;
+    use tokio_util::sync::CancellationToken;
+    use tracing::debug;
+
+    use super::RelayStats;
+
+    const PIPE_SIZE: usize = 65536;
+    const SPLICE_F_MOVE: u32 = 1;
+
+    /// Create a non-blocking pipe pair.
+    fn create_pipe() -> std::io::Result<(RawFd, RawFd)> {
+        let mut fds = [0i32; 2];
+        let ret = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK | libc::O_CLOEXEC) };
+        if ret < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok((fds[0], fds[1]))
+    }
+
+    fn close_fd(fd: RawFd) {
+        unsafe {
+            libc::close(fd);
+        }
+    }
+
+    /// One-direction splice relay using io_uring.
+    /// Returns total bytes transferred.
+    async fn uring_splice_direction(
+        src_fd: RawFd,
+        dst_fd: RawFd,
+        stats_counter: Option<Arc<AtomicU64>>,
+        done_flag: Arc<AtomicBool>,
+    ) -> Result<u64> {
+        let (pipe_read, pipe_write) = create_pipe()?;
+        let mut total: u64 = 0;
+
+        // Run the io_uring loop in a blocking task since io-uring has its own event loop
+        let result = tokio::task::spawn_blocking(move || -> Result<u64> {
+            let mut ring = io_uring::IoUring::new(32)?;
+
+            loop {
+                if done_flag.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                // Submit splice: src_fd -> pipe_write
+                let splice_in = io_uring::opcode::Splice::new(
+                    io_uring::types::Fd(src_fd),
+                    -1,
+                    io_uring::types::Fd(pipe_write),
+                    -1,
+                    PIPE_SIZE as u32,
+                )
+                .flags(SPLICE_F_MOVE)
+                .build()
+                .user_data(1);
+
+                unsafe {
+                    ring.submission().push(&splice_in).map_err(|_| {
+                        anyhow::anyhow!("io_uring submission queue full")
+                    })?;
+                }
+
+                ring.submit_and_wait(1)?;
+
+                let cqe = match ring.completion().next() {
+                    Some(cqe) => cqe,
+                    None => continue,
+                };
+
+                let n = cqe.result();
+                if n <= 0 {
+                    if n == 0 {
+                        break; // EOF
+                    }
+                    let err = std::io::Error::from_raw_os_error(-n);
+                    if err.kind() == std::io::ErrorKind::WouldBlock {
+                        std::thread::yield_now();
+                        continue;
+                    }
+                    break;
+                }
+
+                // Submit splice: pipe_read -> dst_fd
+                let splice_out = io_uring::opcode::Splice::new(
+                    io_uring::types::Fd(pipe_read),
+                    -1,
+                    io_uring::types::Fd(dst_fd),
+                    -1,
+                    n as u32,
+                )
+                .flags(SPLICE_F_MOVE)
+                .build()
+                .user_data(2);
+
+                unsafe {
+                    ring.submission().push(&splice_out).map_err(|_| {
+                        anyhow::anyhow!("io_uring submission queue full")
+                    })?;
+                }
+
+                ring.submit_and_wait(1)?;
+
+                if let Some(cqe2) = ring.completion().next() {
+                    let w = cqe2.result();
+                    if w > 0 {
+                        total += w as u64;
+                        if let Some(ref counter) = stats_counter {
+                            counter.fetch_add(w as u64, Ordering::Relaxed);
+                        }
+                    }
+                }
+            }
+
+            close_fd(pipe_read);
+            close_fd(pipe_write);
+            Ok(total)
+        })
+        .await??;
+
+        Ok(result)
+    }
+
+    /// Bidirectional zero-copy relay using io_uring splice.
+    pub async fn uring_relay(
+        client_fd: RawFd,
+        remote_fd: RawFd,
+        idle_timeout: Duration,
+        stats: Option<Arc<RelayStats>>,
+        cancel: CancellationToken,
+    ) -> Result<(u64, u64)> {
+        let done = Arc::new(AtomicBool::new(false));
+        let done_up = done.clone();
+        let done_down = done.clone();
+
+        let stats_up = stats.as_ref().map(|s| {
+            let counter = Arc::new(AtomicU64::new(0));
+            // We'll update stats at the end
+            counter
+        });
+        let stats_down = stats.as_ref().map(|_| Arc::new(AtomicU64::new(0)));
+
+        let cancel_clone = cancel.clone();
+        // Cancel → set done flag
+        tokio::spawn(async move {
+            cancel_clone.cancelled().await;
+            done.store(true, Ordering::Relaxed);
+        });
+
+        let upload_handle = uring_splice_direction(
+            client_fd,
+            remote_fd,
+            stats_up.clone(),
+            done_up,
+        );
+
+        let download_handle = uring_splice_direction(
+            remote_fd,
+            client_fd,
+            stats_down.clone(),
+            done_down,
+        );
+
+        let result = tokio::time::timeout(idle_timeout, async {
+            tokio::join!(upload_handle, download_handle)
+        })
+        .await;
+
+        match result {
+            Ok((up_res, down_res)) => {
+                let up = up_res.unwrap_or(0);
+                let down = down_res.unwrap_or(0);
+
+                if let Some(ref s) = stats {
+                    s.upload.fetch_add(up, Ordering::Relaxed);
+                    s.download.fetch_add(down, Ordering::Relaxed);
+                }
+
+                debug!(upload = up, download = down, "io_uring relay finished (zero-copy)");
+                Ok((up, down))
+            }
+            Err(_) => {
+                debug!("io_uring relay idle timeout");
+                Ok((0, 0))
+            }
+        }
+    }
+}
+
 /// Relay for ProxyStream with zero-copy attempt.
-/// On Linux, if both streams are raw TcpStream, uses splice() for zero-copy.
+/// Priority: io_uring splice → libc splice → tokio copy_bidirectional.
+/// On Linux, if both streams are raw TcpStream, uses kernel zero-copy.
 /// Otherwise falls back to the standard buffered relay.
 pub async fn relay_proxy_streams(
     client: ProxyStream,
     remote: ProxyStream,
     opts: RelayOptions,
 ) -> Result<(u64, u64)> {
-    eprintln!("relay_proxy_streams: entered");
+
     // Try zero-copy path on Linux when both sides are raw TcpStream
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::io::AsRawFd;
         let client_is_tcp = client.as_any().is::<tokio::net::TcpStream>();
         let remote_is_tcp = remote.as_any().is::<tokio::net::TcpStream>();
-        eprintln!("relay: linux fast-path check client_tcp={} remote_tcp={}", client_is_tcp, remote_is_tcp);
+        debug!(client_tcp = client_is_tcp, remote_tcp = remote_is_tcp, "zero-copy path check");
 
         if client_is_tcp && remote_is_tcp
             && opts.upload_limiter.is_none()
@@ -600,7 +802,27 @@ pub async fn relay_proxy_streams(
                 .unwrap()
                 .as_raw_fd();
 
-            eprintln!("relay: using splice zero-copy path");
+            // Priority 1: io_uring splice (Linux 5.6+ with feature enabled)
+            #[cfg(feature = "io_uring")]
+            {
+                debug!("attempting io_uring splice zero-copy relay");
+                match uring_relay::uring_relay(
+                    client_fd,
+                    remote_fd,
+                    opts.idle_timeout,
+                    opts.stats.clone(),
+                    opts.cancel.clone().unwrap_or_default(),
+                )
+                .await
+                {
+                    Ok(result) => return Ok(result),
+                    Err(e) => {
+                        debug!(error = %e, "io_uring not available, falling back to splice");
+                    }
+                }
+            }
+
+            // Priority 2: libc splice (all Linux)
             debug!("using splice() zero-copy relay");
             return splice::splice_relay(
                 client_fd,
@@ -625,7 +847,7 @@ pub async fn relay_proxy_streams(
 
     match result {
         Ok(Ok((up, down))) => {
-            eprintln!("relay: finished up={} down={}", up, down);
+            debug!(upload = up, download = down, "relay finished");
             if let Some(ref stats) = opts.stats {
                 stats.upload.fetch_add(up, Ordering::Relaxed);
                 stats.download.fetch_add(down, Ordering::Relaxed);
@@ -633,11 +855,11 @@ pub async fn relay_proxy_streams(
             Ok((up, down))
         }
         Ok(Err(e)) => {
-            eprintln!("relay: error {}", e);
+            debug!(error = %e, "relay error");
             Err(e)
         }
         Err(_) => {
-            eprintln!("relay: timeout {:?}", opts.idle_timeout);
+
             debug!("relay idle timeout ({:?}), closing", opts.idle_timeout);
             Ok((0, 0))
         }

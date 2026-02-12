@@ -13,10 +13,12 @@ ech = []
 cli = ["clap", "notify"]
 android = ["jni", "android_logger"]
 ssh = ["russh", "russh-keys", "ssh-key"]
+io_uring = ["dep:io-uring"]
 
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
+io-uring = { version = "0.7", optional = true }
 quinn = "0.11"
 rustls = "0.23"
 tokio-rustls = "0.26"
