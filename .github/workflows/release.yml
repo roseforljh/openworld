@@ -24,12 +24,6 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             binary: openworld.exe
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            binary: openworld
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            binary: openworld
 
     steps:
       - uses: actions/checkout@v4
