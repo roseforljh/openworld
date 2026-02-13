@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material.icons.rounded.Terminal
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 
+import androidx.compose.ui.graphics.Color
 import com.openworld.app.ui.components.BigToggle
 import com.openworld.app.ui.components.ConnectionStatusChip
 import com.openworld.app.ui.components.InfoCard
@@ -64,6 +66,8 @@ import com.openworld.app.ui.components.SingleSelectDialog
 import com.openworld.app.ui.components.StatusChip
 import com.openworld.app.ui.navigation.Screen
 import com.openworld.app.ui.theme.Green500
+import com.openworld.app.ui.theme.Neutral500
+import com.openworld.app.util.FormatUtil
 import com.openworld.app.viewmodel.DashboardViewModel
 import kotlin.math.cos
 import kotlin.math.sin
@@ -202,13 +206,23 @@ fun DashboardScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // App Title
+                // App Logo & Title
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(bottom = 12.dp)
                 ) {
+                    androidx.compose.ui.viewinterop.AndroidView(
+                        factory = { ctx ->
+                            android.widget.ImageView(ctx).apply {
+                                setImageResource(com.openworld.app.R.mipmap.ic_launcher_round)
+                            }
+                        },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .padding(end = 12.dp)
+                    )
                     Text(
-                        text = "OpenWorld",
+                        text = "KunBox",
                         style = MaterialTheme.typography.headlineMedium.copy(
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
@@ -222,13 +236,20 @@ fun DashboardScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    ConnectionStatusChip(
-                        connected = state.connected,
-                        connecting = state.connecting
+                    StatusChip(
+                        label = if (state.connected) "已连接" else if (state.connecting) "连接中" else "未连接",
+                        isActive = state.connected
                     )
 
+                    val indicatorColor = when {
+                        state.connected -> Color(0xFF4CAF50)
+                        state.connecting -> Neutral500
+                        else -> Neutral500
+                    }
+
                     ModeChip(
-                        mode = state.mode,
+                        mode = state.mode.uppercase(),
+                        indicatorColor = indicatorColor,
                         onClick = { showModeDialog = true }
                     )
                 }
@@ -239,15 +260,11 @@ fun DashboardScreen(
                 ) {
                     StatusChip(
                         label = state.activeProfile.ifEmpty { "未选择配置" },
-                        isActive = state.activeProfile.isNotEmpty(),
-                        activeColor = MaterialTheme.colorScheme.primary,
                         onClick = { showProfileDialog = true }
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     StatusChip(
                         label = state.activeNodeTag.ifEmpty { "未选择节点" },
-                        isActive = state.activeNodeTag.isNotEmpty(),
-                        activeColor = Green500,
                         onClick = { showNodeDialog = true }
                     )
                 }
@@ -259,8 +276,7 @@ fun DashboardScreen(
                 modifier = Modifier.weight(1f)
             ) {
                 BigToggle(
-                    connected = state.connected,
-                    connecting = state.connecting,
+                    isRunning = state.connected || state.connecting,
                     onClick = { viewModel.toggleConnection() }
                 )
             }
@@ -271,9 +287,11 @@ fun DashboardScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 InfoCard(
-                    uploadRate = state.uploadRate,
-                    downloadRate = state.downloadRate,
-                    ping = state.ping
+                    uploadSpeed = FormatUtil.formatSpeed(state.uploadRate),
+                    downloadSpeed = FormatUtil.formatSpeed(state.downloadRate),
+                    ping = if (state.ping > 0) "${state.ping} ms" else "0 ms",
+                    isPingLoading = state.testingLatency,
+                    onPingClick = { viewModel.testAllNodesLatency() }
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -283,20 +301,10 @@ fun DashboardScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    QuickActionButton(Icons.Rounded.Refresh, "更新订阅",
-                        loading = state.updatingSubscription,
-                        onClick = { viewModel.updateAllSubscriptions() }
-                    )
-                    QuickActionButton(Icons.Rounded.Bolt, "测速",
-                        loading = state.testingLatency,
-                        onClick = { viewModel.testAllNodesLatency() }
-                    )
-                    QuickActionButton(Icons.Rounded.Terminal, "日志") {
-                        navController.navigate(Screen.Logs.route)
-                    }
-                    QuickActionButton(Icons.Rounded.SwapVert, "连接") {
-                        navController.navigate(Screen.Connections.route)
-                    }
+                    QuickActionButton(androidx.compose.material.icons.Icons.Rounded.Refresh, "更新订阅") { viewModel.updateAllSubscriptions() }
+                    QuickActionButton(androidx.compose.material.icons.Icons.Rounded.Bolt, "延迟测试") { viewModel.testAllNodesLatency() }
+                    QuickActionButton(androidx.compose.material.icons.Icons.Rounded.Terminal, "日志") { navController.navigate(Screen.Logs.route) }
+                    QuickActionButton(androidx.compose.material.icons.Icons.Rounded.BugReport, "诊断") { navController.navigate(Screen.Diagnostics.route) }
                 }
             }
         }
@@ -346,12 +354,13 @@ fun DashboardScreen(
     // ── 对话框 ──
 
     if (showModeDialog) {
+        val options = listOf("rule", "global", "direct")
         SingleSelectDialog(
             title = "路由模式",
-            options = listOf("rule", "global", "direct"),
-            selectedOption = state.mode,
-            onSelect = { mode ->
-                viewModel.setMode(mode)
+            options = options,
+            selectedIndex = options.indexOf(state.mode).coerceAtLeast(0),
+            onSelect = { index ->
+                viewModel.setMode(options[index])
                 showModeDialog = false
             },
             onDismiss = { showModeDialog = false }
@@ -363,9 +372,9 @@ fun DashboardScreen(
         SingleSelectDialog(
             title = "选择配置",
             options = profiles,
-            selectedOption = state.activeProfile,
-            onSelect = { name ->
-                viewModel.setActiveProfile(name)
+            selectedIndex = profiles.indexOf(state.activeProfile).coerceAtLeast(0),
+            onSelect = { index ->
+                viewModel.setActiveProfile(profiles[index])
                 showProfileDialog = false
             },
             onDismiss = { showProfileDialog = false }
@@ -384,8 +393,9 @@ fun DashboardScreen(
             SingleSelectDialog(
                 title = "选择节点",
                 options = allNodes,
-                selectedOption = selectedNode,
-                onSelect = { fullName ->
+                selectedIndex = allNodes.indexOf(selectedNode).coerceAtLeast(0),
+                onSelect = { index ->
+                    val fullName = allNodes[index]
                     val parts = fullName.split("/", limit = 2)
                     if (parts.size == 2) {
                         viewModel.setActiveNode(parts[0], parts[1])

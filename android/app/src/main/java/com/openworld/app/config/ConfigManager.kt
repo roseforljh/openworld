@@ -203,4 +203,73 @@ object ConfigManager {
             false
         }
     }
+
+    // ── Config Object Management ──
+
+    private val gson = Gson()
+
+    fun parseConfig(content: String): com.openworld.app.model.SingBoxConfig? {
+        return try {
+            gson.fromJson(content, com.openworld.app.model.SingBoxConfig::class.java)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    fun serializeConfig(config: com.openworld.app.model.SingBoxConfig): String {
+        return gson.toJson(config)
+    }
+
+    fun updateProfileConfig(context: Context, profileId: String, modifier: (com.openworld.app.model.SingBoxConfig) -> com.openworld.app.model.SingBoxConfig): Boolean {
+        val content = loadProfile(context, profileId) ?: return false
+        val config = parseConfig(content) ?: return false
+        val newConfig = modifier(config)
+        val newContent = serializeConfig(newConfig)
+        saveProfile(context, profileId, newContent)
+        return true
+    }
+
+    // ── Profile UI Helpers ──
+
+    fun getProfiles(context: Context): List<com.openworld.app.model.ProfileUi> {
+        val active = getActiveProfile(context)
+        return listProfiles(context).map { name ->
+            val url = getSubscriptionUrl(context, name)
+            val file = File(configDir(context), "$name.yaml").takeIf { it.exists() }
+                ?: File(configDir(context), "$name.json")
+            val lastUpdated = file?.lastModified() ?: 0L
+
+            com.openworld.app.model.ProfileUi(
+                id = name,
+                name = name,
+                type = if (url != null) com.openworld.app.model.ProfileType.Subscription else com.openworld.app.model.ProfileType.LocalFile,
+                url = url,
+                lastUpdated = lastUpdated,
+                enabled = name == active
+            )
+        }
+    }
+
+    fun createProfile(context: Context, name: String, type: com.openworld.app.model.ProfileType): String? {
+        val fileName = name.trim()
+        if (fileName.isEmpty()) return null
+        
+        // Check if exists
+        val yamlFile = File(configDir(context), "$fileName.yaml")
+        val jsonFile = File(configDir(context), "$fileName.json")
+        if (yamlFile.exists() || jsonFile.exists()) return null
+
+        // Create empty config with minimal structure
+        val emptyConfig = com.openworld.app.model.SingBoxConfig(
+            log = com.openworld.app.model.LogConfig(),
+            inbounds = listOf(),
+            outbounds = listOf(),
+            route = com.openworld.app.model.RouteConfig()
+        )
+        val content = serializeConfig(emptyConfig)
+        
+        saveProfile(context, fileName, content)
+        return fileName
+    }
 }

@@ -1,18 +1,22 @@
 package com.openworld.app.ui.components
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.NetworkPing
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -20,74 +24,88 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.openworld.app.ui.theme.Blue500
-import com.openworld.app.ui.theme.Green500
-import com.openworld.app.ui.theme.Orange500
-import com.openworld.app.util.FormatUtil
 
 @Composable
 fun InfoCard(
-    uploadRate: Long,
-    downloadRate: Long,
-    ping: Int = -1,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    uploadSpeed: String = "0 KB/s",
+    downloadSpeed: String = "0 KB/s",
+    ping: String = "0 ms",
+    isPingLoading: Boolean = false,
+    onPingClick: (() -> Unit)? = null
 ) {
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        modifier = modifier.fillMaxWidth()
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
+            .padding(20.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 20.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            InfoItem(
-                icon = Icons.Filled.ArrowUpward,
-                label = "上传",
-                value = FormatUtil.formatSpeed(uploadRate),
-                tint = Green500
-            )
-            InfoItem(
-                icon = Icons.Filled.ArrowDownward,
-                label = "下载",
-                value = FormatUtil.formatSpeed(downloadRate),
-                tint = Blue500
-            )
-            InfoItem(
-                icon = Icons.Filled.NetworkPing,
-                label = "延迟",
-                value = if (ping > 0) "${ping}ms" else "--",
-                tint = Orange500
-            )
-        }
+        InfoItem(
+            icon = Icons.Rounded.ArrowUpward,
+            label = "上传",
+            value = uploadSpeed
+        )
+        InfoItem(
+            icon = Icons.Rounded.ArrowDownward,
+            label = "下载",
+            value = downloadSpeed
+        )
+        InfoItem(
+            modifier = if (onPingClick != null) {
+                Modifier.clickable(enabled = !isPingLoading) { onPingClick() }
+            } else {
+                Modifier
+            },
+            icon = Icons.Rounded.Speed,
+            label = "延迟",
+            value = ping,
+            isLoading = isPingLoading
+        )
     }
 }
 
 @Composable
 private fun InfoItem(
+    modifier: Modifier = Modifier,
     icon: ImageVector,
     label: String,
     value: String,
-    tint: androidx.compose.ui.graphics.Color
+    isLoading: Boolean = false
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = tint,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(20.dp)
         )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(top = 4.dp)
-        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Box(
+            modifier = Modifier.height(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,

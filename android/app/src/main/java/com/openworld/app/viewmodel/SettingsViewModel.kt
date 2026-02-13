@@ -1,174 +1,291 @@
 package com.openworld.app.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.openworld.app.config.ConfigManager
+import com.openworld.app.model.AppSettings
+import com.openworld.app.model.CustomRule
+import com.openworld.app.model.DefaultRule
+import com.openworld.app.model.DnsStrategy
 import com.openworld.app.model.AppThemeMode
-import com.openworld.app.repository.SettingsStore
-import com.openworld.core.OpenWorldCore
-import kotlinx.coroutines.Dispatchers
+import com.openworld.app.model.AppLanguage
+import com.openworld.app.model.RoutingMode
+import com.openworld.app.model.AppRule
+import com.openworld.app.model.AppGroup
+import com.openworld.app.model.RuleSet
+import com.openworld.app.model.RuleSetType
+import com.openworld.app.model.TunStack
+import com.openworld.app.model.LatencyTestMethod
+import com.openworld.app.model.VpnAppMode
+import com.openworld.app.model.VpnRouteMode
+import com.openworld.app.model.GhProxyMirror
+import com.openworld.app.model.BackgroundPowerSavingDelay
+import com.openworld.app.repository.SettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class SettingsViewModel(app: Application) : AndroidViewModel(app) {
+class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
-    data class UiState(
-        val routingMode: String = "rule",
-        val clashMode: String = "rule",
-        val dnsLocal: String = "223.5.5.5",
-        val dnsRemote: String = "tls://8.8.8.8",
-        val coreVersion: String = "",
-        val appVersion: String = "",
-        val memoryUsage: Long = 0,
-        val debugLogging: Boolean = false,
-        val appTheme: String = AppThemeMode.SYSTEM.name,
-        val tunMtu: Int = 1500,
-        val tunIpv6Enabled: Boolean = true,
-        val dnsMode: String = "split",
-        val dnsServers: List<String> = listOf("223.5.5.5", "tls://8.8.8.8"),
-        val bootAutoStart: Boolean = false,
-        val autoConnect: Boolean = false,
-        val foregroundKeepAlive: Boolean = true,
-        val appLanguage: String = "system"
-    )
+    private val repository = SettingsRepository.getInstance(application)
+    
+    // Stubbed repositories/classes for now
+    // private val ruleSetRepository = RuleSetRepository.getInstance(application)
+    // private val dataExportRepository = DataExportRepository.getInstance(application)
 
-    private val _state = MutableStateFlow(UiState())
-    val state: StateFlow<UiState> = _state.asStateFlow()
+    private val _downloadingRuleSets = MutableStateFlow<Set<String>>(emptySet())
+    val downloadingRuleSets: StateFlow<Set<String>> = _downloadingRuleSets.asStateFlow()
 
-    init {
-        refresh()
-    }
+    private val _exportState = MutableStateFlow<ExportState>(ExportState.Idle)
+    val exportState: StateFlow<ExportState> = _exportState.asStateFlow()
 
-    fun refresh() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val ctx = getApplication<Application>()
-            val coreVer = try { OpenWorldCore.version() } catch (_: Exception) { "N/A" }
-            val clashMode = try { OpenWorldCore.getClashMode() ?: "rule" } catch (_: Exception) { "rule" }
-            val mem = try { OpenWorldCore.getMemoryUsage() } catch (_: Exception) { 0L }
+    private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
+    val importState: StateFlow<ImportState> = _importState.asStateFlow()
 
-            _state.value = UiState(
-                routingMode = ConfigManager.getRoutingMode(ctx),
-                clashMode = clashMode,
-                dnsLocal = ConfigManager.getDnsLocal(ctx),
-                dnsRemote = ConfigManager.getDnsRemote(ctx),
-                coreVersion = coreVer,
-                appVersion = try {
-                    ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "1.0"
-                } catch (_: Exception) { "1.0" },
-                memoryUsage = mem,
-                debugLogging = _state.value.debugLogging,
-                appTheme = SettingsStore.getThemeMode(ctx).name,
-                tunMtu = SettingsStore.getTunMtu(ctx),
-                tunIpv6Enabled = SettingsStore.getTunIpv6Enabled(ctx),
-                dnsMode = SettingsStore.getDnsMode(ctx),
-                dnsServers = SettingsStore.getDnsServers(ctx),
-                bootAutoStart = SettingsStore.getBootAutoStart(ctx),
-                autoConnect = SettingsStore.getAutoConnect(ctx),
-                foregroundKeepAlive = SettingsStore.getForegroundKeepAlive(ctx),
-                appLanguage = SettingsStore.getAppLanguage(ctx)
-            )
+    val settings: StateFlow<AppSettings> = repository.settings
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = AppSettings()
+        )
+
+    fun ensureDefaultRuleSetsReady() {
+        // Todo: Implement RuleSet download logic
+        viewModelScope.launch {
+            if (repository.getRuleSets().isEmpty()) {
+                repository.setRuleSets(repository.getDefaultRuleSets(), notify = false)
+            }
         }
     }
 
-    fun setRoutingMode(mode: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val ctx = getApplication<Application>()
-            ConfigManager.setRoutingMode(ctx, mode)
-            try { OpenWorldCore.setClashMode(mode) } catch (_: Exception) {}
-            _state.value = _state.value.copy(routingMode = mode, clashMode = mode)
-        }
+    // ==================== General Settings ====================
+    fun setAutoConnect(value: Boolean) {
+        viewModelScope.launch { repository.setAutoConnect(value) }
     }
 
-    fun setDnsLocal(dns: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            ConfigManager.setDnsLocal(getApplication(), dns)
-            _state.value = _state.value.copy(dnsLocal = dns)
-        }
+    fun setAppTheme(value: AppThemeMode) {
+        viewModelScope.launch { repository.setAppTheme(value) }
     }
 
-    fun setDnsRemote(dns: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            ConfigManager.setDnsRemote(getApplication(), dns)
-            _state.value = _state.value.copy(dnsRemote = dns)
-        }
+    fun setAppLanguage(value: AppLanguage) {
+        viewModelScope.launch { repository.setAppLanguage(value) }
     }
 
-    fun setClashMode(mode: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try { OpenWorldCore.setClashMode(mode) } catch (_: Exception) {}
-            _state.value = _state.value.copy(clashMode = mode)
-        }
+    fun setAutoCheckUpdate(value: Boolean) {
+        viewModelScope.launch { repository.setAutoCheckUpdate(value) }
     }
 
-    fun setDebugLoggingEnabled(enabled: Boolean) {
-        _state.value = _state.value.copy(debugLogging = enabled)
+    // ==================== TUN/VPN Settings ====================
+    fun setTunEnabled(value: Boolean) {
+        viewModelScope.launch { repository.setTunEnabled(value) }
     }
 
-    fun setAppTheme(themeName: String) {
-        val ctx = getApplication<Application>()
-        val mode = try {
-            AppThemeMode.valueOf(themeName)
-        } catch (_: Exception) {
-            AppThemeMode.SYSTEM
-        }
-        SettingsStore.setThemeMode(ctx, mode)
-        _state.value = _state.value.copy(appTheme = mode.name)
+    // ... Other simple setters ...
+    
+    fun setDebugLoggingEnabled(value: Boolean) {
+        viewModelScope.launch { repository.setDebugLoggingEnabled(value) }
     }
 
-    fun setTunMtu(mtu: Int) {
-        val ctx = getApplication<Application>()
-        val value = mtu.coerceIn(1200, 9000)
-        SettingsStore.setTunMtu(ctx, value)
-        _state.value = _state.value.copy(tunMtu = value)
+    fun setRuleSetAutoUpdateEnabled(value: Boolean) {
+        viewModelScope.launch { repository.setRuleSetAutoUpdateEnabled(value) }
+    }
+    
+    fun setRuleSetAutoUpdateInterval(value: Int) {
+         viewModelScope.launch { repository.setRuleSetAutoUpdateInterval(value) }
     }
 
-    fun setTunIpv6Enabled(enabled: Boolean) {
-        val ctx = getApplication<Application>()
-        SettingsStore.setTunIpv6Enabled(ctx, enabled)
-        _state.value = _state.value.copy(tunIpv6Enabled = enabled)
+    // ==================== Connection Settings ====================
+    fun setWakeResetConnections(value: Boolean) {
+        viewModelScope.launch { repository.setWakeResetConnections(value) }
     }
 
-    fun setDnsMode(mode: String) {
-        val ctx = getApplication<Application>()
-        SettingsStore.setDnsMode(ctx, mode)
-        _state.value = _state.value.copy(dnsMode = mode)
+    fun setBackgroundPowerSavingDelay(value: BackgroundPowerSavingDelay) {
+        viewModelScope.launch { repository.setBackgroundPowerSavingDelay(value) }
     }
 
-    fun setDnsServers(servers: List<String>) {
-        val ctx = getApplication<Application>()
-        SettingsStore.setDnsServers(ctx, servers)
-        _state.value = _state.value.copy(dnsServers = SettingsStore.getDnsServers(ctx))
+    fun setExcludeFromRecent(value: Boolean) {
+        viewModelScope.launch { repository.setExcludeFromRecent(value) }
     }
 
-    fun setBootAutoStart(enabled: Boolean) {
-        val ctx = getApplication<Application>()
-        SettingsStore.setBootAutoStart(ctx, enabled)
-        _state.value = _state.value.copy(bootAutoStart = enabled)
+    fun setShowNotificationSpeed(value: Boolean) {
+        viewModelScope.launch { repository.setShowNotificationSpeed(value) }
     }
 
-    fun setAutoConnect(enabled: Boolean) {
-        val ctx = getApplication<Application>()
-        SettingsStore.setAutoConnect(ctx, enabled)
-        _state.value = _state.value.copy(autoConnect = enabled)
+    fun setProxyPort(value: Int) { // Renamed from updateProxyPort
+        viewModelScope.launch { repository.setProxyPort(value) }
     }
 
-    fun setForegroundKeepAlive(enabled: Boolean) {
-        val ctx = getApplication<Application>()
-        SettingsStore.setForegroundKeepAlive(ctx, enabled)
-        _state.value = _state.value.copy(foregroundKeepAlive = enabled)
+    fun setAllowLan(value: Boolean) { // Renamed from updateAllowLan
+        viewModelScope.launch { repository.setAllowLan(value) }
     }
 
-    fun setAppLanguage(language: String) {
-        val ctx = getApplication<Application>()
-        val safe = when (language.lowercase()) {
-            "system", "zh-cn", "en" -> language.lowercase()
-            else -> "system"
-        }
-        SettingsStore.setAppLanguage(ctx, safe)
-        _state.value = _state.value.copy(appLanguage = safe)
+    fun setAppendHttpProxy(value: Boolean) { // Renamed from updateAppendHttpProxy
+        viewModelScope.launch { repository.setAppendHttpProxy(value) }
+    }
+
+    fun setLatencyTestConcurrency(value: Int) { // Renamed from updateLatencyTestConcurrency
+        viewModelScope.launch { repository.setLatencyTestConcurrency(value) }
+    }
+
+    fun setLatencyTestTimeout(value: Int) { // Renamed from updateLatencyTestTimeout
+        viewModelScope.launch { repository.setLatencyTestTimeout(value) }
+    }
+
+    // ==================== Routing Settings ====================
+    fun setRoutingMode(value: RoutingMode) {
+        viewModelScope.launch { repository.setRoutingMode(value) }
+    }
+
+    fun setDefaultRule(value: DefaultRule) {
+        viewModelScope.launch { repository.setDefaultRule(value) }
+    }
+
+    fun setLatencyTestMethod(value: LatencyTestMethod) {
+        viewModelScope.launch { repository.setLatencyTestMethod(value) }
+    }
+
+    fun setLatencyTestUrl(value: String) {
+        viewModelScope.launch { repository.setLatencyTestUrl(value) }
+    }
+
+    fun setGhProxyMirror(value: GhProxyMirror) {
+        viewModelScope.launch { repository.setGhProxyMirror(value) }
+    }
+
+    fun setSubscriptionUpdateTimeout(value: Int) {
+        viewModelScope.launch { repository.setSubscriptionUpdateTimeout(value) }
+    }
+
+    fun setBlockQuic(value: Boolean) {
+        viewModelScope.launch { repository.setBlockQuic(value) }
+    }
+
+    fun setBypassLan(value: Boolean) {
+        viewModelScope.launch { repository.setBypassLan(value) }
+    }
+
+    // ==================== DNS Settings ====================
+    fun setLocalDns(value: String) {
+        viewModelScope.launch { repository.setLocalDns(value) }
+    }
+
+    fun setRemoteDns(value: String) {
+        viewModelScope.launch { repository.setRemoteDns(value) }
+    }
+
+    fun setFakeDnsEnabled(value: Boolean) {
+        viewModelScope.launch { repository.setFakeDnsEnabled(value) }
+    }
+
+    fun setFakeIpRange(value: String) {
+        viewModelScope.launch { repository.setFakeIpRange(value) }
+    }
+
+    fun setDnsStrategy(value: DnsStrategy) {
+        viewModelScope.launch { repository.setDnsStrategy(value) }
+    }
+
+    fun setRemoteDnsStrategy(value: DnsStrategy) {
+        viewModelScope.launch { repository.setRemoteDnsStrategy(value) }
+    }
+
+    fun setDirectDnsStrategy(value: DnsStrategy) {
+        viewModelScope.launch { repository.setDirectDnsStrategy(value) }
+    }
+
+    fun setServerAddressStrategy(value: DnsStrategy) {
+        viewModelScope.launch { repository.setServerAddressStrategy(value) }
+    }
+
+    fun setDnsCacheEnabled(value: Boolean) {
+        viewModelScope.launch { repository.setDnsCacheEnabled(value) }
+    }
+
+    // ==================== Tun/VPN Settings ====================
+    fun setTunStack(value: TunStack) {
+        viewModelScope.launch { repository.setTunStack(value) }
+    }
+
+    fun setTunMtu(value: Int) {
+        viewModelScope.launch { repository.setTunMtu(value) }
+    }
+
+    fun setTunMtuAuto(value: Boolean) { // Note: Existing code might have this? No, it wasn't in list.
+        viewModelScope.launch { repository.setTunMtuAuto(value) }
+    }
+
+    fun setTunInterfaceName(value: String) {
+        viewModelScope.launch { repository.setTunInterfaceName(value) }
+    }
+
+    fun setAutoRoute(value: Boolean) {
+        viewModelScope.launch { repository.setAutoRoute(value) }
+    }
+
+    fun setStrictRoute(value: Boolean) {
+        viewModelScope.launch { repository.setStrictRoute(value) }
+    }
+
+    fun setEndpointIndependentNat(value: Boolean) {
+        viewModelScope.launch { repository.setEndpointIndependentNat(value) }
+    }
+
+    fun setVpnRouteMode(value: VpnRouteMode) {
+        viewModelScope.launch { repository.setVpnRouteMode(value) }
+    }
+
+    fun setVpnRouteIncludeCidrs(value: String) {
+        viewModelScope.launch { repository.setVpnRouteIncludeCidrs(value) }
+    }
+
+    fun setVpnAppMode(value: VpnAppMode) {
+        viewModelScope.launch { repository.setVpnAppMode(value) }
+    }
+
+    fun setVpnAllowlist(value: String) {
+        viewModelScope.launch { repository.setVpnAllowlist(value) }
+    }
+
+    // ==================== Export/Import Stubs ====================
+    fun exportData(uri: Uri) {
+         // Placeholder
+         _exportState.value = ExportState.Error("Not implemented yet")
+    }
+    
+    fun validateImportFile(uri: Uri) {
+         // Placeholder
+         _importState.value = ImportState.Error("Not implemented yet")
+    }
+
+    fun resetExportState() {
+        _exportState.value = ExportState.Idle
+    }
+
+    fun resetImportState() {
+        _importState.value = ImportState.Idle
+    }
+    
+    fun confirmImport(uri: Uri, options: Any) {
+         // Placeholder
     }
 }
 
+sealed class ExportState {
+    object Idle : ExportState()
+    object Exporting : ExportState()
+    object Success : ExportState()
+    data class Error(val message: String) : ExportState()
+}
+
+sealed class ImportState {
+    object Idle : ImportState()
+    object Validating : ImportState()
+    data class Preview(val uri: Uri, val data: Any, val summary: Any) : ImportState()
+    object Importing : ImportState()
+    object Success : ImportState()
+    data class Error(val message: String) : ImportState()
+}

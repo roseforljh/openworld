@@ -1,6 +1,7 @@
 package com.openworld.app.ui.theme
 
 import android.app.Activity
+import android.graphics.Color
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -11,38 +12,38 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import com.openworld.app.model.AppThemeMode
 
+// Force Dark Theme for OLED Minimalist Look
 private val DarkColorScheme = darkColorScheme(
-    primary = PureWhite,
-    secondary = Neutral400,
-    tertiary = Blue400,
-    background = OLEDBlack,
-    surface = Neutral900,
-    surfaceVariant = Neutral850,
-    surfaceContainer = Neutral900,
-    surfaceContainerHigh = Neutral800,
-    onBackground = Neutral200,
-    onSurface = PureWhite,
-    onSurfaceVariant = Neutral400,
-    outline = Neutral700,
-    outlineVariant = Neutral800,
-    error = Red400,
+    primary = AccentWhite,
+    onPrimary = AppBackground,
+    secondary = Neutral500,
+    onSecondary = PureWhite,
+    tertiary = Neutral700,
+    background = AppBackground,
+    onBackground = TextPrimary,
+    surface = SurfaceCard,
+    onSurface = TextPrimary,
+    surfaceVariant = SurfaceCardAlt,
+    onSurfaceVariant = TextSecondary,
+    outline = Divider,
+    error = Destructive
 )
 
+// Light Theme
 private val LightColorScheme = lightColorScheme(
-    primary = Neutral850,
-    secondary = Neutral600,
-    tertiary = Blue500,
+    primary = LightOnBackground,
+    onPrimary = LightSurface,
+    secondary = LightOnSurfaceVariant,
+    onSecondary = LightOnSurface,
+    tertiary = LightOnSurfaceVariant,
     background = LightBackground,
-    surface = LightSurface,
-    surfaceVariant = LightSurfaceVariant,
-    surfaceContainer = LightSurface,
-    surfaceContainerHigh = Neutral100,
     onBackground = LightOnBackground,
+    surface = LightSurface,
     onSurface = LightOnSurface,
+    surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = LightOnSurfaceVariant,
-    outline = Neutral300,
-    outlineVariant = Neutral200,
-    error = Red500,
+    outline = LightDivider,
+    error = Destructive
 )
 
 @Composable
@@ -50,25 +51,27 @@ fun OpenWorldTheme(
     themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     content: @Composable () -> Unit
 ) {
-    val darkTheme = when (themeMode) {
-        AppThemeMode.DARK -> true
+    val isSystemDark = isSystemInDarkTheme()
+    val useDarkTheme = when (themeMode) {
+        AppThemeMode.SYSTEM -> isSystemDark
         AppThemeMode.LIGHT -> false
-        AppThemeMode.SYSTEM -> isSystemInDarkTheme()
+        AppThemeMode.DARK -> true
     }
 
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
-
+    val colorScheme = if (useDarkTheme) DarkColorScheme else LightColorScheme
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = android.graphics.Color.TRANSPARENT
-            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            // 设置透明状态栏和导航栏，让内容延伸到系统栏下方
+            window.statusBarColor = Color.TRANSPARENT
+            window.navigationBarColor = Color.TRANSPARENT
+            // 确保边到边显示正确配置
             WindowCompat.setDecorFitsSystemWindows(window, false)
-            WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = !darkTheme
-                isAppearanceLightNavigationBars = !darkTheme
-            }
+            // 亮色模式下使用深色图标
+            val insetsController = WindowCompat.getInsetsController(window, view)
+            insetsController.isAppearanceLightStatusBars = !useDarkTheme
+            insetsController.isAppearanceLightNavigationBars = !useDarkTheme
         }
     }
 

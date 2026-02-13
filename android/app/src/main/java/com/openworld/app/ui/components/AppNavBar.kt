@@ -9,14 +9,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Layers
-import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.filled.FolderCopy
+import androidx.compose.material.icons.outlined.Dashboard
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.FolderCopy
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -46,7 +46,7 @@ fun AppNavBar(
     val gradientColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
 
     Column {
-        // 顶部渐变分隔线
+        // Top gradient line (from center to edges)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -85,19 +85,19 @@ fun AppNavBar(
                             Icon(
                                 imageVector = if (isSelected) {
                                     when (screen) {
-                                        Screen.Dashboard -> Icons.Filled.Home
-                                        Screen.Nodes -> Icons.Filled.Layers
-                                        Screen.Profiles -> Icons.Filled.Description
+                                        Screen.Dashboard -> Icons.Filled.Dashboard
+                                        Screen.Nodes -> Icons.Filled.Dns
+                                        Screen.Profiles -> Icons.Filled.FolderCopy
                                         Screen.Settings -> Icons.Filled.Settings
-                                        else -> Icons.Filled.Home
+                                        else -> Icons.Filled.Dashboard
                                     }
                                 } else {
                                     when (screen) {
-                                        Screen.Dashboard -> Icons.Outlined.Home
-                                        Screen.Nodes -> Icons.Outlined.Layers
-                                        Screen.Profiles -> Icons.Outlined.Description
+                                        Screen.Dashboard -> Icons.Outlined.Dashboard
+                                        Screen.Nodes -> Icons.Outlined.Dns
+                                        Screen.Profiles -> Icons.Outlined.FolderCopy
                                         Screen.Settings -> Icons.Outlined.Settings
-                                        else -> Icons.Outlined.Home
+                                        else -> Icons.Outlined.Dashboard
                                     }
                                 },
                                 contentDescription = screen.route,

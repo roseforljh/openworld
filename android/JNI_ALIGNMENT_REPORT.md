@@ -1,6 +1,6 @@
 ﻿# JNI alignment report
 
-- Time: 2026-02-14 04:30:35
+- Time: 2026-02-14 06:18:25
 - Kotlin declarations: 64
 - Rust exports: 64
 - core_jni_methods items: 52

@@ -68,6 +68,10 @@ sealed class Screen(val route: String) {
     object ProfileEditor : Screen("profile_editor/{profileName}") {
         fun profileEditorRoute(profileName: String): String = "profile_editor/${Uri.encode(profileName)}"
     }
+
+    object NodeCreate : Screen("node_create/{protocol}") {
+        fun createRoute(protocol: String): String = "node_create/${Uri.encode(protocol)}"
+    }
 }
 
 // ── Tab 索引 ──
@@ -339,10 +343,26 @@ fun AppNavigation(navController: NavHostController) {
         ) { backStack ->
             val groupName = Uri.decode(backStack.arguments?.getString("groupName").orEmpty())
             val nodeName = Uri.decode(backStack.arguments?.getString("nodeName").orEmpty())
+            // Pass combined ID to the new NodeDetailScreen
             NodeDetailScreen(
-                groupName = groupName,
-                nodeName = nodeName,
-                onBack = { navController.popBackStack() }
+                navController = navController,
+                nodeId = "$groupName/$nodeName"
+            )
+        }
+
+        composable(
+            route = Screen.NodeCreate.route,
+            arguments = listOf(navArgument("protocol") { type = NavType.StringType }),
+            enterTransition = enterTransition,
+            exitTransition = exitTransition,
+            popEnterTransition = popEnterTransition,
+            popExitTransition = popExitTransition
+        ) { backStack ->
+            val protocol = Uri.decode(backStack.arguments?.getString("protocol").orEmpty())
+            // Pass special ID for creation
+            NodeDetailScreen(
+                navController = navController,
+                nodeId = "new:$protocol"
             )
         }
         composable(

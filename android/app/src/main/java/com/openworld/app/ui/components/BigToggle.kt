@@ -1,109 +1,205 @@
 package com.openworld.app.ui.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PowerSettingsNew
-import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import com.openworld.app.ui.theme.Green500
-import com.openworld.app.ui.theme.Red500
+import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 @Composable
 fun BigToggle(
-    connected: Boolean,
-    connecting: Boolean,
+    isRunning: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
-    // 按下弹簧缩放
-    val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.88f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "press_scale"
+    // Scale animation on press
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1f,
+        animationSpec = tween(durationMillis = 150, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        label = "ScaleAnimation"
     )
 
-    // 断开时浮动动画
-    val infiniteTransition = rememberInfiniteTransition(label = "float")
-    val floatOffset by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = if (!connected && !connecting) 6f else 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "float_offset"
-    )
+    // Use updateTransition for coordinated animations
+    val transition = updateTransition(targetState = isRunning, label = "BigToggleTransition")
 
-    val primaryColor = when {
-        connecting -> Color(0xFFF97316)
-        connected -> Green500
-        else -> Red500
+    // Vertical offset animation - 关闭时下移
+    val verticalOffset by transition.animateDp(
+        transitionSpec = {
+            tween(
+                durationMillis = 600,
+                easing = androidx.compose.animation.core.FastOutSlowInEasing
+            )
+        },
+        label = "VerticalOffset"
+    ) { running ->
+        if (running) 0.dp else 20.dp
     }
 
-    val gradient = Brush.radialGradient(
-        colors = listOf(primaryColor, primaryColor.copy(alpha = 0.6f))
-    )
+    // 控制晃动动画的 key
+    var shakeKey by remember { androidx.compose.runtime.mutableStateOf(0) }
+    LaunchedEffect(isRunning) {
+        if (isRunning) {
+            shakeKey = shakeKey + 1
+        }
+    }
+
+    // 晃动动画
+    val rotation = remember { Animatable(0f) }
+
+    // 弹跳动画
+    val bounceOffset = remember { Animatable(0f) }
+
+    // 关闭状态时的浮动动画
+    val floatOffset = remember { Animatable(0f) }
+
+    // 关闭状态时持续浮动
+    LaunchedEffect(isRunning) {
+        if (!isRunning) {
+            while (true) {
+                val targetOffset = Random.nextFloat() * 12f - 6f
+                val duration = Random.nextInt(1500, 2500)
+                floatOffset.animateTo(
+                    targetValue = targetOffset,
+                    animationSpec = tween(duration, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+                )
+            }
+        } else {
+            floatOffset.animateTo(0f, animationSpec = tween(300))
+        }
+    }
+
+    LaunchedEffect(shakeKey) {
+        if (isRunning) {
+            bounceOffset.snapTo(0f)
+            rotation.snapTo(0f)
+
+            val bounceJob = launch {
+                bounceOffset.animateTo(
+                    targetValue = -40f,
+                    animationSpec = tween(450, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+                )
+                bounceOffset.animateTo(
+                    targetValue = 0f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioLowBouncy,
+                        stiffness = Spring.StiffnessLow
+                    )
+                )
+            }
+
+            val shakeJob = launch {
+                if (isRunning) {
+                    rotation.animateTo(
+                        targetValue = 3f,
+                        animationSpec = tween(120, easing = LinearEasing)
+                    )
+                    rotation.animateTo(
+                        targetValue = -3f,
+                        animationSpec = tween(240, easing = LinearEasing)
+                    )
+                    rotation.animateTo(
+                        targetValue = 0f,
+                        animationSpec = tween(120, easing = LinearEasing)
+                    )
+                }
+                rotation.snapTo(0f)
+            }
+
+            bounceJob.join()
+            shakeJob.join()
+        } else {
+            rotation.snapTo(0f)
+            bounceOffset.snapTo(0f)
+        }
+    }
+
+    val backgroundColor = Color.Transparent
 
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
-            .size(140.dp)
-            .graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
-                translationY = floatOffset
-            }
-            .shadow(
-                elevation = if (connected) 16.dp else 8.dp,
-                shape = CircleShape,
-                ambientColor = primaryColor.copy(alpha = 0.3f),
-                spotColor = primaryColor.copy(alpha = 0.3f)
-            )
-            .clip(CircleShape)
-            .background(gradient)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            )
     ) {
-        Icon(
-            imageVector = Icons.Filled.PowerSettingsNew,
-            contentDescription = if (connected) "断开" else "连接",
-            tint = Color.White,
-            modifier = Modifier.size(48.dp)
-        )
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.offset(y = verticalOffset)
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .scale(scale)
+                    .offset(y = bounceOffset.value.dp + floatOffset.value.dp)
+            ) {
+                AnimatedContent(
+                    targetState = isRunning,
+                    transitionSpec = {
+                        fadeIn(animationSpec = tween(400)) togetherWith
+                            fadeOut(animationSpec = tween(400)) using
+                            SizeTransform(clip = false)
+                    },
+                    label = "IconCrossfade"
+                ) { running ->
+                    val res = if (running) com.openworld.app.R.drawable.gengar_awake else com.openworld.app.R.drawable.gengar_sleep
+                    val imageScale = if (running) 0.75f else 0.75f
+
+                    Image(
+                        painter = painterResource(id = res),
+                        contentDescription = if (running) "Running" else "Idle",
+                        modifier = Modifier
+                            .scale(imageScale)
+                            .offset(x = 0.dp, y = 32.dp)
+                            .graphicsLayer {
+                                rotationZ = rotation.value
+                            }
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(200.dp)
+                        .clip(CircleShape)
+                        .background(backgroundColor)
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = null,
+                            onClick = onClick
+                        )
+                )
+            }
+        }
     }
 }

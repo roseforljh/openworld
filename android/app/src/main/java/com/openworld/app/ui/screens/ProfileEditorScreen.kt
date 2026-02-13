@@ -48,7 +48,7 @@ fun ProfileEditorScreen(
     var intervalHours by remember(profile?.updateIntervalHours) { mutableStateOf((profile?.updateIntervalHours ?: 24).toString()) }
 
     LaunchedEffect(Unit) {
-        viewModel.toastEvent.collect { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+        viewModel.toastEvents.collect { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
     }
 
     Scaffold(

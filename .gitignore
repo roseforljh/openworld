@@ -13,3 +13,10 @@ android/local.properties
 *.aab
 *.iml
 .idea/
+
+# Custom Ignored Files
+*.log
+*.txt
+*.tmp
+
+android/JNI_ALIGNMENT_REPORT.md

@@ -5,8 +5,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -58,9 +60,15 @@ class MainActivity : ComponentActivity() {
                     }
                 ) { innerPadding ->
                     // 仅应用底部 padding（底栏高度），顶部由各页面自行处理
-                    AppNavigation(
-                        navController = navController
-                    )
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(bottom = innerPadding.calculateBottomPadding())
+                    ) {
+                        AppNavigation(
+                            navController = navController
+                        )
+                    }
                 }
             }
         }

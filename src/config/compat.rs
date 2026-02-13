@@ -622,7 +622,7 @@ fn convert_clash_proxy_group(value: &serde_json::Value) -> Result<ProxyGroupConf
         .unwrap_or(150);
 
     let mapped_type = match group_type {
-        "select" => "selector",
+        "select" | "selector" => "selector",
         "url-test" => "url-test",
         "fallback" => "fallback",
         "load-balance" => "load-balance",
@@ -952,6 +952,30 @@ rules:
         assert_eq!(result.config.proxy_groups[1].group_type, "selector");
         assert_eq!(result.config.router.rules.len(), 1);
         assert_eq!(result.config.router.default, "select");
+    }
+
+    #[test]
+    fn parse_clash_proxy_groups_selector_alias() {
+        let yaml = r#"
+mixed-port: 7890
+proxies:
+  - name: ss1
+    type: ss
+    server: 1.2.3.4
+    port: 443
+    cipher: aes-256-gcm
+    password: "p"
+proxy-groups:
+  - name: main
+    type: selector
+    proxies: [ss1]
+rules:
+  - MATCH,main
+"#;
+        let result = parse_clash_config(yaml).unwrap();
+        assert_eq!(result.config.proxy_groups.len(), 1);
+        assert_eq!(result.config.proxy_groups[0].group_type, "selector");
+        assert_eq!(result.config.router.default, "main");
     }
 
     #[test]

@@ -1,5 +1,5 @@
 # Android NDK 交叉编译配置
-# NDK 路径自动检测，使用 NDK 29
+# NDK 路径，使用 NDK 29
 
 [target.aarch64-linux-android]
 linker = "C:/Users/33039/AppData/Local/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android24-clang.cmd"

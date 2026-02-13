@@ -134,12 +134,13 @@ fun AppRulesScreen(
     }
 
     if (showModeDialog) {
+        val options = listOf("whitelist", "blacklist")
         SingleSelectDialog(
             title = "应用分流模式",
-            options = listOf("whitelist", "blacklist"),
-            selectedOption = state.appRoutingMode,
-            onSelect = {
-                viewModel.setAppRoutingMode(it)
+            options = options,
+            selectedIndex = options.indexOf(state.appRoutingMode).coerceAtLeast(0),
+            onSelect = { index ->
+                viewModel.setAppRoutingMode(options[index])
                 showModeDialog = false
             },
             onDismiss = { showModeDialog = false }
@@ -222,12 +223,13 @@ private fun AppRuleEditorDialog(
             onDismiss = onDismiss
         )
         if (showOutboundDialog) {
+            val options = outbounds.ifEmpty { listOf("direct", "proxy", "reject") }
             SingleSelectDialog(
                 title = "目标出站",
-                options = outbounds.ifEmpty { listOf("direct", "proxy", "reject") },
-                selectedOption = outbound,
-                onSelect = {
-                    outbound = it
+                options = options,
+                selectedIndex = options.indexOf(outbound).coerceAtLeast(0),
+                onSelect = { index ->
+                    outbound = options[index]
                     showOutboundDialog = false
                     onConfirm(packageName, outbound)
                 },

@@ -1,230 +1,248 @@
 package com.openworld.app.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Dns
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Route
-import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.SwapVert
-import androidx.compose.material.icons.filled.Timeline
-import androidx.compose.material.icons.outlined.Article
-import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.PlayCircle
-import androidx.compose.material.icons.outlined.Security
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.rounded.Analytics
+import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.Route
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.Upload
+import androidx.compose.material.icons.rounded.VpnKey
+import androidx.compose.material.icons.rounded.Brightness6
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.openworld.app.MainActivity
+import com.openworld.app.R
 import com.openworld.app.model.AppThemeMode
-import com.openworld.app.ui.components.ConfirmDialog
+import com.openworld.app.model.AppLanguage
 import com.openworld.app.ui.components.SettingItem
 import com.openworld.app.ui.components.SettingSwitchItem
-import com.openworld.app.ui.components.SingleSelectDialog
 import com.openworld.app.ui.components.StandardCard
 import com.openworld.app.ui.navigation.Screen
 import com.openworld.app.viewmodel.SettingsViewModel
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     navController: NavController,
     viewModel: SettingsViewModel = viewModel()
 ) {
-    val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
+    val settings by viewModel.settings.collectAsState()
+    // val exportState by viewModel.exportState.collectAsState()
+    // val importState by viewModel.importState.collectAsState()
+
     var showThemeDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
-    var showRestartDialog by remember { mutableStateOf(false) }
+    var isUpdatingRuleSets by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("设置") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
+    // Placeholder for About/Theme/Language Dialogs which reuse SingleSelectDialog or others
+    
+    val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(top = statusBarPadding.calculateTopPadding())
+            .verticalScroll(scrollState)
+            .padding(16.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.settings_title),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        // 1. Connection & Startup
+        SettingsGroupTitle(stringResource(R.string.settings_general))
+        StandardCard {
+            SettingItem(
+                title = stringResource(R.string.settings_app_theme),
+                value = stringResource(settings.appTheme.displayNameRes),
+                icon = Icons.Rounded.Brightness6,
+                onClick = { showThemeDialog = true }
+            )
+            SettingItem(
+                title = stringResource(R.string.settings_app_language),
+                value = stringResource(settings.appLanguage.displayNameRes),
+                icon = Icons.Rounded.Language,
+                onClick = { showLanguageDialog = true }
+            )
+            SettingSwitchItem(
+                title = "自动检查更新",
+                subtitle = "启动应用时自动检查新版本",
+                icon = Icons.Rounded.SystemUpdate,
+                checked = settings.autoCheckUpdate,
+                onCheckedChange = { viewModel.setAutoCheckUpdate(it) }
+            )
+            SettingItem(
+                title = stringResource(R.string.settings_connection_startup),
+                subtitle = stringResource(R.string.settings_connection_startup_subtitle),
+                icon = Icons.Rounded.PowerSettingsNew,
+                onClick = { navController.navigate(Screen.ConnectionSettings.route) }
             )
         }
-    ) { padding ->
-        androidx.compose.foundation.layout.Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Spacer(modifier = Modifier.height(4.dp))
 
-            StandardCard {
-                SettingItem(
-                    title = "主题",
-                    subtitle = "跟随系统 / 浅色 / 深色",
-                    icon = Icons.Outlined.Palette,
-                    onClick = { showThemeDialog = true }
-                )
-                SettingItem(
-                    title = "语言",
-                    subtitle = when (state.appLanguage) {
-                        "zh-cn" -> "简体中文"
-                        "en" -> "English"
-                        else -> "跟随系统"
-                    },
-                    icon = Icons.Filled.Language,
-                    onClick = { showLanguageDialog = true }
-                )
-                SettingItem(
-                    title = "连接与启动",
-                    subtitle = "查看连接模式与启动行为",
-                    icon = Icons.Outlined.PlayCircle,
-                    onClick = { navController.navigate(Screen.ConnectionSettings.route) }
-                )
-            }
+        Spacer(modifier = Modifier.height(16.dp))
 
-            StandardCard {
-                SettingItem(
-                    title = "路由设置",
-                    subtitle = state.routingMode.uppercase(),
-                    icon = Icons.Filled.Route,
-                    onClick = { navController.navigate(Screen.RoutingSettings.route) }
-                )
-                SettingItem(
-                    title = "DNS 设置",
-                    subtitle = "本地: ${state.dnsLocal}",
-                    icon = Icons.Filled.Dns,
-                    onClick = { navController.navigate(Screen.DnsSettings.route) }
-                )
-                SettingItem(
-                    title = "TUN 设置",
-                    subtitle = "MTU ${state.tunMtu} / IPv6 ${if (state.tunIpv6Enabled) "开" else "关"}",
-                    icon = Icons.Outlined.Security,
-                    onClick = { navController.navigate(Screen.TunSettings.route) }
-                )
-            }
-
-            StandardCard {
-                SettingItem(
-                    title = "诊断",
-                    subtitle = "DNS / VPN / Core 状态检测",
-                    icon = Icons.Filled.BugReport,
-                    onClick = { navController.navigate(Screen.Diagnostics.route) }
-                )
-                SettingItem(
-                    title = "数据管理",
-                    subtitle = "备份导出 / 恢复导入",
-                    icon = Icons.Filled.Save,
-                    onClick = { navController.navigate(Screen.DataManagement.route) }
-                )
-            }
-
-            StandardCard {
-                SettingSwitchItem(
-                    title = "调试日志",
-                    subtitle = "启用后将显示更多日志",
-                    icon = Icons.Outlined.Article,
-                    checked = state.debugLogging,
-                    onCheckedChange = { viewModel.setDebugLoggingEnabled(it) }
-                )
-                SettingItem(
-                    title = "运行日志",
-                    subtitle = "查看内核运行日志",
-                    icon = Icons.Outlined.Article,
-                    onClick = { navController.navigate(Screen.Logs.route) }
-                )
-            }
-
-            StandardCard {
-                SettingItem(
-                    title = "流量统计",
-                    subtitle = "按出站分组查看流量",
-                    icon = Icons.Filled.Timeline,
-                    onClick = { navController.navigate(Screen.TrafficStats.route) }
-                )
-                SettingItem(
-                    title = "活跃连接",
-                    subtitle = "查看当前连接状态",
-                    icon = Icons.Filled.SwapVert,
-                    onClick = { navController.navigate(Screen.Connections.route) }
-                )
-            }
-
-            StandardCard {
-                SettingItem(
-                    title = "关于 OpenWorld",
-                    subtitle = "v${state.appVersion} / 内核 ${state.coreVersion}",
-                    icon = Icons.Filled.Info,
-                    onClick = { navController.navigate(Screen.About.route) }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
+        // 2. Network
+        SettingsGroupTitle(stringResource(R.string.settings_network))
+        StandardCard {
+            SettingItem(
+                title = stringResource(R.string.settings_routing),
+                subtitle = stringResource(R.string.settings_routing_subtitle),
+                icon = Icons.Rounded.Route,
+                onClick = { navController.navigate(Screen.RoutingSettings.route) }
+            )
+            SettingItem(
+                title = stringResource(R.string.settings_dns),
+                value = stringResource(R.string.settings_dns_auto),
+                icon = Icons.Rounded.Dns,
+                onClick = { navController.navigate(Screen.DnsSettings.route) }
+            )
+            SettingItem(
+                title = stringResource(R.string.settings_tun_vpn),
+                subtitle = stringResource(R.string.settings_tun_vpn_subtitle),
+                icon = Icons.Rounded.VpnKey,
+                onClick = { navController.navigate(Screen.TunSettings.route) }
+            )
         }
-    }
 
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 3. Tools
+        SettingsGroupTitle(stringResource(R.string.settings_tools))
+        StandardCard {
+            SettingSwitchItem(
+                title = stringResource(R.string.settings_ruleset_auto_update),
+                subtitle = if (settings.ruleSetAutoUpdateEnabled)
+                    stringResource(R.string.settings_ruleset_auto_update_enabled, settings.ruleSetAutoUpdateInterval)
+                else
+                    stringResource(R.string.settings_ruleset_auto_update_disabled),
+                icon = Icons.Rounded.Schedule,
+                checked = settings.ruleSetAutoUpdateEnabled,
+                onCheckedChange = { viewModel.setRuleSetAutoUpdateEnabled(it) }
+            )
+             SettingSwitchItem(
+                title = stringResource(R.string.settings_debug_mode),
+                subtitle = stringResource(R.string.settings_debug_mode_subtitle),
+                icon = Icons.Rounded.BugReport,
+                checked = settings.debugLoggingEnabled,
+                onCheckedChange = { viewModel.setDebugLoggingEnabled(it) }
+            )
+            SettingItem(
+                title = stringResource(R.string.settings_logs),
+                icon = Icons.Rounded.History,
+                onClick = { navController.navigate(Screen.Logs.route) }
+            )
+            SettingItem(
+                title = stringResource(R.string.settings_network_diagnostics),
+                icon = Icons.Rounded.BugReport,
+                onClick = { navController.navigate(Screen.Diagnostics.route) }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 4. Data
+        SettingsGroupTitle(stringResource(R.string.settings_data_management))
+        StandardCard {
+            SettingItem(
+                title = "流量统计",
+                subtitle = "查看各节点流量使用情况",
+                icon = Icons.Rounded.Analytics,
+                onClick = { navController.navigate(Screen.TrafficStats.route) }
+            )
+            SettingItem(
+                title = stringResource(R.string.settings_export_data),
+                subtitle = stringResource(R.string.settings_export_data_subtitle),
+                icon = Icons.Rounded.Upload,
+                onClick = {
+                    Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
+                }
+            )
+            SettingItem(
+                title = stringResource(R.string.settings_import_data),
+                subtitle = stringResource(R.string.settings_import_data_subtitle),
+                icon = Icons.Rounded.Download,
+                onClick = {
+                     Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 5. About
+        SettingsGroupTitle(stringResource(R.string.settings_about))
+        StandardCard {
+            SettingItem(
+                title = stringResource(R.string.settings_about_app),
+                icon = Icons.Rounded.Info,
+                onClick = { 
+                     // showAboutDialog = true 
+                     Toast.makeText(context, "OpenWorld v0.1.0", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+    }
+    
+    // Dialogs placeholders
     if (showThemeDialog) {
-        val activity = context as? MainActivity
-        SingleSelectDialog(
-            title = "选择主题",
-            options = listOf("SYSTEM", "LIGHT", "DARK"),
-            selectedOption = state.appTheme,
-            onSelect = {
-                viewModel.setAppTheme(it)
-                activity?.updateTheme(AppThemeMode.valueOf(it))
-                showThemeDialog = false
-            },
-            onDismiss = { showThemeDialog = false }
-        )
-    }
-
-    if (showLanguageDialog) {
-        SingleSelectDialog(
-            title = "选择语言",
-            options = listOf("system", "zh-cn", "en"),
-            selectedOption = state.appLanguage,
-            onSelect = {
-                viewModel.setAppLanguage(it)
-                showLanguageDialog = false
-                showRestartDialog = true
-            },
-            onDismiss = { showLanguageDialog = false }
-        )
-    }
-
-    if (showRestartDialog) {
-        val activity = context as? MainActivity
-        ConfirmDialog(
-            title = "重启提示",
-            message = "语言切换将在重启应用后完全生效，是否立即重启？",
-            confirmText = "立即重启",
-            onConfirm = {
-                showRestartDialog = false
-                activity?.recreate()
-            },
-            onDismiss = { showRestartDialog = false }
-        )
+        // Implement Theme Dialog or use SingleSelectDialog if replicated
     }
 }
 
+@Composable
+fun SettingsGroupTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onBackground,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
+    )
+}

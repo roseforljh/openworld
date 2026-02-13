@@ -255,12 +255,13 @@ private fun DomainRuleEditorDialog(
                 onDismiss = onDismiss
             )
             if (showTypeDialog) {
+                val options = listOf("suffix", "keyword", "full")
                 SingleSelectDialog(
                     title = "匹配类型",
-                    options = listOf("suffix", "keyword", "full"),
-                    selectedOption = type,
-                    onSelect = {
-                        type = it
+                    options = options,
+                    selectedIndex = options.indexOf(type).coerceAtLeast(0),
+                    onSelect = { index ->
+                        type = options[index]
                         showTypeDialog = false
                         step = 2
                     },
@@ -280,12 +281,13 @@ private fun DomainRuleEditorDialog(
                 onDismiss = onDismiss
             )
             if (showOutboundDialog) {
+                val options = outbounds.ifEmpty { listOf("direct", "proxy", "reject") }
                 SingleSelectDialog(
                     title = "目标出站",
-                    options = outbounds.ifEmpty { listOf("direct", "proxy", "reject") },
-                    selectedOption = outbound,
-                    onSelect = {
-                        outbound = it
+                    options = options,
+                    selectedIndex = options.indexOf(outbound).coerceAtLeast(0),
+                    onSelect = { index ->
+                        outbound = options[index]
                         showOutboundDialog = false
                         onConfirm(type, domain, outbound)
                     },
