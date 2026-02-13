@@ -1,0 +1,29 @@
+# OpenWorld 实测配置
+log:
+  level: info
+
+inbounds:
+  - tag: mixed-in
+    protocol: mixed
+    listen: "127.0.0.1"
+    port: 17890
+    sniffing:
+      enabled: true
+
+outbounds:
+  - tag: direct
+    protocol: direct
+
+  - tag: reject
+    protocol: reject
+
+router:
+  rules:
+    - type: domain-keyword
+      values: [ads, tracker, adservice]
+      outbound: reject
+  default: direct
+
+api:
+  listen: "127.0.0.1"
+  port: 19090

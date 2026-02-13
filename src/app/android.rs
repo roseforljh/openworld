@@ -22,6 +22,8 @@ mod jni_exports {
         unsafe { ffi::openworld_free_string(ptr) }; r
     }
 
+    // ─── 生命周期 ──────────────────────────────────────────────────────
+
     #[no_mangle]
     pub extern "system" fn Java_com_openworld_core_OpenWorldCore_start(
         mut env: JNIEnv, _c: JClass, config: JString,
@@ -40,6 +42,8 @@ mod jni_exports {
     #[no_mangle]
     pub extern "system" fn Java_com_openworld_core_OpenWorldCore_version(env: JNIEnv, _c: JClass) -> jstring { ffi_str_to_jstring(&env, ffi::openworld_version()) }
 
+    // ─── 暂停/恢复 ──────────────────────────────────────────────────────
+
     #[no_mangle]
     pub extern "system" fn Java_com_openworld_core_OpenWorldCore_pause(_e: JNIEnv, _c: JClass) -> jboolean { ok(ffi::openworld_pause()) }
 
@@ -48,6 +52,8 @@ mod jni_exports {
 
     #[no_mangle]
     pub extern "system" fn Java_com_openworld_core_OpenWorldCore_isPaused(_e: JNIEnv, _c: JClass) -> jboolean { jb(ffi::openworld_is_paused() == 1) }
+
+    // ─── 出站管理 ──────────────────────────────────────────────────────
 
     #[no_mangle]
     pub extern "system" fn Java_com_openworld_core_OpenWorldCore_selectOutbound(mut env: JNIEnv, _c: JClass, tag: JString) -> jboolean {
@@ -65,6 +71,8 @@ mod jni_exports {
     #[no_mangle]
     pub extern "system" fn Java_com_openworld_core_OpenWorldCore_hasSelector(_e: JNIEnv, _c: JClass) -> jboolean { jb(ffi::openworld_has_selector() == 1) }
 
+    // ─── 流量统计 ──────────────────────────────────────────────────────
+
     #[no_mangle]
     pub extern "system" fn Java_com_openworld_core_OpenWorldCore_getTrafficTotalUplink(_e: JNIEnv, _c: JClass) -> jlong { ffi::openworld_get_upload_total() }
 
@@ -73,6 +81,8 @@ mod jni_exports {
 
     #[no_mangle]
     pub extern "system" fn Java_com_openworld_core_OpenWorldCore_resetTrafficStats(_e: JNIEnv, _c: JClass) -> jboolean { ok(ffi::openworld_reset_traffic()) }
+
+    // ─── 连接管理 ──────────────────────────────────────────────────────
 
     #[no_mangle]
     pub extern "system" fn Java_com_openworld_core_OpenWorldCore_getConnectionCount(_e: JNIEnv, _c: JClass) -> jlong { ffi::openworld_get_connection_count() as jlong }
@@ -83,11 +93,111 @@ mod jni_exports {
     #[no_mangle]
     pub extern "system" fn Java_com_openworld_core_OpenWorldCore_closeIdleConnections(_e: JNIEnv, _c: JClass, secs: jlong) -> jlong { ffi::openworld_close_idle_connections(secs) as jlong }
 
+    // ─── 网络恢复 & TUN ──────────────────────────────────────────────
+
     #[no_mangle]
     pub extern "system" fn Java_com_openworld_core_OpenWorldCore_recoverNetworkAuto(_e: JNIEnv, _c: JClass) -> jboolean { ok(ffi::openworld_recover_network_auto()) }
 
     #[no_mangle]
     pub extern "system" fn Java_com_openworld_core_OpenWorldCore_setTunFd(_e: JNIEnv, _c: JClass, fd: jint) -> jint { ffi::openworld_set_tun_fd(fd) }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 新增 JNI 方法（Phase 3）
+    // ═══════════════════════════════════════════════════════════════════
+
+    // ─── 配置热重载 ──────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_reloadConfig(
+        mut env: JNIEnv, _c: JClass, config: JString,
+    ) -> jint {
+        let s: String = match env.get_string(&config) { Ok(s) => s.into(), Err(_) => return -3 };
+        let cs = match std::ffi::CString::new(s) { Ok(s) => s, Err(_) => return -3 };
+        unsafe { ffi::openworld_reload_config(cs.as_ptr()) }
+    }
+
+    // ─── 代理组管理 ──────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_getProxyGroups(env: JNIEnv, _c: JClass) -> jstring {
+        ffi_str_to_jstring(&env, ffi::openworld_get_proxy_groups())
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_setGroupSelected(
+        mut env: JNIEnv, _c: JClass, group: JString, proxy: JString,
+    ) -> jboolean {
+        let g: String = match env.get_string(&group) { Ok(s) => s.into(), Err(_) => return JNI_FALSE };
+        let p: String = match env.get_string(&proxy) { Ok(s) => s.into(), Err(_) => return JNI_FALSE };
+        let cg = match std::ffi::CString::new(g) { Ok(s) => s, Err(_) => return JNI_FALSE };
+        let cp = match std::ffi::CString::new(p) { Ok(s) => s, Err(_) => return JNI_FALSE };
+        ok(unsafe { ffi::openworld_set_group_selected(cg.as_ptr(), cp.as_ptr()) })
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_testGroupDelay(
+        mut env: JNIEnv, _c: JClass, group: JString, url: JString, timeout_ms: jint,
+    ) -> jstring {
+        let g: String = match env.get_string(&group) { Ok(s) => s.into(), Err(_) => return std::ptr::null_mut() };
+        let u: String = match env.get_string(&url) { Ok(s) => s.into(), Err(_) => return std::ptr::null_mut() };
+        let cg = match std::ffi::CString::new(g) { Ok(s) => s, Err(_) => return std::ptr::null_mut() };
+        let cu = match std::ffi::CString::new(u) { Ok(s) => s, Err(_) => return std::ptr::null_mut() };
+        ffi_str_to_jstring(&env, unsafe { ffi::openworld_test_group_delay(cg.as_ptr(), cu.as_ptr(), timeout_ms) })
+    }
+
+    // ─── 活跃连接 ──────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_getActiveConnections(env: JNIEnv, _c: JClass) -> jstring {
+        ffi_str_to_jstring(&env, ffi::openworld_get_active_connections())
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_closeConnectionById(_e: JNIEnv, _c: JClass, id: jlong) -> jboolean {
+        ok(ffi::openworld_close_connection_by_id(id as u64))
+    }
+
+    // ─── 流量快照 ──────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_getTrafficSnapshot(env: JNIEnv, _c: JClass) -> jstring {
+        ffi_str_to_jstring(&env, ffi::openworld_get_traffic_snapshot())
+    }
+
+    // ─── 订阅 ──────────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_importSubscription(
+        mut env: JNIEnv, _c: JClass, url: JString,
+    ) -> jstring {
+        let u: String = match env.get_string(&url) { Ok(s) => s.into(), Err(_) => return std::ptr::null_mut() };
+        let cu = match std::ffi::CString::new(u) { Ok(s) => s, Err(_) => return std::ptr::null_mut() };
+        ffi_str_to_jstring(&env, unsafe { ffi::openworld_import_subscription(cu.as_ptr()) })
+    }
+
+    // ─── 系统 DNS ──────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_setSystemDns(
+        mut env: JNIEnv, _c: JClass, dns: JString,
+    ) -> jboolean {
+        let d: String = match env.get_string(&dns) { Ok(s) => s.into(), Err(_) => return JNI_FALSE };
+        let cd = match std::ffi::CString::new(d) { Ok(s) => s, Err(_) => return JNI_FALSE };
+        ok(unsafe { ffi::openworld_set_system_dns(cd.as_ptr()) })
+    }
+
+    // ─── 延迟测试 ──────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_urlTest(
+        mut env: JNIEnv, _c: JClass, tag: JString, url: JString, timeout_ms: jint,
+    ) -> jint {
+        let t: String = match env.get_string(&tag) { Ok(s) => s.into(), Err(_) => return -3 };
+        let u: String = match env.get_string(&url) { Ok(s) => s.into(), Err(_) => return -3 };
+        let ct = match std::ffi::CString::new(t) { Ok(s) => s, Err(_) => return -3 };
+        let cu = match std::ffi::CString::new(u) { Ok(s) => s, Err(_) => return -3 };
+        unsafe { ffi::openworld_url_test(ct.as_ptr(), cu.as_ptr(), timeout_ms) }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -124,6 +234,7 @@ impl JniMethodSignature {
 pub fn core_jni_methods() -> Vec<JniMethodSignature> {
     let c = "com/openworld/core/OpenWorldCore";
     vec![
+        // 原有方法
         JniMethodSignature::new(c, "start", "(Ljava/lang/String;)I", true),
         JniMethodSignature::new(c, "stop", "()I", true),
         JniMethodSignature::new(c, "isRunning", "()Z", true),
@@ -143,6 +254,17 @@ pub fn core_jni_methods() -> Vec<JniMethodSignature> {
         JniMethodSignature::new(c, "closeIdleConnections", "(J)J", true),
         JniMethodSignature::new(c, "recoverNetworkAuto", "()Z", true),
         JniMethodSignature::new(c, "setTunFd", "(I)I", true),
+        // Phase 3 新增方法
+        JniMethodSignature::new(c, "reloadConfig", "(Ljava/lang/String;)I", true),
+        JniMethodSignature::new(c, "getProxyGroups", "()Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "setGroupSelected", "(Ljava/lang/String;Ljava/lang/String;)Z", true),
+        JniMethodSignature::new(c, "testGroupDelay", "(Ljava/lang/String;Ljava/lang/String;I)Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "getActiveConnections", "()Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "closeConnectionById", "(J)Z", true),
+        JniMethodSignature::new(c, "getTrafficSnapshot", "()Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "importSubscription", "(Ljava/lang/String;)Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "setSystemDns", "(Ljava/lang/String;)Z", true),
+        JniMethodSignature::new(c, "urlTest", "(Ljava/lang/String;Ljava/lang/String;I)I", true),
     ]
 }
 

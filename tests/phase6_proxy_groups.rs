@@ -290,6 +290,7 @@ fn config_validate_proxy_group_reference_ok() {
             strategy: None,
         }],
         max_connections: 10000,
+        derp: None,
     };
 
     assert!(config.validate().is_ok());
@@ -334,6 +335,7 @@ fn config_validate_proxy_group_unknown_proxy_fails() {
             strategy: None,
         }],
         max_connections: 10000,
+        derp: None,
     };
 
     let err = config.validate().unwrap_err();
@@ -383,6 +385,7 @@ fn config_validate_router_default_can_be_group() {
             strategy: None,
         }],
         max_connections: 10000,
+        derp: None,
     };
 
     assert!(config.validate().is_ok());
@@ -531,6 +534,7 @@ async fn start_test_api_with_group() -> String {
         config_path: None,
         log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
         start_time: std::time::Instant::now(),
+        ss_inbound: None,
     };
 
     let app = axum::Router::new()

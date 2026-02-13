@@ -48,6 +48,7 @@ async fn start_test_api() -> String {
         config_path: None,
         log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
         start_time: std::time::Instant::now(),
+        ss_inbound: None,
     };
 
     let app = axum::Router::new()

@@ -190,7 +190,7 @@ impl ProxyProviderManager {
 }
 
 /// Parse provider content (auto-detect format)
-fn parse_provider_content(content: &str) -> Result<Vec<ProxyNode>> {
+pub fn parse_provider_content(content: &str) -> Result<Vec<ProxyNode>> {
     let format = subscription::detect_format(content);
     match format {
         subscription::SubFormat::ClashYaml => subscription::parse_clash_yaml_nodes(content),
