@@ -587,8 +587,9 @@ pub unsafe extern "C" fn openworld_url_test(
                     timestamp: ts,
                 });
                 // 限制最多保留 1000 条
-                if history.len() > 1000 {
-                    history.drain(0..history.len() - 1000);
+                let hlen = history.len();
+                if hlen > 1000 {
+                    history.drain(0..hlen - 1000);
                 }
             }
             delay
@@ -1794,8 +1795,9 @@ pub unsafe extern "C" fn openworld_auto_test_start(
                                         delay_ms: delay.map(|d| d as i32).unwrap_or(-1),
                                         timestamp: ts,
                                     });
-                                    if history.len() > 1000 {
-                                        history.drain(0..history.len() - 1000);
+                                    let hlen = history.len();
+                                    if hlen > 1000 {
+                                        history.drain(0..hlen - 1000);
                                     }
                                 }
                             }
@@ -1853,8 +1855,9 @@ pub extern "C" fn openworld_gc() -> i32 {
             });
             // 清理过旧的延迟历史（保留最近 200 条）
             if let Ok(mut history) = delay_history_lock().lock() {
-                if history.len() > 200 {
-                    history.drain(0..history.len() - 200);
+                let hlen = history.len();
+                if hlen > 200 {
+                    history.drain(0..hlen - 200);
                 }
             }
             closed as i32
@@ -1878,9 +1881,8 @@ pub extern "C" fn openworld_memory_usage() -> *mut c_char {
             let (active, up, down) = inst.runtime.block_on(async {
                 let connections = tracker.list().await;
                 let active = connections.len();
-                let up = tracker.total_upload();
-                let down = tracker.total_download();
-                (active, up, down)
+                let snap = tracker.snapshot();
+                (active, snap.total_up, snap.total_down)
             });
             let json = serde_json::json!({
                 "active_connections": active,
@@ -2056,7 +2058,8 @@ pub extern "C" fn openworld_notification_content() -> *mut c_char {
             let tracker = inst.tracker.clone();
             let (active, up, down) = inst.runtime.block_on(async {
                 let conns = tracker.list().await;
-                (conns.len(), tracker.total_upload(), tracker.total_download())
+                let snap = tracker.snapshot();
+                (conns.len(), snap.total_up, snap.total_down)
             });
             let paused = inst.paused.load(std::sync::atomic::Ordering::Relaxed);
             let json = serde_json::json!({

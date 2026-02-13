@@ -10,8 +10,7 @@ use anyhow::Result;
 use base64::Engine;
 use tracing::debug;
 
-use crate::config::types::OutboundConfig;
-use crate::config::types::OutboundSettings;
+use crate::config::types::{OutboundConfig, OutboundSettings, TransportConfig, TlsConfig};
 
 // ─── 公共接口 ───
 
@@ -117,6 +116,14 @@ pub fn parse_proxy_uri(uri: &str) -> Result<OutboundConfig> {
         parse_trojan_uri(rest)
     } else if let Some(rest) = uri.strip_prefix("hysteria2://").or_else(|| uri.strip_prefix("hy2://")) {
         parse_hy2_uri(rest)
+    } else if let Some(rest) = uri.strip_prefix("tuic://") {
+        parse_tuic_uri(rest)
+    } else if let Some(rest) = uri.strip_prefix("wg://").or_else(|| uri.strip_prefix("wireguard://")) {
+        parse_wg_uri(rest)
+    } else if let Some(rest) = uri.strip_prefix("ssh://") {
+        parse_ssh_uri(rest)
+    } else if let Some(rest) = uri.strip_prefix("hysteria://") {
+        parse_hy1_uri(rest)
     } else {
         anyhow::bail!("unsupported proxy URI scheme: {}", uri.split("://").next().unwrap_or("?"))
     }
@@ -143,6 +150,33 @@ fn parse_vmess_uri(encoded: &str) -> Result<OutboundConfig> {
         None
     };
 
+    // 传输层: net/path/host
+    let net = v["net"].as_str().unwrap_or("tcp");
+    let transport = if net != "tcp" {
+        let ws_path = v["path"].as_str().map(String::from);
+        let ws_host = v["host"].as_str().map(String::from);
+        Some(TransportConfig {
+            transport_type: net.to_string(),
+            path: ws_path,
+            host: ws_host,
+            service_name: if net == "grpc" { v["path"].as_str().map(String::from) } else { None },
+            ..Default::default()
+        })
+    } else {
+        None
+    };
+
+    let tls = if security.as_deref() == Some("tls") {
+        Some(TlsConfig {
+            enabled: true,
+            security: "tls".to_string(),
+            sni: sni.clone(),
+            ..Default::default()
+        })
+    } else {
+        None
+    };
+
     Ok(OutboundConfig {
         tag,
         protocol: "vmess".to_string(),
@@ -153,6 +187,8 @@ fn parse_vmess_uri(encoded: &str) -> Result<OutboundConfig> {
             alter_id: Some(alter_id),
             sni,
             security,
+            transport,
+            tls,
             ..Default::default()
         },
     })
@@ -182,6 +218,9 @@ fn parse_vless_uri(rest: &str) -> Result<OutboundConfig> {
     let short_id = params.get("sid").cloned();
     let server_name = params.get("serverName").or(params.get("sni")).cloned();
 
+    let transport = extract_transport_from_params(&params);
+    let tls = extract_tls_from_params(&params, sni.clone());
+
     Ok(OutboundConfig {
         tag,
         protocol: "vless".to_string(),
@@ -196,6 +235,8 @@ fn parse_vless_uri(rest: &str) -> Result<OutboundConfig> {
             public_key,
             short_id,
             server_name,
+            transport,
+            tls,
             ..Default::default()
         },
     })
@@ -269,6 +310,8 @@ fn parse_trojan_uri(rest: &str) -> Result<OutboundConfig> {
 
     let params = parse_query_params(params_str);
     let sni = params.get("sni").cloned().or_else(|| Some(host.clone()));
+    let transport = extract_transport_from_params(&params);
+    let tls = extract_tls_from_params(&params, sni.clone());
 
     Ok(OutboundConfig {
         tag,
@@ -279,6 +322,8 @@ fn parse_trojan_uri(rest: &str) -> Result<OutboundConfig> {
             password: Some(password),
             sni,
             security: Some("tls".to_string()),
+            transport,
+            tls,
             ..Default::default()
         },
     })
@@ -308,6 +353,169 @@ fn parse_hy2_uri(rest: &str) -> Result<OutboundConfig> {
             password: Some(password.to_string()),
             sni,
             allow_insecure: insecure,
+            ..Default::default()
+        },
+    })
+}
+
+// ─── TUIC URI ───
+
+fn parse_tuic_uri(rest: &str) -> Result<OutboundConfig> {
+    // tuic://uuid:password@host:port?congestion_control=bbr&alpn=h3#tag
+    let (main, tag) = rest.rsplit_once('#').unwrap_or((rest, "tuic"));
+    let tag = url_decode(tag).unwrap_or_else(|_| tag.into()).to_string();
+
+    let (userinfo, host_params) = main.split_once('@').ok_or_else(|| anyhow::anyhow!("tuic: missing @"))?;
+    let (uuid, password) = userinfo.split_once(':').ok_or_else(|| anyhow::anyhow!("tuic: missing password after uuid"))?;
+
+    let (host_port, params_str) = host_params.split_once('?').unwrap_or((host_params, ""));
+    let (host, port_str) = parse_host_port(host_port)?;
+    let port: u16 = port_str.parse()?;
+
+    let params = parse_query_params(params_str);
+    let sni = params.get("sni").cloned();
+    let congestion_control = params.get("congestion_control")
+        .or(params.get("congestion-controller"))
+        .cloned();
+    let alpn = params.get("alpn").map(|a| a.split(',').map(String::from).collect::<Vec<_>>());
+    let allow_insecure = params.get("insecure").or(params.get("allowInsecure"))
+        .map(|v| v == "1" || v == "true").unwrap_or(false);
+
+    let tls = Some(TlsConfig {
+        enabled: true,
+        security: "tls".to_string(),
+        sni: sni.clone(),
+        alpn,
+        allow_insecure,
+        ..Default::default()
+    });
+
+    Ok(OutboundConfig {
+        tag,
+        protocol: "tuic".to_string(),
+        settings: OutboundSettings {
+            address: Some(host),
+            port: Some(port),
+            uuid: Some(uuid.to_string()),
+            password: Some(password.to_string()),
+            congestion_control,
+            sni,
+            security: Some("tls".to_string()),
+            tls,
+            ..Default::default()
+        },
+    })
+}
+
+// ─── WireGuard URI ───
+
+fn parse_wg_uri(rest: &str) -> Result<OutboundConfig> {
+    // wg://privkey@host:port?publickey=xxx&address=10.0.0.1/32&mtu=1280#tag
+    let (main, tag) = rest.rsplit_once('#').unwrap_or((rest, "wireguard"));
+    let tag = url_decode(tag).unwrap_or_else(|_| tag.into()).to_string();
+
+    let (private_key, host_params) = main.split_once('@').ok_or_else(|| anyhow::anyhow!("wg: missing @"))?;
+    let private_key = url_decode(private_key).unwrap_or_else(|_| private_key.into()).to_string();
+
+    let (host_port, params_str) = host_params.split_once('?').unwrap_or((host_params, ""));
+    let (host, port_str) = parse_host_port(host_port)?;
+    let port: u16 = port_str.parse()?;
+
+    let params = parse_query_params(params_str);
+    let peer_public_key = params.get("publickey").or(params.get("public-key")).cloned();
+    let preshared_key = params.get("presharedkey").or(params.get("pre-shared-key")).cloned();
+    let local_address = params.get("address").or(params.get("ip")).cloned();
+    let mtu = params.get("mtu").and_then(|v| v.parse().ok());
+    let keepalive = params.get("keepalive").and_then(|v| v.parse().ok());
+
+    Ok(OutboundConfig {
+        tag,
+        protocol: "wireguard".to_string(),
+        settings: OutboundSettings {
+            address: Some(host),
+            port: Some(port),
+            private_key: Some(private_key),
+            peer_public_key,
+            preshared_key,
+            local_address,
+            mtu,
+            keepalive,
+            ..Default::default()
+        },
+    })
+}
+
+// ─── SSH URI ───
+
+fn parse_ssh_uri(rest: &str) -> Result<OutboundConfig> {
+    // ssh://user:pass@host:port#tag
+    let (main, tag) = rest.rsplit_once('#').unwrap_or((rest, "ssh"));
+    let tag = url_decode(tag).unwrap_or_else(|_| tag.into()).to_string();
+
+    let (userinfo, host_port) = main.split_once('@').ok_or_else(|| anyhow::anyhow!("ssh: missing @"))?;
+    let (username, password) = userinfo.split_once(':').unwrap_or((userinfo, ""));
+    let username = url_decode(username).unwrap_or_else(|_| username.into()).to_string();
+    let password = url_decode(password).unwrap_or_else(|_| password.into()).to_string();
+
+    let (host, port_str) = parse_host_port(host_port)?;
+    let port: u16 = port_str.parse()?;
+
+    Ok(OutboundConfig {
+        tag,
+        protocol: "ssh".to_string(),
+        settings: OutboundSettings {
+            address: Some(host),
+            port: Some(port),
+            username: Some(username),
+            password: if password.is_empty() { None } else { Some(password) },
+            ..Default::default()
+        },
+    })
+}
+
+// ─── Hysteria v1 URI ───
+
+fn parse_hy1_uri(rest: &str) -> Result<OutboundConfig> {
+    // hysteria://host:port?auth=xxx&obfs=xplus&obfsParam=yyy&upmbps=100&downmbps=100&sni=xxx#tag
+    let (main, tag) = rest.rsplit_once('#').unwrap_or((rest, "hysteria"));
+    let tag = url_decode(tag).unwrap_or_else(|_| tag.into()).to_string();
+
+    let (host_port, params_str) = main.split_once('?').unwrap_or((main, ""));
+    let (host, port_str) = parse_host_port(host_port)?;
+    let port: u16 = port_str.parse()?;
+
+    let params = parse_query_params(params_str);
+    let password = params.get("auth").or(params.get("auth_str")).cloned();
+    let sni = params.get("sni").or(params.get("peer")).cloned();
+    let obfs = params.get("obfs").cloned();
+    let obfs_password = params.get("obfsParam").or(params.get("obfs-password")).cloned();
+    let up_mbps = params.get("upmbps").or(params.get("up")).and_then(|v| v.parse().ok());
+    let down_mbps = params.get("downmbps").or(params.get("down")).and_then(|v| v.parse().ok());
+    let allow_insecure = params.get("insecure").map(|v| v == "1" || v == "true").unwrap_or(false);
+    let alpn = params.get("alpn").map(|a| a.split(',').map(String::from).collect::<Vec<_>>());
+
+    let tls = Some(TlsConfig {
+        enabled: true,
+        security: "tls".to_string(),
+        sni: sni.clone(),
+        alpn,
+        allow_insecure,
+        ..Default::default()
+    });
+
+    Ok(OutboundConfig {
+        tag,
+        protocol: "hysteria".to_string(),
+        settings: OutboundSettings {
+            address: Some(host),
+            port: Some(port),
+            password,
+            sni,
+            obfs,
+            obfs_password,
+            up_mbps,
+            down_mbps,
+            tls,
             ..Default::default()
         },
     })
@@ -343,6 +551,8 @@ fn parse_clash_proxy(v: &serde_yml::Value) -> Option<OutboundConfig> {
         "hysteria2" | "hy2" => "hysteria2",
         "hysteria" => "hysteria",
         "wireguard" | "wg" => "wireguard",
+        "tuic" => "tuic",
+        "ssh" => "ssh",
         _ => return None,
     };
 
@@ -355,6 +565,76 @@ fn parse_clash_proxy(v: &serde_yml::Value) -> Option<OutboundConfig> {
     let alter_id = v["alterId"].as_u64().map(|v| v as u16);
     let up_mbps = v["up"].as_u64().or(v["up_mbps"].as_u64());
     let down_mbps = v["down"].as_u64().or(v["down_mbps"].as_u64());
+
+    // 传输层解析
+    let network = v["network"].as_str().unwrap_or("tcp");
+    let transport = if network != "tcp" {
+        let mut path = None;
+        let mut host = None;
+        let mut service_name = None;
+        match network {
+            "ws" => {
+                if let Some(opts) = v.get("ws-opts").or(v.get("ws-opt")) {
+                    path = opts["path"].as_str().map(String::from);
+                    host = opts["headers"]["Host"].as_str().map(String::from);
+                }
+            }
+            "grpc" => {
+                if let Some(opts) = v.get("grpc-opts").or(v.get("grpc-opt")) {
+                    service_name = opts["grpc-service-name"].as_str().map(String::from);
+                }
+            }
+            "h2" => {
+                if let Some(opts) = v.get("h2-opts").or(v.get("h2-opt")) {
+                    path = opts["path"].as_str().map(String::from);
+                    host = opts["host"].as_sequence().and_then(|s| s.first())
+                        .and_then(|v| v.as_str()).map(String::from);
+                }
+            }
+            "http" => {
+                if let Some(opts) = v.get("http-opts") {
+                    path = opts["path"].as_sequence().and_then(|s| s.first())
+                        .and_then(|v| v.as_str()).map(String::from);
+                    host = opts["headers"]["Host"].as_sequence().and_then(|s| s.first())
+                        .and_then(|v| v.as_str()).map(String::from);
+                }
+            }
+            _ => {}
+        }
+        Some(TransportConfig {
+            transport_type: network.to_string(),
+            path, host, service_name,
+            ..Default::default()
+        })
+    } else {
+        None
+    };
+
+    // TLS 配置
+    let tls_enabled = v["tls"].as_bool().unwrap_or(false)
+        || protocol == "trojan" || protocol == "vless";
+    let tls = if tls_enabled {
+        Some(TlsConfig {
+            enabled: true,
+            security: "tls".to_string(),
+            sni: sni.clone(),
+            allow_insecure,
+            fingerprint: v["client-fingerprint"].as_str().map(String::from),
+            ..Default::default()
+        })
+    } else {
+        None
+    };
+
+    // WireGuard 特殊字段
+    let private_key = v["private-key"].as_str().map(String::from);
+    let peer_public_key = v["public-key"].as_str().map(String::from);
+    let local_address = v["ip"].as_str().map(String::from);
+    let mtu = v["mtu"].as_u64().map(|v| v as u16);
+    // TUIC 特殊字段
+    let congestion_control = v["congestion-controller"].as_str().map(String::from);
+    // SSH 特殊字段
+    let username = v["username"].as_str().map(String::from);
 
     Some(OutboundConfig {
         tag: name,
@@ -371,6 +651,14 @@ fn parse_clash_proxy(v: &serde_yml::Value) -> Option<OutboundConfig> {
             alter_id,
             up_mbps,
             down_mbps,
+            transport,
+            tls,
+            private_key,
+            peer_public_key,
+            local_address,
+            mtu,
+            congestion_control,
+            username,
             ..Default::default()
         },
     })
@@ -398,14 +686,45 @@ fn parse_singbox_json(content: &str) -> Result<Vec<OutboundConfig>> {
         let method = ob["method"].as_str().map(String::from);
         let flow = ob["flow"].as_str().map(String::from);
 
-        let tls = &ob["tls"];
-        let sni = tls["server_name"].as_str().map(String::from);
-        let allow_insecure = tls["insecure"].as_bool().unwrap_or(false);
-        let security = if tls["enabled"].as_bool().unwrap_or(false) {
-            Some("tls".to_string())
+        // TLS 配置
+        let tls_obj = &ob["tls"];
+        let sni = tls_obj["server_name"].as_str().map(String::from);
+        let allow_insecure = tls_obj["insecure"].as_bool().unwrap_or(false);
+        let tls_enabled = tls_obj["enabled"].as_bool().unwrap_or(false);
+        let security = if tls_enabled { Some("tls".to_string()) } else { None };
+        let tls = if tls_enabled {
+            let reality = &tls_obj["reality"];
+            Some(TlsConfig {
+                enabled: true,
+                security: if reality["enabled"].as_bool().unwrap_or(false) { "reality".to_string() } else { "tls".to_string() },
+                sni: sni.clone(),
+                allow_insecure,
+                fingerprint: tls_obj["utls"]["fingerprint"].as_str().map(String::from),
+                alpn: tls_obj["alpn"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()),
+                public_key: reality["public_key"].as_str().map(String::from),
+                short_id: reality["short_id"].as_str().map(String::from),
+                ..Default::default()
+            })
         } else {
             None
         };
+
+        // 传输层配置
+        let transport_obj = &ob["transport"];
+        let transport = if transport_obj.is_object() {
+            let t_type = transport_obj["type"].as_str().unwrap_or("tcp");
+            if t_type != "tcp" {
+                Some(TransportConfig {
+                    transport_type: t_type.to_string(),
+                    path: transport_obj["path"].as_str().map(String::from),
+                    host: transport_obj["host"].as_str()
+                        .or_else(|| transport_obj["headers"]["Host"].as_str())
+                        .map(String::from),
+                    service_name: transport_obj["service_name"].as_str().map(String::from),
+                    ..Default::default()
+                })
+            } else { None }
+        } else { None };
 
         let protocol = match ob_type {
             "vmess" => "vmess",
@@ -414,6 +733,8 @@ fn parse_singbox_json(content: &str) -> Result<Vec<OutboundConfig>> {
             "shadowsocks" | "ss" => "shadowsocks",
             "hysteria2" | "hy2" => "hysteria2",
             "wireguard" | "wg" => "wireguard",
+            "tuic" => "tuic",
+            "ssh" => "ssh",
             other => other,
         };
 
@@ -430,6 +751,8 @@ fn parse_singbox_json(content: &str) -> Result<Vec<OutboundConfig>> {
                 security,
                 allow_insecure,
                 flow,
+                transport,
+                tls,
                 ..Default::default()
             },
         });
@@ -469,6 +792,41 @@ fn parse_sip008_json(content: &str) -> Result<Vec<OutboundConfig>> {
         }
     }).collect();
     Ok(configs)
+}
+
+// ─── 传输层辅助函数 ───
+
+/// 从 URI 查询参数提取传输层配置 (type/path/host/serviceName)
+fn extract_transport_from_params(params: &std::collections::HashMap<String, String>) -> Option<TransportConfig> {
+    let t = params.get("type").map(|s| s.as_str()).unwrap_or("tcp");
+    if t == "tcp" || t == "none" || t.is_empty() {
+        return None;
+    }
+    Some(TransportConfig {
+        transport_type: t.to_string(),
+        path: params.get("path").cloned(),
+        host: params.get("host").cloned(),
+        service_name: if t == "grpc" { params.get("serviceName").cloned() } else { None },
+        ..Default::default()
+    })
+}
+
+/// 从 URI 查询参数提取 TLS 配置 (security/sni/fp/pbk/sid/alpn)
+fn extract_tls_from_params(params: &std::collections::HashMap<String, String>, sni: Option<String>) -> Option<TlsConfig> {
+    let sec = params.get("security").map(|s| s.as_str()).unwrap_or("");
+    if sec.is_empty() || sec == "none" {
+        return None;
+    }
+    Some(TlsConfig {
+        enabled: true,
+        security: sec.to_string(),
+        sni,
+        fingerprint: params.get("fp").cloned(),
+        public_key: params.get("pbk").cloned(),
+        short_id: params.get("sid").cloned(),
+        server_name: params.get("serverName").cloned(),
+        ..Default::default()
+    })
 }
 
 // ─── 辅助函数 ───
@@ -754,5 +1112,102 @@ proxies:
         assert_eq!(params.get("security").unwrap(), "tls");
         assert_eq!(params.get("sni").unwrap(), "test.com");
         assert_eq!(params.get("fp").unwrap(), "chrome");
+    }
+
+    #[test]
+    fn parse_tuic_uri_basic() {
+        let uri = "tuic://uuid-1234:mypass@tuic.example.com:443?congestion_control=bbr&alpn=h3&sni=tuic.example.com#TUIC%20Node";
+        let cfg = parse_proxy_uri(uri).unwrap();
+        assert_eq!(cfg.protocol, "tuic");
+        assert_eq!(cfg.tag, "TUIC Node");
+        assert_eq!(cfg.settings.uuid.as_deref(), Some("uuid-1234"));
+        assert_eq!(cfg.settings.password.as_deref(), Some("mypass"));
+        assert_eq!(cfg.settings.address.as_deref(), Some("tuic.example.com"));
+        assert_eq!(cfg.settings.port, Some(443));
+        assert_eq!(cfg.settings.congestion_control.as_deref(), Some("bbr"));
+        let tls = cfg.settings.tls.as_ref().unwrap();
+        assert!(tls.enabled);
+        assert_eq!(tls.sni.as_deref(), Some("tuic.example.com"));
+        assert_eq!(tls.alpn.as_ref().unwrap(), &["h3"]);
+    }
+
+    #[test]
+    fn parse_wg_uri_basic() {
+        let uri = "wg://cHJpdmtleQ%3D%3D@wg.example.com:51820?publickey=pubkey123&address=10.0.0.2/32&mtu=1280#WG%20Node";
+        let cfg = parse_proxy_uri(uri).unwrap();
+        assert_eq!(cfg.protocol, "wireguard");
+        assert_eq!(cfg.tag, "WG Node");
+        assert_eq!(cfg.settings.address.as_deref(), Some("wg.example.com"));
+        assert_eq!(cfg.settings.port, Some(51820));
+        assert_eq!(cfg.settings.peer_public_key.as_deref(), Some("pubkey123"));
+        assert_eq!(cfg.settings.local_address.as_deref(), Some("10.0.0.2/32"));
+        assert_eq!(cfg.settings.mtu, Some(1280));
+    }
+
+    #[test]
+    fn parse_wg_uri_wireguard_scheme() {
+        let uri = "wireguard://privkey@1.2.3.4:51820?publickey=pk#wg";
+        let cfg = parse_proxy_uri(uri).unwrap();
+        assert_eq!(cfg.protocol, "wireguard");
+        assert_eq!(cfg.settings.private_key.as_deref(), Some("privkey"));
+    }
+
+    #[test]
+    fn parse_ssh_uri_basic() {
+        let uri = "ssh://admin:s3cret@ssh.example.com:22#SSH%20Server";
+        let cfg = parse_proxy_uri(uri).unwrap();
+        assert_eq!(cfg.protocol, "ssh");
+        assert_eq!(cfg.tag, "SSH Server");
+        assert_eq!(cfg.settings.username.as_deref(), Some("admin"));
+        assert_eq!(cfg.settings.password.as_deref(), Some("s3cret"));
+        assert_eq!(cfg.settings.address.as_deref(), Some("ssh.example.com"));
+        assert_eq!(cfg.settings.port, Some(22));
+    }
+
+    #[test]
+    fn parse_ssh_uri_no_password() {
+        let uri = "ssh://user@host.com:2222#ssh";
+        let cfg = parse_proxy_uri(uri).unwrap();
+        assert_eq!(cfg.settings.username.as_deref(), Some("user"));
+        assert!(cfg.settings.password.is_none());
+    }
+
+    #[test]
+    fn parse_hy1_uri_basic() {
+        let uri = "hysteria://hy1.example.com:443?auth=mytoken&obfs=xplus&obfsParam=obfs_secret&upmbps=100&downmbps=200&sni=hy1.example.com&insecure=1#Hy1%20Node";
+        let cfg = parse_proxy_uri(uri).unwrap();
+        assert_eq!(cfg.protocol, "hysteria");
+        assert_eq!(cfg.tag, "Hy1 Node");
+        assert_eq!(cfg.settings.password.as_deref(), Some("mytoken"));
+        assert_eq!(cfg.settings.obfs.as_deref(), Some("xplus"));
+        assert_eq!(cfg.settings.obfs_password.as_deref(), Some("obfs_secret"));
+        assert_eq!(cfg.settings.up_mbps, Some(100));
+        assert_eq!(cfg.settings.down_mbps, Some(200));
+        let tls = cfg.settings.tls.as_ref().unwrap();
+        assert!(tls.allow_insecure);
+        assert_eq!(tls.sni.as_deref(), Some("hy1.example.com"));
+    }
+
+    #[test]
+    fn parse_vless_ws_transport() {
+        let uri = "vless://uuid@example.com:443?type=ws&path=%2Fws&host=cdn.example.com&security=tls&sni=cdn.example.com#VLESS+WS";
+        let cfg = parse_proxy_uri(uri).unwrap();
+        assert_eq!(cfg.protocol, "vless");
+        let transport = cfg.settings.transport.as_ref().unwrap();
+        assert_eq!(transport.transport_type, "ws");
+        assert_eq!(transport.path.as_deref(), Some("/ws"));
+        assert_eq!(transport.host.as_deref(), Some("cdn.example.com"));
+        let tls = cfg.settings.tls.as_ref().unwrap();
+        assert!(tls.enabled);
+    }
+
+    #[test]
+    fn parse_trojan_grpc_transport() {
+        let uri = "trojan://password@example.com:443?type=grpc&serviceName=grpc_svc&sni=example.com#Trojan+gRPC";
+        let cfg = parse_proxy_uri(uri).unwrap();
+        assert_eq!(cfg.protocol, "trojan");
+        let transport = cfg.settings.transport.as_ref().unwrap();
+        assert_eq!(transport.transport_type, "grpc");
+        assert_eq!(transport.service_name.as_deref(), Some("grpc_svc"));
     }
 }

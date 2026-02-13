@@ -93,6 +93,8 @@ struct SingBoxOutbound {
     flow: Option<String>,
     #[serde(default)]
     tls: Option<SingBoxTls>,
+    #[serde(default)]
+    transport: Option<SingBoxTransport>,
     // proxy-group fields
     #[serde(default)]
     outbounds: Option<Vec<String>>,
@@ -102,6 +104,56 @@ struct SingBoxOutbound {
     interval: Option<String>,
     #[serde(default)]
     tolerance: Option<u32>,
+    // WireGuard fields
+    #[serde(default)]
+    private_key: Option<String>,
+    #[serde(default)]
+    local_address: Option<Vec<String>>,
+    #[serde(default)]
+    peers: Option<Vec<SingBoxWgPeer>>,
+    #[serde(default)]
+    mtu: Option<u16>,
+    // TUIC fields
+    #[serde(default)]
+    congestion_control: Option<String>,
+    // SSH fields
+    #[serde(default)]
+    user: Option<String>,
+    #[serde(default)]
+    private_key_path: Option<String>,
+    #[serde(default)]
+    private_key_passphrase: Option<String>,
+    // Hysteria fields
+    #[serde(default)]
+    obfs: Option<SingBoxObfs>,
+    #[serde(default)]
+    up_mbps: Option<u64>,
+    #[serde(default)]
+    down_mbps: Option<u64>,
+    #[serde(default)]
+    auth_str: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct SingBoxWgPeer {
+    #[serde(default)]
+    public_key: Option<String>,
+    #[serde(default)]
+    pre_shared_key: Option<String>,
+    #[serde(default)]
+    allowed_ips: Option<Vec<String>>,
+    #[serde(default)]
+    server: Option<String>,
+    #[serde(default)]
+    server_port: Option<u16>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct SingBoxObfs {
+    #[serde(default, rename = "type")]
+    obfs_type: Option<String>,
+    #[serde(default)]
+    password: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -113,6 +165,42 @@ struct SingBoxTls {
     server_name: Option<String>,
     #[serde(default)]
     insecure: Option<bool>,
+    #[serde(default)]
+    alpn: Option<Vec<String>>,
+    #[serde(default)]
+    reality: Option<SingBoxReality>,
+    #[serde(default)]
+    utls: Option<SingBoxUtls>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SingBoxTransport {
+    #[serde(rename = "type", default)]
+    transport_type: String,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    host: Option<String>,
+    #[serde(default)]
+    service_name: Option<String>,
+    #[serde(default)]
+    headers: Option<std::collections::HashMap<String, String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SingBoxReality {
+    #[serde(default)]
+    enabled: Option<bool>,
+    #[serde(default)]
+    public_key: Option<String>,
+    #[serde(default)]
+    short_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SingBoxUtls {
+    #[serde(default)]
+    fingerprint: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -142,6 +230,10 @@ struct SingBoxRouteRule {
     geoip: Option<Vec<String>>,
     #[serde(default)]
     geosite: Option<Vec<String>>,
+    #[serde(default)]
+    process_name: Option<Vec<String>>,
+    #[serde(default)]
+    rule_set: Option<Vec<String>>,
 }
 
 /// 解析 sing-box 格式的 JSON 配置
@@ -230,13 +322,43 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                 });
             }
             _ => {
-                let tls = ob.tls.as_ref();
-                let sni = tls.and_then(|t| t.server_name.clone());
-                let security = if tls.map(|t| t.enabled.unwrap_or(false)).unwrap_or(false) {
-                    Some("tls".to_string())
-                } else {
-                    None
-                };
+                let tls_ref = ob.tls.as_ref();
+                let sni = tls_ref.and_then(|t| t.server_name.clone());
+                let tls_enabled = tls_ref.map(|t| t.enabled.unwrap_or(false)).unwrap_or(false);
+                let security = if tls_enabled { Some("tls".to_string()) } else { None };
+
+                // 构建 TlsConfig
+                let tls_config = if tls_enabled {
+                    tls_ref.map(|t| {
+                        let reality = t.reality.as_ref();
+                        let is_reality = reality.and_then(|r| r.enabled).unwrap_or(false);
+                        crate::config::types::TlsConfig {
+                            enabled: true,
+                            security: if is_reality { "reality".to_string() } else { "tls".to_string() },
+                            sni: t.server_name.clone(),
+                            allow_insecure: t.insecure.unwrap_or(false),
+                            alpn: t.alpn.clone(),
+                            fingerprint: t.utls.as_ref().and_then(|u| u.fingerprint.clone()),
+                            public_key: reality.and_then(|r| r.public_key.clone()),
+                            short_id: reality.and_then(|r| r.short_id.clone()),
+                            ..Default::default()
+                        }
+                    })
+                } else { None };
+
+                // 构建 TransportConfig
+                let transport_config = ob.transport.as_ref().and_then(|t| {
+                    let tt = t.transport_type.as_str();
+                    if tt.is_empty() || tt == "tcp" { return None; }
+                    Some(crate::config::types::TransportConfig {
+                        transport_type: tt.to_string(),
+                        path: t.path.clone(),
+                        host: t.host.clone(),
+                        service_name: t.service_name.clone(),
+                        headers: t.headers.clone(),
+                        ..Default::default()
+                    })
+                });
 
                 outbounds.push(OutboundConfig {
                     tag: ob.tag.clone(),
@@ -245,11 +367,34 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                         address: ob.server.clone(),
                         port: ob.server_port,
                         uuid: ob.uuid.clone(),
-                        password: ob.password.clone(),
+                        password: ob.password.clone().or_else(|| ob.auth_str.clone()),
                         method: ob.method.clone(),
                         flow: ob.flow.clone(),
                         sni,
                         security,
+                        tls: tls_config,
+                        transport: transport_config,
+                        // WireGuard
+                        private_key: ob.private_key.clone(),
+                        peer_public_key: ob.peers.as_ref()
+                            .and_then(|p| p.first())
+                            .and_then(|p| p.public_key.clone()),
+                        preshared_key: ob.peers.as_ref()
+                            .and_then(|p| p.first())
+                            .and_then(|p| p.pre_shared_key.clone()),
+                        local_address: ob.local_address.as_ref()
+                            .and_then(|a| a.first()).cloned(),
+                        mtu: ob.mtu,
+                        // TUIC
+                        congestion_control: ob.congestion_control.clone(),
+                        // SSH
+                        username: ob.user.clone(),
+                        private_key_passphrase: ob.private_key_passphrase.clone(),
+                        // Hysteria
+                        obfs: ob.obfs.as_ref().and_then(|o| o.obfs_type.clone()),
+                        obfs_password: ob.obfs.as_ref().and_then(|o| o.password.clone()),
+                        up_mbps: ob.up_mbps,
+                        down_mbps: ob.down_mbps,
                         ..Default::default()
                     },
                 });
@@ -300,6 +445,32 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                     outbound: r.outbound.clone(),
                 ..Default::default()
                 });
+            }
+            if let Some(domains) = &r.domain {
+                rules.push(RuleConfig {
+                    rule_type: "domain-full".into(),
+                    values: domains.clone(),
+                    outbound: r.outbound.clone(),
+                ..Default::default()
+                });
+            }
+            if let Some(procs) = &r.process_name {
+                rules.push(RuleConfig {
+                    rule_type: "process-name".into(),
+                    values: procs.clone(),
+                    outbound: r.outbound.clone(),
+                ..Default::default()
+                });
+            }
+            if let Some(sets) = &r.rule_set {
+                for set_name in sets {
+                    rules.push(RuleConfig {
+                        rule_type: "rule-set".into(),
+                        values: vec![set_name.clone()],
+                        outbound: r.outbound.clone(),
+                    ..Default::default()
+                    });
+                }
             }
         }
     }
@@ -479,5 +650,85 @@ mod tests {
     #[test]
     fn parse_invalid_json() {
         assert!(parse_singbox_json("not json").is_err());
+    }
+
+    #[test]
+    fn parse_singbox_wireguard() {
+        let json = r#"{
+            "outbounds": [{
+                "type": "wireguard",
+                "tag": "wg-node",
+                "server": "162.159.192.1",
+                "server_port": 2408,
+                "private_key": "yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=",
+                "local_address": ["172.16.0.2/32"],
+                "peers": [{
+                    "public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
+                    "pre_shared_key": "psk123"
+                }],
+                "mtu": 1280
+            }]
+        }"#;
+        let config = parse_singbox_json(json).unwrap();
+        let wg = config.outbounds.iter().find(|o| o.tag == "wg-node").unwrap();
+        assert_eq!(wg.protocol, "wireguard");
+        assert_eq!(wg.settings.private_key.as_deref(), Some("yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk="));
+        assert_eq!(wg.settings.peer_public_key.as_deref(), Some("bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="));
+        assert_eq!(wg.settings.preshared_key.as_deref(), Some("psk123"));
+        assert_eq!(wg.settings.local_address.as_deref(), Some("172.16.0.2/32"));
+        assert_eq!(wg.settings.mtu, Some(1280));
+    }
+
+    #[test]
+    fn parse_singbox_vmess_ws_transport() {
+        let json = r#"{
+            "outbounds": [{
+                "type": "vmess",
+                "tag": "vmess-ws",
+                "server": "1.2.3.4",
+                "server_port": 443,
+                "uuid": "550e8400-e29b-41d4-a716-446655440000",
+                "tls": {
+                    "enabled": true,
+                    "server_name": "cdn.example.com"
+                },
+                "transport": {
+                    "type": "ws",
+                    "path": "/ws-path",
+                    "host": "cdn.example.com"
+                }
+            }]
+        }"#;
+        let config = parse_singbox_json(json).unwrap();
+        let vmess = config.outbounds.iter().find(|o| o.tag == "vmess-ws").unwrap();
+        assert_eq!(vmess.protocol, "vmess");
+        let transport = vmess.settings.transport.as_ref().unwrap();
+        assert_eq!(transport.transport_type, "ws");
+        assert_eq!(transport.path.as_deref(), Some("/ws-path"));
+        let tls = vmess.settings.tls.as_ref().unwrap();
+        assert!(tls.enabled);
+        assert_eq!(tls.sni.as_deref(), Some("cdn.example.com"));
+    }
+
+    #[test]
+    fn parse_singbox_domain_and_process_rules() {
+        let json = r#"{
+            "outbounds": [{"type": "direct", "tag": "direct"}, {"type": "direct", "tag": "proxy"}],
+            "route": {
+                "rules": [
+                    {"domain": ["example.com", "test.com"], "outbound": "direct"},
+                    {"process_name": ["chrome.exe", "firefox.exe"], "outbound": "proxy"},
+                    {"rule_set": ["geosite-cn"], "outbound": "direct"}
+                ],
+                "final": "proxy"
+            }
+        }"#;
+        let config = parse_singbox_json(json).unwrap();
+        let domain_rule = config.router.rules.iter().find(|r| r.rule_type == "domain-full").unwrap();
+        assert_eq!(domain_rule.values, vec!["example.com", "test.com"]);
+        let proc_rule = config.router.rules.iter().find(|r| r.rule_type == "process-name").unwrap();
+        assert_eq!(proc_rule.values, vec!["chrome.exe", "firefox.exe"]);
+        let set_rule = config.router.rules.iter().find(|r| r.rule_type == "rule-set").unwrap();
+        assert_eq!(set_rule.values, vec!["geosite-cn"]);
     }
 }
