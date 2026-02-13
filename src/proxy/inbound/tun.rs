@@ -8,7 +8,7 @@ use tracing::{debug, info};
 use crate::app::dispatcher::Dispatcher;
 use crate::common::Address;
 use crate::proxy::inbound::tun_device::{
-    IcmpPolicy, IpProtocol, TunConfig, create_platform_tun_device, parse_ip_packet,
+    create_platform_tun_device, parse_ip_packet, IcmpPolicy, IpProtocol, TunConfig,
 };
 use crate::proxy::{Network, Session};
 use crate::router::Router;
@@ -142,10 +142,7 @@ impl TunInbound {
     pub fn route_packet(&self, router: &Router, packet: &[u8]) -> Result<TunRouteDecision> {
         let session = self.session_from_packet(packet)?;
         let (outbound_tag, matched_rule) = router.route_with_rule(&session);
-        let route_tag = matched_rule
-            .as_deref()
-            .unwrap_or("MATCH")
-            .to_string();
+        let route_tag = matched_rule.as_deref().unwrap_or("MATCH").to_string();
 
         Ok(TunRouteDecision {
             session,
@@ -281,20 +278,28 @@ impl TunInbound {
         if let Err(err) = tun_device.close().await {
             debug!(tag = self.tag(), error = %err, "failed to close tun device");
         }
-        info!(tag = self.tag(), device = self.name(), "tun inbound stopped");
+        info!(
+            tag = self.tag(),
+            device = self.name(),
+            "tun inbound stopped"
+        );
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::config::types::{
-        RouterConfig, RuleConfig,
-    };
+    use crate::config::types::{RouterConfig, RuleConfig};
 
     use super::*;
 
-    fn build_ipv4_packet(protocol: u8, src: [u8; 4], dst: [u8; 4], src_port: u16, dst_port: u16) -> Vec<u8> {
+    fn build_ipv4_packet(
+        protocol: u8,
+        src: [u8; 4],
+        dst: [u8; 4],
+        src_port: u16,
+        dst_port: u16,
+    ) -> Vec<u8> {
         let mut pkt = vec![0u8; 40];
         pkt[0] = 0x45; // IPv4 + IHL=5
         pkt[9] = protocol;
@@ -305,7 +310,13 @@ mod tests {
         pkt
     }
 
-    fn build_ipv6_packet(next_header: u8, src: [u8; 16], dst: [u8; 16], src_port: u16, dst_port: u16) -> Vec<u8> {
+    fn build_ipv6_packet(
+        next_header: u8,
+        src: [u8; 16],
+        dst: [u8; 16],
+        src_port: u16,
+        dst_port: u16,
+    ) -> Vec<u8> {
         let mut pkt = vec![0u8; 60];
         pkt[0] = 0x60; // IPv6
         pkt[6] = next_header;
@@ -346,7 +357,7 @@ mod tests {
                 rule_type: "ip-cidr".to_string(),
                 values: vec!["1.1.1.0/24".to_string()],
                 outbound: "proxy-a".to_string(),
-            ..Default::default()
+                ..Default::default()
             }],
             default: "direct".to_string(),
             geoip_db: None,
@@ -382,10 +393,7 @@ mod tests {
             session.target,
             Address::Ip("[2001:db8::2]:443".parse().unwrap())
         );
-        assert_eq!(
-            session.source,
-            Some("[2001:db8::1]:51000".parse().unwrap())
-        );
+        assert_eq!(session.source, Some("[2001:db8::1]:51000".parse().unwrap()));
     }
 
     #[test]
@@ -394,7 +402,9 @@ mod tests {
         let pkt = build_ipv6_packet(
             17,
             [0x24, 0x08, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-            [0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x88],
+            [
+                0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x88,
+            ],
             53000,
             53,
         );

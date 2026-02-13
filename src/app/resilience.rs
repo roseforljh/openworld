@@ -208,7 +208,10 @@ impl CircuitBreaker {
                 *state = CircuitState::Open;
                 *self.last_failure_time.lock().unwrap() = Some(Instant::now());
                 self.success_count.store(0, Ordering::Relaxed);
-                warn!(tag = self.tag, "circuit breaker: half-open -> open (probe failed)");
+                warn!(
+                    tag = self.tag,
+                    "circuit breaker: half-open -> open (probe failed)"
+                );
             }
             CircuitState::Open => {}
         }
@@ -326,10 +329,7 @@ mod tests {
 
     #[test]
     fn circuit_breaker_starts_closed() {
-        let cb = CircuitBreaker::new(
-            "test".to_string(),
-            CircuitBreakerConfig::default(),
-        );
+        let cb = CircuitBreaker::new("test".to_string(), CircuitBreakerConfig::default());
         assert_eq!(cb.state(), CircuitState::Closed);
         assert!(cb.allow_request());
     }

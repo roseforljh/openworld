@@ -25,17 +25,10 @@ pub struct HostContext {
 
 impl HostContext {
     /// 从 Session 构造上下文
-    pub fn from_session(
-        session: &crate::proxy::Session,
-        dest_ip: Option<IpAddr>,
-    ) -> Self {
+    pub fn from_session(session: &crate::proxy::Session, dest_ip: Option<IpAddr>) -> Self {
         let (domain, port) = match &session.target {
-            crate::common::Address::Domain(host, port) => {
-                (Some(host.clone()), *port)
-            }
-            crate::common::Address::Ip(addr) => {
-                (None, addr.port())
-            }
+            crate::common::Address::Domain(host, port) => (Some(host.clone()), *port),
+            crate::common::Address::Ip(addr) => (None, addr.port()),
         };
 
         // 获取当前小时（避免引入 chrono 依赖）
@@ -83,10 +76,7 @@ pub enum PluginAction {
     /// 路由决策
     Route(RoutingDecision),
     /// 修改 DNS 响应
-    OverrideDns {
-        domain: String,
-        ip: IpAddr,
-    },
+    OverrideDns { domain: String, ip: IpAddr },
     /// 记录日志
     Log(String),
 }

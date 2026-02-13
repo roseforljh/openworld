@@ -16,7 +16,10 @@ pub struct HttpInbound {
 
 impl HttpInbound {
     pub fn new(tag: String) -> Self {
-        Self { tag, auth_users: Vec::new() }
+        Self {
+            tag,
+            auth_users: Vec::new(),
+        }
     }
 
     pub fn with_auth(mut self, users: Vec<(String, String)>) -> Self {
@@ -26,7 +29,9 @@ impl HttpInbound {
 
     /// 验证 Basic 认证头
     fn verify_basic_auth(&self, auth_value: &str) -> bool {
-        let encoded = auth_value.strip_prefix("Basic ").or_else(|| auth_value.strip_prefix("basic "));
+        let encoded = auth_value
+            .strip_prefix("Basic ")
+            .or_else(|| auth_value.strip_prefix("basic "));
         let encoded = match encoded {
             Some(e) => e.trim(),
             None => return false,
@@ -44,7 +49,9 @@ impl HttpInbound {
             Some((u, p)) => (u, p),
             None => return false,
         };
-        self.auth_users.iter().any(|(u, p)| u == username && p == password)
+        self.auth_users
+            .iter()
+            .any(|(u, p)| u == username && p == password)
     }
 }
 
@@ -125,7 +132,9 @@ impl InboundHandler for HttpInbound {
             debug!(target = %target, "HTTP CONNECT 请求");
 
             let mut stream = reader.into_inner();
-            stream.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await?;
+            stream
+                .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                .await?;
 
             let session = Session {
                 target,
@@ -259,8 +268,7 @@ fn parse_connect_target(s: &str) -> Result<Address> {
 fn parse_http_url(url: &str, host_header: Option<&str>) -> Result<(Address, String)> {
     // 已经是相对路径，从 Host header 获取目标
     if url.starts_with('/') {
-        let host = host_header
-            .ok_or_else(|| anyhow::anyhow!("相对路径 URL 但缺少 Host header"))?;
+        let host = host_header.ok_or_else(|| anyhow::anyhow!("相对路径 URL 但缺少 Host header"))?;
         let target = parse_host_port(host, 80)?;
         return Ok((target, url.to_string()));
     }

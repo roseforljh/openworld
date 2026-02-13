@@ -144,14 +144,15 @@ pub async fn write_frame<W: AsyncWriteExt + Unpin>(
 }
 
 /// 读取一帧（帧类型 + 载荷）
-pub async fn read_frame<R: AsyncReadExt + Unpin>(
-    r: &mut R,
-) -> io::Result<(FrameType, Vec<u8>)> {
+pub async fn read_frame<R: AsyncReadExt + Unpin>(r: &mut R) -> io::Result<(FrameType, Vec<u8>)> {
     let mut header = [0u8; FRAME_HEADER_LEN];
     r.read_exact(&mut header).await?;
 
     let frame_type = FrameType::from_u8(header[0]).ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidData, format!("未知帧类型: 0x{:02x}", header[0]))
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("未知帧类型: 0x{:02x}", header[0]),
+        )
     })?;
 
     let len = u32::from_be_bytes([header[1], header[2], header[3], header[4]]) as usize;
@@ -189,10 +190,7 @@ pub fn parse_server_key(payload: &[u8]) -> io::Result<[u8; KEY_LEN]> {
         ));
     }
     if &payload[..MAGIC.len()] != MAGIC.as_slice() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Magic 不匹配",
-        ));
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "Magic 不匹配"));
     }
     let mut key = [0u8; KEY_LEN];
     key.copy_from_slice(&payload[MAGIC.len()..MAGIC.len() + KEY_LEN]);
@@ -229,10 +227,7 @@ pub fn parse_client_info(payload: &[u8]) -> io::Result<([u8; KEY_LEN], [u8; NONC
 }
 
 /// 构建 ServerInfo 帧载荷：24字节 nonce + naclbox(json)
-pub fn build_server_info(
-    nonce: &[u8; NONCE_LEN],
-    sealed_json: &[u8],
-) -> Vec<u8> {
+pub fn build_server_info(nonce: &[u8; NONCE_LEN], sealed_json: &[u8]) -> Vec<u8> {
     let mut buf = Vec::with_capacity(NONCE_LEN + sealed_json.len());
     buf.extend_from_slice(nonce);
     buf.extend_from_slice(sealed_json);
@@ -454,7 +449,9 @@ mod tests {
     async fn test_frame_write_read() {
         let payload = b"hello derp";
         let mut buf = Vec::new();
-        write_frame(&mut buf, FrameType::Health, payload).await.unwrap();
+        write_frame(&mut buf, FrameType::Health, payload)
+            .await
+            .unwrap();
 
         let mut cursor = io::Cursor::new(buf);
         let (ft, data) = read_frame(&mut cursor).await.unwrap();
@@ -465,7 +462,9 @@ mod tests {
     #[tokio::test]
     async fn test_frame_empty_payload() {
         let mut buf = Vec::new();
-        write_frame(&mut buf, FrameType::KeepAlive, &[]).await.unwrap();
+        write_frame(&mut buf, FrameType::KeepAlive, &[])
+            .await
+            .unwrap();
 
         let mut cursor = io::Cursor::new(buf);
         let (ft, data) = read_frame(&mut cursor).await.unwrap();

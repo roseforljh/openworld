@@ -65,7 +65,10 @@ pub fn set_mode(mode: ClashMode) {
 /// 设置模式（字符串版）
 pub fn set_mode_str(s: &str) -> bool {
     match ClashMode::from_str(s) {
-        Some(m) => { set_mode(m); true }
+        Some(m) => {
+            set_mode(m);
+            true
+        }
         None => false,
     }
 }

@@ -48,8 +48,7 @@ fn bench_ip_prefix_trie_insert(c: &mut Criterion) {
             let mut trie = IpPrefixTrie::new();
             for i in 0u8..250 {
                 for prefix in [8, 16, 24] {
-                    let cidr: ipnet::IpNet =
-                        format!("{}.0.0.0/{}", i, prefix).parse().unwrap();
+                    let cidr: ipnet::IpNet = format!("{}.0.0.0/{}", i, prefix).parse().unwrap();
                     trie.insert(&cidr, i as usize);
                 }
             }

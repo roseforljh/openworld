@@ -98,26 +98,31 @@ impl MasqueOutbound {
         let public_key_der = tls::decode_base64(public_key_b64)?;
 
         // 解析本地虚拟 IP
-        let local_ipv4 = settings.local_address.as_ref()
+        let local_ipv4 = settings
+            .local_address
+            .as_ref()
             .and_then(|s| s.split('/').next())
             .and_then(|s| s.parse::<IpAddr>().ok())
             .filter(|ip| ip.is_ipv4());
 
-        let local_ipv6 = settings.local_address.as_ref()
-            .and_then(|s| {
-                // 尝试解析 ipv6 部分
-                if s.contains(':') && !s.contains('.') {
-                    s.split('/').next().and_then(|ip| ip.parse::<IpAddr>().ok())
-                } else {
-                    None
-                }
-            });
+        let local_ipv6 = settings.local_address.as_ref().and_then(|s| {
+            // 尝试解析 ipv6 部分
+            if s.contains(':') && !s.contains('.') {
+                s.split('/').next().and_then(|ip| ip.parse::<IpAddr>().ok())
+            } else {
+                None
+            }
+        });
 
         let uri = DEFAULT_CONNECT_URI.to_string();
-        let sni = settings.sni.clone()
+        let sni = settings
+            .sni
+            .clone()
             .unwrap_or_else(|| DEFAULT_CONNECT_SNI.to_string());
         let mtu = settings.mtu.unwrap_or(1280);
-        let congestion = settings.congestion_control.clone()
+        let congestion = settings
+            .congestion_control
+            .clone()
             .unwrap_or_else(|| "cubic".to_string());
         let udp = true;
 
@@ -168,11 +173,8 @@ impl MasqueOutbound {
     /// 创建 MASQUE 隧道
     async fn create_tunnel(&self) -> Result<TunnelState> {
         // 1. 准备 TLS 配置
-        let tls_config = tls::prepare_tls_config(
-            &self.private_key_pem,
-            &self.public_key_der,
-            &self.sni,
-        )?;
+        let tls_config =
+            tls::prepare_tls_config(&self.private_key_pem, &self.public_key_der, &self.sni)?;
 
         // 2. 建立 QUIC 连接
         let quic_crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls_config)?;
@@ -189,19 +191,19 @@ impl MasqueOutbound {
         // 拥塞控制
         match self.congestion.as_str() {
             "bbr" => {
-                transport_config.congestion_controller_factory(
-                    Arc::new(quinn::congestion::BbrConfig::default()),
-                );
+                transport_config.congestion_controller_factory(Arc::new(
+                    quinn::congestion::BbrConfig::default(),
+                ));
             }
             "new_reno" => {
-                transport_config.congestion_controller_factory(
-                    Arc::new(quinn::congestion::NewRenoConfig::default()),
-                );
+                transport_config.congestion_controller_factory(Arc::new(
+                    quinn::congestion::NewRenoConfig::default(),
+                ));
             }
             _ => {
-                transport_config.congestion_controller_factory(
-                    Arc::new(quinn::congestion::CubicConfig::default()),
-                );
+                transport_config.congestion_controller_factory(Arc::new(
+                    quinn::congestion::CubicConfig::default(),
+                ));
             }
         }
 
@@ -216,16 +218,20 @@ impl MasqueOutbound {
             tokio::task::spawn_blocking(move || {
                 use std::net::ToSocketAddrs;
                 addr_string.to_socket_addrs()
-            }).await??
+            })
+            .await??
             .next()
-            .ok_or_else(|| anyhow::anyhow!("无法解析 MASQUE 服务器: {}:{}", self.server, self.port))?
+            .ok_or_else(|| {
+                anyhow::anyhow!("无法解析 MASQUE 服务器: {}:{}", self.server, self.port)
+            })?
         };
 
         let quic_conn = endpoint.connect(server_addr, &self.sni)?.await?;
         debug!(tag = self.tag, server = %server_addr, "MASQUE QUIC 连接已建立");
 
         // 3. 创建 smoltcp 用户态网络栈
-        let local_ip = self.local_ipv4
+        let local_ip = self
+            .local_ipv4
             .unwrap_or(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 2)));
         let stack = stack::create_stack(local_ip, self.mtu);
 
@@ -280,21 +286,19 @@ impl MasqueOutbound {
         let recv_task = tokio::spawn(async move {
             loop {
                 match conn.read_datagram().await {
-                    Ok(datagram) => {
-                        match decode_ip_datagram(&datagram) {
-                            Ok((0, ip_packet)) => {
-                                let mut s = stack_recv.lock().unwrap();
-                                s.inject_packet(ip_packet.to_vec());
-                                s.poll();
-                            }
-                            Ok((ctx, _)) => {
-                                debug!(tag = tag_recv, ctx = ctx, "忽略非 IP context 的 datagram");
-                            }
-                            Err(e) => {
-                                warn!(tag = tag_recv, error = %e, "解码 CONNECT-IP datagram 失败");
-                            }
+                    Ok(datagram) => match decode_ip_datagram(&datagram) {
+                        Ok((0, ip_packet)) => {
+                            let mut s = stack_recv.lock().unwrap();
+                            s.inject_packet(ip_packet.to_vec());
+                            s.poll();
                         }
-                    }
+                        Ok((ctx, _)) => {
+                            debug!(tag = tag_recv, ctx = ctx, "忽略非 IP context 的 datagram");
+                        }
+                        Err(e) => {
+                            warn!(tag = tag_recv, error = %e, "解码 CONNECT-IP datagram 失败");
+                        }
+                    },
                     Err(e) => {
                         error!(tag = tag_recv, error = %e, "MASQUE QUIC datagram 接收失败");
                         break;
@@ -333,7 +337,8 @@ impl OutboundHandler for MasqueOutbound {
                 tokio::task::spawn_blocking(move || {
                     use std::net::ToSocketAddrs;
                     format!("{}:{}", host_owned, port_val).to_socket_addrs()
-                }).await??
+                })
+                .await??
                 .next()
                 .ok_or_else(|| anyhow::anyhow!("无法解析目标地址: {}:{}", host, port))?
             }

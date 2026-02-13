@@ -14,8 +14,8 @@ use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::config::types::InboundConfig;
 use crate::proxy::outbound::wireguard::noise::{
-    TransportKeys, WireGuardKeys, parse_base64_key, parse_handshake_init,
-    create_handshake_resp, decrypt_transport,
+    create_handshake_resp, decrypt_transport, parse_base64_key, parse_handshake_init,
+    TransportKeys, WireGuardKeys,
 };
 
 /// WireGuard 客户端会话
@@ -100,14 +100,18 @@ impl WireGuardEndpoint {
     }
 
     fn is_peer_allowed(&self, peer_pk: &PublicKey) -> bool {
-        self.allowed_peers.iter().any(|pk| pk.as_bytes() == peer_pk.as_bytes())
+        self.allowed_peers
+            .iter()
+            .any(|pk| pk.as_bytes() == peer_pk.as_bytes())
     }
 
     async fn alloc_index(&self) -> u32 {
         let mut idx = self.next_index.lock().await;
         let val = *idx;
         *idx = idx.wrapping_add(1);
-        if *idx == 0 { *idx = 1; }
+        if *idx == 0 {
+            *idx = 1;
+        }
         val
     }
 

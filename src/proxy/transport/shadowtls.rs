@@ -15,8 +15,8 @@ use sha2::Sha256;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::debug;
 
-use crate::common::{Address, DialerConfig, ProxyStream};
 use super::StreamTransport;
+use crate::common::{Address, DialerConfig, ProxyStream};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -57,23 +57,24 @@ impl ShadowTlsTransport {
 #[async_trait]
 impl StreamTransport for ShadowTlsTransport {
     async fn connect(&self, _addr: &Address) -> Result<ProxyStream> {
-        let mut tcp =
-            super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config, None).await?;
+        let mut tcp = super::dial_tcp(
+            &self.server_addr,
+            self.server_port,
+            &self.dialer_config,
+            None,
+        )
+        .await?;
 
         // === 阶段 1: TLS 握手 ===
-        let server_random = do_shadow_tls_handshake(
-            &mut tcp,
-            &self.sni,
-            &self.password,
-        ).await?;
+        let server_random = do_shadow_tls_handshake(&mut tcp, &self.sni, &self.password).await?;
 
         debug!(sni = self.sni, "ShadowTLS v3 handshake completed");
 
         // === 阶段 2: 数据传输 (duplex channel) ===
         let hmac_client = new_hmac(&self.password, &server_random, b"C")?;
         let hmac_server = new_hmac(&self.password, &server_random, b"S")?;
-        let hmac_verify = HmacSha256::new_from_slice(&server_random)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        let hmac_verify =
+            HmacSha256::new_from_slice(&server_random).map_err(|e| anyhow::anyhow!("{}", e))?;
 
         // 使用 duplex channel：用户侧得到 user_stream，后台任务操作 proxy_stream
         let (user_stream, proxy_stream) = tokio::io::duplex(64 * 1024);
@@ -479,9 +480,10 @@ mod tests {
             let (mut user_write, user_read) = tokio::io::duplex(4096);
             let user_read_half = tokio::io::split(user_read).0;
 
-            let wl = tokio::spawn(async move {
-                write_loop(user_read_half, tcp_client, hmac_write).await
-            });
+            let wl =
+                tokio::spawn(
+                    async move { write_loop(user_read_half, tcp_client, hmac_write).await },
+                );
 
             user_write.write_all(b"hello shadow").await.unwrap();
             drop(user_write);

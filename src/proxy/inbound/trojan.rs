@@ -192,7 +192,10 @@ mod tests {
         let result = inbound.handle(server_stream, source).await.unwrap();
 
         assert_eq!(result.session.network, Network::Tcp);
-        assert_eq!(result.session.target, Address::Ip("8.8.8.8:443".parse().unwrap()));
+        assert_eq!(
+            result.session.target,
+            Address::Ip("8.8.8.8:443".parse().unwrap())
+        );
     }
 
     #[tokio::test]
@@ -247,7 +250,10 @@ mod tests {
         let source: SocketAddr = "127.0.0.1:12345".parse().unwrap();
         let result = inbound.handle(server_stream, source).await.unwrap();
 
-        assert_eq!(result.session.target, Address::Domain("example.com".to_string(), 443));
+        assert_eq!(
+            result.session.target,
+            Address::Domain("example.com".to_string(), 443)
+        );
     }
 
     #[tokio::test]

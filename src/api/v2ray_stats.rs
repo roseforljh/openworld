@@ -7,7 +7,6 @@
 /// - `GET /v2ray/stats` — 查询所有统计项
 /// - `GET /v2ray/stats/{name}` — 查询指定统计项
 /// - `POST /v2ray/stats/reset` — 重置统计
-
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -71,8 +70,12 @@ impl StatsService {
         let mut counters = self.counters.write().await;
         let uplink = format!("inbound>>>{}>>>traffic>>>uplink", tag);
         let downlink = format!("inbound>>>{}>>>traffic>>>downlink", tag);
-        counters.entry(uplink).or_insert_with(|| Arc::new(StatCounter::new()));
-        counters.entry(downlink).or_insert_with(|| Arc::new(StatCounter::new()));
+        counters
+            .entry(uplink)
+            .or_insert_with(|| Arc::new(StatCounter::new()));
+        counters
+            .entry(downlink)
+            .or_insert_with(|| Arc::new(StatCounter::new()));
         debug!(tag = tag, "V2Ray stats: inbound registered");
     }
 
@@ -81,8 +84,12 @@ impl StatsService {
         let mut counters = self.counters.write().await;
         let uplink = format!("outbound>>>{}>>>traffic>>>uplink", tag);
         let downlink = format!("outbound>>>{}>>>traffic>>>downlink", tag);
-        counters.entry(uplink).or_insert_with(|| Arc::new(StatCounter::new()));
-        counters.entry(downlink).or_insert_with(|| Arc::new(StatCounter::new()));
+        counters
+            .entry(uplink)
+            .or_insert_with(|| Arc::new(StatCounter::new()));
+        counters
+            .entry(downlink)
+            .or_insert_with(|| Arc::new(StatCounter::new()));
         debug!(tag = tag, "V2Ray stats: outbound registered");
     }
 
@@ -91,8 +98,12 @@ impl StatsService {
         let mut counters = self.counters.write().await;
         let uplink = format!("user>>>{}>>>traffic>>>uplink", email);
         let downlink = format!("user>>>{}>>>traffic>>>downlink", email);
-        counters.entry(uplink).or_insert_with(|| Arc::new(StatCounter::new()));
-        counters.entry(downlink).or_insert_with(|| Arc::new(StatCounter::new()));
+        counters
+            .entry(uplink)
+            .or_insert_with(|| Arc::new(StatCounter::new()));
+        counters
+            .entry(downlink)
+            .or_insert_with(|| Arc::new(StatCounter::new()));
     }
 
     /// 获取计数器引用（用于高频更新）
@@ -154,11 +165,7 @@ impl StatsService {
         let counters = self.counters.read().await;
         let stat: Vec<StatResult> = counters
             .iter()
-            .filter(|(name, _)| {
-                pattern
-                    .map(|p| name.contains(p))
-                    .unwrap_or(true)
-            })
+            .filter(|(name, _)| pattern.map(|p| name.contains(p)).unwrap_or(true))
             .map(|(name, counter)| {
                 let value = if reset {
                     counter.reset()
@@ -222,7 +229,11 @@ fn current_memory_alloc() -> u64 {
     {
         std::fs::read_to_string("/proc/self/statm")
             .ok()
-            .and_then(|s| s.split_whitespace().nth(1).and_then(|v| v.parse::<u64>().ok()))
+            .and_then(|s| {
+                s.split_whitespace()
+                    .nth(1)
+                    .and_then(|v| v.parse::<u64>().ok())
+            })
             .map(|pages| pages * 4096)
             .unwrap_or(0)
     }
@@ -245,10 +256,16 @@ mod tests {
         svc.record_outbound_uplink("proxy", 500).await;
         svc.record_outbound_downlink("proxy", 2000).await;
 
-        let up = svc.get_stats("outbound>>>proxy>>>traffic>>>uplink", false).await.unwrap();
+        let up = svc
+            .get_stats("outbound>>>proxy>>>traffic>>>uplink", false)
+            .await
+            .unwrap();
         assert_eq!(up.value, 1500);
 
-        let down = svc.get_stats("outbound>>>proxy>>>traffic>>>downlink", false).await.unwrap();
+        let down = svc
+            .get_stats("outbound>>>proxy>>>traffic>>>downlink", false)
+            .await
+            .unwrap();
         assert_eq!(down.value, 2000);
     }
 
@@ -258,11 +275,17 @@ mod tests {
         svc.register_outbound("proxy").await;
         svc.record_outbound_uplink("proxy", 1000).await;
 
-        let result = svc.get_stats("outbound>>>proxy>>>traffic>>>uplink", true).await.unwrap();
+        let result = svc
+            .get_stats("outbound>>>proxy>>>traffic>>>uplink", true)
+            .await
+            .unwrap();
         assert_eq!(result.value, 1000);
 
         // After reset, should be 0
-        let result = svc.get_stats("outbound>>>proxy>>>traffic>>>uplink", false).await.unwrap();
+        let result = svc
+            .get_stats("outbound>>>proxy>>>traffic>>>uplink", false)
+            .await
+            .unwrap();
         assert_eq!(result.value, 0);
     }
 
@@ -292,6 +315,7 @@ mod tests {
     async fn sys_stats_no_panic() {
         let svc = StatsService::new();
         let stats = svc.sys_stats().await;
-        assert!(stats.num_goroutine > 0 || true); // May be 0 in test context
+        // num_goroutine may be 0 in test context, so we just check it exists
+        let _ = stats.num_goroutine;
     }
 }

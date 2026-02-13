@@ -182,9 +182,16 @@ impl Authenticator {
 /// 比较凭据是否匹配
 fn credentials_match(stored: &Credential, provided: &Credential) -> bool {
     match (stored, provided) {
-        (Credential::UserPass { username: su, password: sp }, Credential::UserPass { username: pu, password: pp }) => {
-            su == pu && sp == pp
-        }
+        (
+            Credential::UserPass {
+                username: su,
+                password: sp,
+            },
+            Credential::UserPass {
+                username: pu,
+                password: pp,
+            },
+        ) => su == pu && sp == pp,
         (Credential::Uuid(stored_uuid), Credential::Uuid(provided_uuid)) => {
             stored_uuid.eq_ignore_ascii_case(provided_uuid)
         }
@@ -221,21 +228,30 @@ mod tests {
     #[tokio::test]
     async fn auth_userpass_success() {
         let auth = Authenticator::new(false);
-        auth.register_users("socks-in", vec![UserInfo {
-            name: "alice".to_string(),
-            credential: Credential::UserPass {
-                username: "alice".to_string(),
-                password: "secret".to_string(),
-            },
-            speed_limit: None,
-            max_connections: None,
-            enabled: true,
-        }]).await;
+        auth.register_users(
+            "socks-in",
+            vec![UserInfo {
+                name: "alice".to_string(),
+                credential: Credential::UserPass {
+                    username: "alice".to_string(),
+                    password: "secret".to_string(),
+                },
+                speed_limit: None,
+                max_connections: None,
+                enabled: true,
+            }],
+        )
+        .await;
 
-        let result = auth.authenticate("socks-in", &Credential::UserPass {
-            username: "alice".to_string(),
-            password: "secret".to_string(),
-        }).await;
+        let result = auth
+            .authenticate(
+                "socks-in",
+                &Credential::UserPass {
+                    username: "alice".to_string(),
+                    password: "secret".to_string(),
+                },
+            )
+            .await;
         assert!(result.success);
         assert_eq!(result.user.as_deref(), Some("alice"));
     }
@@ -243,53 +259,75 @@ mod tests {
     #[tokio::test]
     async fn auth_userpass_wrong_password() {
         let auth = Authenticator::new(false);
-        auth.register_users("socks-in", vec![UserInfo {
-            name: "alice".to_string(),
-            credential: Credential::UserPass {
-                username: "alice".to_string(),
-                password: "secret".to_string(),
-            },
-            speed_limit: None,
-            max_connections: None,
-            enabled: true,
-        }]).await;
+        auth.register_users(
+            "socks-in",
+            vec![UserInfo {
+                name: "alice".to_string(),
+                credential: Credential::UserPass {
+                    username: "alice".to_string(),
+                    password: "secret".to_string(),
+                },
+                speed_limit: None,
+                max_connections: None,
+                enabled: true,
+            }],
+        )
+        .await;
 
-        let result = auth.authenticate("socks-in", &Credential::UserPass {
-            username: "alice".to_string(),
-            password: "wrong".to_string(),
-        }).await;
+        let result = auth
+            .authenticate(
+                "socks-in",
+                &Credential::UserPass {
+                    username: "alice".to_string(),
+                    password: "wrong".to_string(),
+                },
+            )
+            .await;
         assert!(!result.success);
     }
 
     #[tokio::test]
     async fn auth_uuid_case_insensitive() {
         let auth = Authenticator::new(false);
-        auth.register_users("vless-in", vec![UserInfo {
-            name: "user1".to_string(),
-            credential: Credential::Uuid("550e8400-e29b-41d4-a716-446655440000".to_string()),
-            speed_limit: None,
-            max_connections: None,
-            enabled: true,
-        }]).await;
+        auth.register_users(
+            "vless-in",
+            vec![UserInfo {
+                name: "user1".to_string(),
+                credential: Credential::Uuid("550e8400-e29b-41d4-a716-446655440000".to_string()),
+                speed_limit: None,
+                max_connections: None,
+                enabled: true,
+            }],
+        )
+        .await;
 
-        let result = auth.authenticate("vless-in", &Credential::Uuid(
-            "550E8400-E29B-41D4-A716-446655440000".to_string()
-        )).await;
+        let result = auth
+            .authenticate(
+                "vless-in",
+                &Credential::Uuid("550E8400-E29B-41D4-A716-446655440000".to_string()),
+            )
+            .await;
         assert!(result.success);
     }
 
     #[tokio::test]
     async fn auth_disabled_user_rejected() {
         let auth = Authenticator::new(false);
-        auth.register_users("socks-in", vec![UserInfo {
-            name: "disabled".to_string(),
-            credential: Credential::Password("pw".to_string()),
-            speed_limit: None,
-            max_connections: None,
-            enabled: false,
-        }]).await;
+        auth.register_users(
+            "socks-in",
+            vec![UserInfo {
+                name: "disabled".to_string(),
+                credential: Credential::Password("pw".to_string()),
+                speed_limit: None,
+                max_connections: None,
+                enabled: false,
+            }],
+        )
+        .await;
 
-        let result = auth.authenticate("socks-in", &Credential::Password("pw".to_string())).await;
+        let result = auth
+            .authenticate("socks-in", &Credential::Password("pw".to_string()))
+            .await;
         assert!(!result.success);
     }
 

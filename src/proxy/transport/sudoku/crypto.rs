@@ -6,15 +6,14 @@
 /// - none（透传，依赖 Sudoku 混淆层自身安全性）
 ///
 /// 帧格式：[2 字节长度][payload][16 字节 tag]
-
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use aes_gcm::{Aes128Gcm, KeyInit, aead::Aead};
-use chacha20poly1305::ChaCha20Poly1305;
 use aes_gcm::aead::generic_array::GenericArray;
-use sha2::{Sha256, Digest};
+use aes_gcm::{aead::Aead, Aes128Gcm, KeyInit};
+use chacha20poly1305::ChaCha20Poly1305;
+use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 const TAG_SIZE: usize = 16;
@@ -193,7 +192,10 @@ impl<S: AsyncRead + Unpin> AsyncRead for AeadStream<S> {
 
         loop {
             match &mut this.read_state {
-                ReadState::ReadingLength { buf: len_buf, offset } => {
+                ReadState::ReadingLength {
+                    buf: len_buf,
+                    offset,
+                } => {
                     while *offset < 2 {
                         let mut tmp_buf = [0u8; 2];
                         let mut rb = ReadBuf::new(&mut tmp_buf[..2 - *offset]);
@@ -226,7 +228,10 @@ impl<S: AsyncRead + Unpin> AsyncRead for AeadStream<S> {
                         buf: Vec::with_capacity(frame_len),
                     };
                 }
-                ReadState::ReadingPayload { remaining, buf: frame_buf } => {
+                ReadState::ReadingPayload {
+                    remaining,
+                    buf: frame_buf,
+                } => {
                     while *remaining > 0 {
                         let mut tmp = vec![0u8; *remaining];
                         let mut rb = ReadBuf::new(&mut tmp);

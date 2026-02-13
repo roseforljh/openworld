@@ -1,6 +1,6 @@
+pub mod geo_update;
 pub mod geoip;
 pub mod geosite;
-pub mod geo_update;
 pub mod process;
 pub mod provider;
 pub mod rules;

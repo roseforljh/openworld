@@ -21,7 +21,6 @@
 ///   password: "your-password"    # 认证密码
 ///   padding: true                # 启用 padding
 /// ```
-
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::BytesMut;
@@ -89,12 +88,12 @@ impl AnyTlsTransport {
 
     /// 对密码进行 HMAC-SHA256 哈希（用于认证）
     fn compute_auth_token(&self) -> Vec<u8> {
-        use sha2::Sha256;
         use hmac::{Hmac, Mac};
+        use sha2::Sha256;
 
         type HmacSha256 = Hmac<Sha256>;
-        let mut mac = HmacSha256::new_from_slice(b"anytls-auth-key")
-            .expect("HMAC can take key of any size");
+        let mut mac =
+            HmacSha256::new_from_slice(b"anytls-auth-key").expect("HMAC can take key of any size");
         mac.update(self.password.as_bytes());
         mac.finalize().into_bytes().to_vec()
     }
@@ -122,7 +121,13 @@ impl AnyTlsTransport {
 impl StreamTransport for AnyTlsTransport {
     async fn connect(&self, addr: &Address) -> Result<ProxyStream> {
         // 1. 建立 TCP 连接
-        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config, None).await?;
+        let tcp = super::dial_tcp(
+            &self.server_addr,
+            self.server_port,
+            &self.dialer_config,
+            None,
+        )
+        .await?;
 
         // 2. TLS 握手
         let mut root_store = tokio_rustls::rustls::RootCertStore::empty();
@@ -135,7 +140,8 @@ impl StreamTransport for AnyTlsTransport {
         // 使用默认 ALPN，看起来像正常 HTTPS 流量
         config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
 
-        let server_name = self.tls_config
+        let server_name = self
+            .tls_config
             .as_ref()
             .and_then(|c| c.sni.clone())
             .unwrap_or_else(|| self.server_addr.clone());
@@ -234,9 +240,11 @@ impl AsyncRead for AnyTlsStream {
                         if frame_len <= buf.remaining() {
                             // Read directly into output buffer
                             let mut payload_buf = tokio::io::ReadBuf::new(
-                                &mut buf.initialize_unfilled()[..frame_len]
+                                &mut buf.initialize_unfilled()[..frame_len],
                             );
-                            match std::pin::Pin::new(&mut *self.inner).poll_read(cx, &mut payload_buf) {
+                            match std::pin::Pin::new(&mut *self.inner)
+                                .poll_read(cx, &mut payload_buf)
+                            {
                                 Poll::Ready(Ok(())) => {
                                     let n = payload_buf.filled().len();
                                     buf.advance(n);
@@ -247,10 +255,11 @@ impl AsyncRead for AnyTlsStream {
                         } else {
                             // Buffer too small — partial read
                             let take = buf.remaining();
-                            let mut payload_buf = tokio::io::ReadBuf::new(
-                                &mut buf.initialize_unfilled()[..take]
-                            );
-                            match std::pin::Pin::new(&mut *self.inner).poll_read(cx, &mut payload_buf) {
+                            let mut payload_buf =
+                                tokio::io::ReadBuf::new(&mut buf.initialize_unfilled()[..take]);
+                            match std::pin::Pin::new(&mut *self.inner)
+                                .poll_read(cx, &mut payload_buf)
+                            {
                                 Poll::Ready(Ok(())) => {
                                     let n = payload_buf.filled().len();
                                     buf.advance(n);

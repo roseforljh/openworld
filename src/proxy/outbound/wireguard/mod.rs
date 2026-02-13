@@ -14,10 +14,7 @@ use crate::common::{BoxUdpTransport, ProxyStream};
 use crate::config::types::OutboundConfig;
 use crate::proxy::{OutboundHandler, Session};
 
-use noise::{
-    WireGuardKeys,
-    create_handshake_init, parse_base64_key,
-};
+use noise::{create_handshake_init, parse_base64_key, WireGuardKeys};
 
 pub struct WireGuardPeer {
     pub public_key: PublicKey,
@@ -41,9 +38,10 @@ impl WireGuardOutbound {
     pub fn new(config: &OutboundConfig) -> Result<Self> {
         let settings = &config.settings;
 
-        let private_key_str = settings.private_key.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("wireguard '{}' missing 'private_key'", config.tag)
-        })?;
+        let private_key_str = settings
+            .private_key
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("wireguard '{}' missing 'private_key'", config.tag))?;
         let private_key_bytes = parse_base64_key(private_key_str)?;
         let private_key = StaticSecret::from(private_key_bytes);
         let public_key = PublicKey::from(&private_key);
@@ -70,7 +68,8 @@ impl WireGuardOutbound {
                     )
                 });
 
-                let allowed_ips: Vec<ipnet::IpNet> = pc.allowed_ips
+                let allowed_ips: Vec<ipnet::IpNet> = pc
+                    .allowed_ips
                     .iter()
                     .filter_map(|s| s.parse().ok())
                     .collect();
@@ -109,10 +108,7 @@ impl WireGuardOutbound {
                 public_key: peer_public_key,
                 preshared_key,
                 endpoint,
-                allowed_ips: vec![
-                    "0.0.0.0/0".parse().unwrap(),
-                    "::/0".parse().unwrap(),
-                ],
+                allowed_ips: vec!["0.0.0.0/0".parse().unwrap(), "::/0".parse().unwrap()],
                 keepalive: settings.keepalive,
             });
         }
@@ -162,7 +158,9 @@ impl OutboundHandler for WireGuardOutbound {
     }
 
     async fn connect(&self, _session: &Session) -> Result<ProxyStream> {
-        let peer = self.peers.first()
+        let peer = self
+            .peers
+            .first()
             .ok_or_else(|| anyhow::anyhow!("wireguard: no peers configured"))?;
 
         let socket = UdpSocket::bind("0.0.0.0:0").await?;
@@ -189,17 +187,13 @@ impl OutboundHandler for WireGuardOutbound {
         let resp_timeout = tokio::time::timeout(
             std::time::Duration::from_secs(5),
             socket.recv(&mut resp_buf),
-        ).await
+        )
+        .await
         .map_err(|_| anyhow::anyhow!("wireguard handshake timeout"))?;
 
         let n = resp_timeout?;
-        let transport_keys = noise::parse_handshake_resp(
-            &resp_buf[..n],
-            &keys,
-            sender_index,
-            ck,
-            h,
-        )?;
+        let transport_keys =
+            noise::parse_handshake_resp(&resp_buf[..n], &keys, sender_index, ck, h)?;
 
         debug!(tag = self.tag, "wireguard handshake complete");
 

@@ -10,7 +10,7 @@ use anyhow::Result;
 use base64::Engine;
 use tracing::debug;
 
-use crate::config::types::{OutboundConfig, OutboundSettings, TransportConfig, TlsConfig};
+use crate::config::types::{OutboundConfig, OutboundSettings, TlsConfig, TransportConfig};
 
 // ─── 公共接口 ───
 
@@ -114,18 +114,27 @@ pub fn parse_proxy_uri(uri: &str) -> Result<OutboundConfig> {
         parse_ss_uri(rest)
     } else if let Some(rest) = uri.strip_prefix("trojan://") {
         parse_trojan_uri(rest)
-    } else if let Some(rest) = uri.strip_prefix("hysteria2://").or_else(|| uri.strip_prefix("hy2://")) {
+    } else if let Some(rest) = uri
+        .strip_prefix("hysteria2://")
+        .or_else(|| uri.strip_prefix("hy2://"))
+    {
         parse_hy2_uri(rest)
     } else if let Some(rest) = uri.strip_prefix("tuic://") {
         parse_tuic_uri(rest)
-    } else if let Some(rest) = uri.strip_prefix("wg://").or_else(|| uri.strip_prefix("wireguard://")) {
+    } else if let Some(rest) = uri
+        .strip_prefix("wg://")
+        .or_else(|| uri.strip_prefix("wireguard://"))
+    {
         parse_wg_uri(rest)
     } else if let Some(rest) = uri.strip_prefix("ssh://") {
         parse_ssh_uri(rest)
     } else if let Some(rest) = uri.strip_prefix("hysteria://") {
         parse_hy1_uri(rest)
     } else {
-        anyhow::bail!("unsupported proxy URI scheme: {}", uri.split("://").next().unwrap_or("?"))
+        anyhow::bail!(
+            "unsupported proxy URI scheme: {}",
+            uri.split("://").next().unwrap_or("?")
+        )
     }
 }
 
@@ -140,10 +149,19 @@ fn parse_vmess_uri(encoded: &str) -> Result<OutboundConfig> {
 
     let tag = v["ps"].as_str().unwrap_or("vmess").to_string();
     let address = v["add"].as_str().unwrap_or("").to_string();
-    let port = v["port"].as_u64().or_else(|| v["port"].as_str().and_then(|s| s.parse().ok())).unwrap_or(443) as u16;
+    let port = v["port"]
+        .as_u64()
+        .or_else(|| v["port"].as_str().and_then(|s| s.parse().ok()))
+        .unwrap_or(443) as u16;
     let uuid = v["id"].as_str().unwrap_or("").to_string();
-    let alter_id = v["aid"].as_u64().or_else(|| v["aid"].as_str().and_then(|s| s.parse().ok())).unwrap_or(0) as u16;
-    let sni = v["sni"].as_str().or_else(|| v["host"].as_str()).map(String::from);
+    let alter_id = v["aid"]
+        .as_u64()
+        .or_else(|| v["aid"].as_str().and_then(|s| s.parse().ok()))
+        .unwrap_or(0) as u16;
+    let sni = v["sni"]
+        .as_str()
+        .or_else(|| v["host"].as_str())
+        .map(String::from);
     let security = if v["tls"].as_str() == Some("tls") {
         Some("tls".to_string())
     } else {
@@ -159,7 +177,11 @@ fn parse_vmess_uri(encoded: &str) -> Result<OutboundConfig> {
             transport_type: net.to_string(),
             path: ws_path,
             host: ws_host,
-            service_name: if net == "grpc" { v["path"].as_str().map(String::from) } else { None },
+            service_name: if net == "grpc" {
+                v["path"].as_str().map(String::from)
+            } else {
+                None
+            },
             ..Default::default()
         })
     } else {
@@ -201,7 +223,9 @@ fn parse_vless_uri(rest: &str) -> Result<OutboundConfig> {
     let (main, tag) = rest.rsplit_once('#').unwrap_or((rest, "vless"));
     let tag = url_decode(tag).unwrap_or_else(|_| tag.into()).to_string();
 
-    let (userinfo, host_params) = main.split_once('@').ok_or_else(|| anyhow::anyhow!("vless: missing @"))?;
+    let (userinfo, host_params) = main
+        .split_once('@')
+        .ok_or_else(|| anyhow::anyhow!("vless: missing @"))?;
     let uuid = userinfo.to_string();
 
     let (host_port, params_str) = host_params.split_once('?').unwrap_or((host_params, ""));
@@ -251,10 +275,11 @@ fn parse_ss_uri(rest: &str) -> Result<OutboundConfig> {
     if main.contains('@') {
         // SIP002 format: base64(method:password)@host:port
         let (encoded_part, host_part) = main.split_once('@').unwrap();
-        let decoded = decode_base64_content(encoded_part)
-            .unwrap_or_else(|_| encoded_part.to_string());
+        let decoded =
+            decode_base64_content(encoded_part).unwrap_or_else(|_| encoded_part.to_string());
 
-        let (method, password) = decoded.split_once(':')
+        let (method, password) = decoded
+            .split_once(':')
             .ok_or_else(|| anyhow::anyhow!("ss: invalid method:password"))?;
 
         let (host, port_str) = parse_host_port(host_part)?;
@@ -274,9 +299,11 @@ fn parse_ss_uri(rest: &str) -> Result<OutboundConfig> {
     } else {
         // Legacy: base64(method:password@host:port)
         let decoded = decode_base64_content(main)?;
-        let (method_pass, host_port) = decoded.rsplit_once('@')
+        let (method_pass, host_port) = decoded
+            .rsplit_once('@')
             .ok_or_else(|| anyhow::anyhow!("ss: invalid format"))?;
-        let (method, password) = method_pass.split_once(':')
+        let (method, password) = method_pass
+            .split_once(':')
             .ok_or_else(|| anyhow::anyhow!("ss: invalid method:password"))?;
         let (host, port_str) = parse_host_port(host_port)?;
         let port: u16 = port_str.parse()?;
@@ -301,8 +328,12 @@ fn parse_trojan_uri(rest: &str) -> Result<OutboundConfig> {
     let (main, tag) = rest.rsplit_once('#').unwrap_or((rest, "trojan"));
     let tag = url_decode(tag).unwrap_or_else(|_| tag.into()).to_string();
 
-    let (password, host_params) = main.split_once('@').ok_or_else(|| anyhow::anyhow!("trojan: missing @"))?;
-    let password = url_decode(password).unwrap_or_else(|_| password.into()).to_string();
+    let (password, host_params) = main
+        .split_once('@')
+        .ok_or_else(|| anyhow::anyhow!("trojan: missing @"))?;
+    let password = url_decode(password)
+        .unwrap_or_else(|_| password.into())
+        .to_string();
 
     let (host_port, params_str) = host_params.split_once('?').unwrap_or((host_params, ""));
     let (host, port_str) = parse_host_port(host_port)?;
@@ -335,7 +366,9 @@ fn parse_hy2_uri(rest: &str) -> Result<OutboundConfig> {
     let (main, tag) = rest.rsplit_once('#').unwrap_or((rest, "hy2"));
     let tag = url_decode(tag).unwrap_or_else(|_| tag.into()).to_string();
 
-    let (password, host_params) = main.split_once('@').ok_or_else(|| anyhow::anyhow!("hy2: missing @"))?;
+    let (password, host_params) = main
+        .split_once('@')
+        .ok_or_else(|| anyhow::anyhow!("hy2: missing @"))?;
     let (host_port, params_str) = host_params.split_once('?').unwrap_or((host_params, ""));
     let (host, port_str) = parse_host_port(host_port)?;
     let port: u16 = port_str.parse()?;
@@ -365,8 +398,12 @@ fn parse_tuic_uri(rest: &str) -> Result<OutboundConfig> {
     let (main, tag) = rest.rsplit_once('#').unwrap_or((rest, "tuic"));
     let tag = url_decode(tag).unwrap_or_else(|_| tag.into()).to_string();
 
-    let (userinfo, host_params) = main.split_once('@').ok_or_else(|| anyhow::anyhow!("tuic: missing @"))?;
-    let (uuid, password) = userinfo.split_once(':').ok_or_else(|| anyhow::anyhow!("tuic: missing password after uuid"))?;
+    let (userinfo, host_params) = main
+        .split_once('@')
+        .ok_or_else(|| anyhow::anyhow!("tuic: missing @"))?;
+    let (uuid, password) = userinfo
+        .split_once(':')
+        .ok_or_else(|| anyhow::anyhow!("tuic: missing password after uuid"))?;
 
     let (host_port, params_str) = host_params.split_once('?').unwrap_or((host_params, ""));
     let (host, port_str) = parse_host_port(host_port)?;
@@ -374,12 +411,18 @@ fn parse_tuic_uri(rest: &str) -> Result<OutboundConfig> {
 
     let params = parse_query_params(params_str);
     let sni = params.get("sni").cloned();
-    let congestion_control = params.get("congestion_control")
+    let congestion_control = params
+        .get("congestion_control")
         .or(params.get("congestion-controller"))
         .cloned();
-    let alpn = params.get("alpn").map(|a| a.split(',').map(String::from).collect::<Vec<_>>());
-    let allow_insecure = params.get("insecure").or(params.get("allowInsecure"))
-        .map(|v| v == "1" || v == "true").unwrap_or(false);
+    let alpn = params
+        .get("alpn")
+        .map(|a| a.split(',').map(String::from).collect::<Vec<_>>());
+    let allow_insecure = params
+        .get("insecure")
+        .or(params.get("allowInsecure"))
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false);
 
     let tls = Some(TlsConfig {
         enabled: true,
@@ -414,16 +457,26 @@ fn parse_wg_uri(rest: &str) -> Result<OutboundConfig> {
     let (main, tag) = rest.rsplit_once('#').unwrap_or((rest, "wireguard"));
     let tag = url_decode(tag).unwrap_or_else(|_| tag.into()).to_string();
 
-    let (private_key, host_params) = main.split_once('@').ok_or_else(|| anyhow::anyhow!("wg: missing @"))?;
-    let private_key = url_decode(private_key).unwrap_or_else(|_| private_key.into()).to_string();
+    let (private_key, host_params) = main
+        .split_once('@')
+        .ok_or_else(|| anyhow::anyhow!("wg: missing @"))?;
+    let private_key = url_decode(private_key)
+        .unwrap_or_else(|_| private_key.into())
+        .to_string();
 
     let (host_port, params_str) = host_params.split_once('?').unwrap_or((host_params, ""));
     let (host, port_str) = parse_host_port(host_port)?;
     let port: u16 = port_str.parse()?;
 
     let params = parse_query_params(params_str);
-    let peer_public_key = params.get("publickey").or(params.get("public-key")).cloned();
-    let preshared_key = params.get("presharedkey").or(params.get("pre-shared-key")).cloned();
+    let peer_public_key = params
+        .get("publickey")
+        .or(params.get("public-key"))
+        .cloned();
+    let preshared_key = params
+        .get("presharedkey")
+        .or(params.get("pre-shared-key"))
+        .cloned();
     let local_address = params.get("address").or(params.get("ip")).cloned();
     let mtu = params.get("mtu").and_then(|v| v.parse().ok());
     let keepalive = params.get("keepalive").and_then(|v| v.parse().ok());
@@ -452,10 +505,16 @@ fn parse_ssh_uri(rest: &str) -> Result<OutboundConfig> {
     let (main, tag) = rest.rsplit_once('#').unwrap_or((rest, "ssh"));
     let tag = url_decode(tag).unwrap_or_else(|_| tag.into()).to_string();
 
-    let (userinfo, host_port) = main.split_once('@').ok_or_else(|| anyhow::anyhow!("ssh: missing @"))?;
+    let (userinfo, host_port) = main
+        .split_once('@')
+        .ok_or_else(|| anyhow::anyhow!("ssh: missing @"))?;
     let (username, password) = userinfo.split_once(':').unwrap_or((userinfo, ""));
-    let username = url_decode(username).unwrap_or_else(|_| username.into()).to_string();
-    let password = url_decode(password).unwrap_or_else(|_| password.into()).to_string();
+    let username = url_decode(username)
+        .unwrap_or_else(|_| username.into())
+        .to_string();
+    let password = url_decode(password)
+        .unwrap_or_else(|_| password.into())
+        .to_string();
 
     let (host, port_str) = parse_host_port(host_port)?;
     let port: u16 = port_str.parse()?;
@@ -467,7 +526,11 @@ fn parse_ssh_uri(rest: &str) -> Result<OutboundConfig> {
             address: Some(host),
             port: Some(port),
             username: Some(username),
-            password: if password.is_empty() { None } else { Some(password) },
+            password: if password.is_empty() {
+                None
+            } else {
+                Some(password)
+            },
             ..Default::default()
         },
     })
@@ -488,11 +551,25 @@ fn parse_hy1_uri(rest: &str) -> Result<OutboundConfig> {
     let password = params.get("auth").or(params.get("auth_str")).cloned();
     let sni = params.get("sni").or(params.get("peer")).cloned();
     let obfs = params.get("obfs").cloned();
-    let obfs_password = params.get("obfsParam").or(params.get("obfs-password")).cloned();
-    let up_mbps = params.get("upmbps").or(params.get("up")).and_then(|v| v.parse().ok());
-    let down_mbps = params.get("downmbps").or(params.get("down")).and_then(|v| v.parse().ok());
-    let allow_insecure = params.get("insecure").map(|v| v == "1" || v == "true").unwrap_or(false);
-    let alpn = params.get("alpn").map(|a| a.split(',').map(String::from).collect::<Vec<_>>());
+    let obfs_password = params
+        .get("obfsParam")
+        .or(params.get("obfs-password"))
+        .cloned();
+    let up_mbps = params
+        .get("upmbps")
+        .or(params.get("up"))
+        .and_then(|v| v.parse().ok());
+    let down_mbps = params
+        .get("downmbps")
+        .or(params.get("down"))
+        .and_then(|v| v.parse().ok());
+    let allow_insecure = params
+        .get("insecure")
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false);
+    let alpn = params
+        .get("alpn")
+        .map(|a| a.split(',').map(String::from).collect::<Vec<_>>());
 
     let tls = Some(TlsConfig {
         enabled: true,
@@ -525,7 +602,8 @@ fn parse_hy1_uri(rest: &str) -> Result<OutboundConfig> {
 
 fn parse_clash_yaml(content: &str) -> Result<Vec<OutboundConfig>> {
     let yaml: serde_yml::Value = serde_yml::from_str(content)?;
-    let proxies = yaml["proxies"].as_sequence()
+    let proxies = yaml["proxies"]
+        .as_sequence()
         .ok_or_else(|| anyhow::anyhow!("clash YAML: missing proxies array"))?;
 
     let mut configs = Vec::new();
@@ -558,8 +636,14 @@ fn parse_clash_proxy(v: &serde_yml::Value) -> Option<OutboundConfig> {
 
     let uuid = v["uuid"].as_str().map(String::from);
     let password = v["password"].as_str().map(String::from);
-    let method = v["cipher"].as_str().or(v["method"].as_str()).map(String::from);
-    let sni = v["sni"].as_str().or(v["servername"].as_str()).map(String::from);
+    let method = v["cipher"]
+        .as_str()
+        .or(v["method"].as_str())
+        .map(String::from);
+    let sni = v["sni"]
+        .as_str()
+        .or(v["servername"].as_str())
+        .map(String::from);
     let allow_insecure = v["skip-cert-verify"].as_bool().unwrap_or(false);
     let flow = v["flow"].as_str().map(String::from);
     let alter_id = v["alterId"].as_u64().map(|v| v as u16);
@@ -587,23 +671,34 @@ fn parse_clash_proxy(v: &serde_yml::Value) -> Option<OutboundConfig> {
             "h2" => {
                 if let Some(opts) = v.get("h2-opts").or(v.get("h2-opt")) {
                     path = opts["path"].as_str().map(String::from);
-                    host = opts["host"].as_sequence().and_then(|s| s.first())
-                        .and_then(|v| v.as_str()).map(String::from);
+                    host = opts["host"]
+                        .as_sequence()
+                        .and_then(|s| s.first())
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
                 }
             }
             "http" => {
                 if let Some(opts) = v.get("http-opts") {
-                    path = opts["path"].as_sequence().and_then(|s| s.first())
-                        .and_then(|v| v.as_str()).map(String::from);
-                    host = opts["headers"]["Host"].as_sequence().and_then(|s| s.first())
-                        .and_then(|v| v.as_str()).map(String::from);
+                    path = opts["path"]
+                        .as_sequence()
+                        .and_then(|s| s.first())
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
+                    host = opts["headers"]["Host"]
+                        .as_sequence()
+                        .and_then(|s| s.first())
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
                 }
             }
             _ => {}
         }
         Some(TransportConfig {
             transport_type: network.to_string(),
-            path, host, service_name,
+            path,
+            host,
+            service_name,
             ..Default::default()
         })
     } else {
@@ -611,8 +706,8 @@ fn parse_clash_proxy(v: &serde_yml::Value) -> Option<OutboundConfig> {
     };
 
     // TLS 配置
-    let tls_enabled = v["tls"].as_bool().unwrap_or(false)
-        || protocol == "trojan" || protocol == "vless";
+    let tls_enabled =
+        v["tls"].as_bool().unwrap_or(false) || protocol == "trojan" || protocol == "vless";
     let tls = if tls_enabled {
         Some(TlsConfig {
             enabled: true,
@@ -668,7 +763,8 @@ fn parse_clash_proxy(v: &serde_yml::Value) -> Option<OutboundConfig> {
 
 fn parse_singbox_json(content: &str) -> Result<Vec<OutboundConfig>> {
     let v: serde_json::Value = serde_json::from_str(content)?;
-    let outbounds = v["outbounds"].as_array()
+    let outbounds = v["outbounds"]
+        .as_array()
         .ok_or_else(|| anyhow::anyhow!("sing-box: missing outbounds"))?;
 
     let mut configs = Vec::new();
@@ -691,16 +787,28 @@ fn parse_singbox_json(content: &str) -> Result<Vec<OutboundConfig>> {
         let sni = tls_obj["server_name"].as_str().map(String::from);
         let allow_insecure = tls_obj["insecure"].as_bool().unwrap_or(false);
         let tls_enabled = tls_obj["enabled"].as_bool().unwrap_or(false);
-        let security = if tls_enabled { Some("tls".to_string()) } else { None };
+        let security = if tls_enabled {
+            Some("tls".to_string())
+        } else {
+            None
+        };
         let tls = if tls_enabled {
             let reality = &tls_obj["reality"];
             Some(TlsConfig {
                 enabled: true,
-                security: if reality["enabled"].as_bool().unwrap_or(false) { "reality".to_string() } else { "tls".to_string() },
+                security: if reality["enabled"].as_bool().unwrap_or(false) {
+                    "reality".to_string()
+                } else {
+                    "tls".to_string()
+                },
                 sni: sni.clone(),
                 allow_insecure,
                 fingerprint: tls_obj["utls"]["fingerprint"].as_str().map(String::from),
-                alpn: tls_obj["alpn"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()),
+                alpn: tls_obj["alpn"].as_array().map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                }),
                 public_key: reality["public_key"].as_str().map(String::from),
                 short_id: reality["short_id"].as_str().map(String::from),
                 ..Default::default()
@@ -717,14 +825,19 @@ fn parse_singbox_json(content: &str) -> Result<Vec<OutboundConfig>> {
                 Some(TransportConfig {
                     transport_type: t_type.to_string(),
                     path: transport_obj["path"].as_str().map(String::from),
-                    host: transport_obj["host"].as_str()
+                    host: transport_obj["host"]
+                        .as_str()
                         .or_else(|| transport_obj["headers"]["Host"].as_str())
                         .map(String::from),
                     service_name: transport_obj["service_name"].as_str().map(String::from),
                     ..Default::default()
                 })
-            } else { None }
-        } else { None };
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let protocol = match ob_type {
             "vmess" => "vmess",
@@ -778,8 +891,11 @@ fn parse_sip008_json(content: &str) -> Result<Vec<OutboundConfig>> {
     }
 
     let sip: Sip008 = serde_json::from_str(content)?;
-    let configs = sip.servers.into_iter().enumerate().map(|(i, s)| {
-        OutboundConfig {
+    let configs = sip
+        .servers
+        .into_iter()
+        .enumerate()
+        .map(|(i, s)| OutboundConfig {
             tag: s.remarks.unwrap_or_else(|| format!("ss-{}", i)),
             protocol: "shadowsocks".to_string(),
             settings: OutboundSettings {
@@ -789,15 +905,17 @@ fn parse_sip008_json(content: &str) -> Result<Vec<OutboundConfig>> {
                 method: Some(s.method),
                 ..Default::default()
             },
-        }
-    }).collect();
+        })
+        .collect();
     Ok(configs)
 }
 
 // ─── 传输层辅助函数 ───
 
 /// 从 URI 查询参数提取传输层配置 (type/path/host/serviceName)
-fn extract_transport_from_params(params: &std::collections::HashMap<String, String>) -> Option<TransportConfig> {
+fn extract_transport_from_params(
+    params: &std::collections::HashMap<String, String>,
+) -> Option<TransportConfig> {
     let t = params.get("type").map(|s| s.as_str()).unwrap_or("tcp");
     if t == "tcp" || t == "none" || t.is_empty() {
         return None;
@@ -806,13 +924,20 @@ fn extract_transport_from_params(params: &std::collections::HashMap<String, Stri
         transport_type: t.to_string(),
         path: params.get("path").cloned(),
         host: params.get("host").cloned(),
-        service_name: if t == "grpc" { params.get("serviceName").cloned() } else { None },
+        service_name: if t == "grpc" {
+            params.get("serviceName").cloned()
+        } else {
+            None
+        },
         ..Default::default()
     })
 }
 
 /// 从 URI 查询参数提取 TLS 配置 (security/sni/fp/pbk/sid/alpn)
-fn extract_tls_from_params(params: &std::collections::HashMap<String, String>, sni: Option<String>) -> Option<TlsConfig> {
+fn extract_tls_from_params(
+    params: &std::collections::HashMap<String, String>,
+    sni: Option<String>,
+) -> Option<TlsConfig> {
     let sec = params.get("security").map(|s| s.as_str()).unwrap_or("");
     if sec.is_empty() || sec == "none" {
         return None;
@@ -833,13 +958,16 @@ fn extract_tls_from_params(params: &std::collections::HashMap<String, String>, s
 
 fn parse_host_port(s: &str) -> Result<(String, &str)> {
     if let Some(rest) = s.strip_prefix('[') {
-        let (host, port_with_bracket) = rest.split_once(']')
+        let (host, port_with_bracket) = rest
+            .split_once(']')
             .ok_or_else(|| anyhow::anyhow!("invalid IPv6 address"))?;
-        let port_str = port_with_bracket.strip_prefix(':')
+        let port_str = port_with_bracket
+            .strip_prefix(':')
             .ok_or_else(|| anyhow::anyhow!("missing port after IPv6"))?;
         Ok((host.to_string(), port_str))
     } else {
-        let (host, port) = s.rsplit_once(':')
+        let (host, port) = s
+            .rsplit_once(':')
             .ok_or_else(|| anyhow::anyhow!("missing port in: {}", s))?;
         Ok((host.to_string(), port))
     }
@@ -854,8 +982,12 @@ fn url_decode(s: &str) -> Result<std::borrow::Cow<'_, str>> {
     let mut chars = s.as_bytes().iter();
     while let Some(&b) = chars.next() {
         if b == b'%' {
-            let hi = chars.next().ok_or_else(|| anyhow::anyhow!("incomplete percent encoding"))?;
-            let lo = chars.next().ok_or_else(|| anyhow::anyhow!("incomplete percent encoding"))?;
+            let hi = chars
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("incomplete percent encoding"))?;
+            let lo = chars
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("incomplete percent encoding"))?;
             let byte = u8::from_str_radix(&format!("{}{}", *hi as char, *lo as char), 16)
                 .map_err(|_| anyhow::anyhow!("invalid percent encoding"))?;
             result.push(byte);
@@ -912,7 +1044,11 @@ pub fn detect_format(content: &str) -> SubFormat {
     }
     // Possibly base64
     let clean: String = content.chars().filter(|c| !c.is_whitespace()).collect();
-    if clean.chars().all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '=') && clean.len() > 20 {
+    if clean
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '=')
+        && clean.len() > 20
+    {
         return SubFormat::Base64;
     }
     SubFormat::Unknown
@@ -937,15 +1073,34 @@ impl ProxyNode {
     fn from_outbound_config(config: &OutboundConfig) -> Self {
         let mut settings = std::collections::HashMap::new();
         let s = &config.settings;
-        if let Some(v) = &s.uuid { settings.insert("uuid".to_string(), v.clone()); }
-        if let Some(v) = &s.password { settings.insert("password".to_string(), v.clone()); }
-        if let Some(v) = &s.method { settings.insert("method".to_string(), v.clone()); settings.insert("cipher".to_string(), v.clone()); }
-        if let Some(v) = &s.sni { settings.insert("sni".to_string(), v.clone()); }
-        if let Some(v) = &s.security { settings.insert("security".to_string(), v.clone()); }
-        if let Some(v) = &s.flow { settings.insert("flow".to_string(), v.clone()); }
-        if let Some(v) = s.alter_id { settings.insert("alter_id".to_string(), v.to_string()); }
-        if let Some(v) = &s.plugin { settings.insert("plugin".to_string(), v.clone()); }
-        if let Some(v) = &s.plugin_opts { settings.insert("plugin_opts".to_string(), v.clone()); }
+        if let Some(v) = &s.uuid {
+            settings.insert("uuid".to_string(), v.clone());
+        }
+        if let Some(v) = &s.password {
+            settings.insert("password".to_string(), v.clone());
+        }
+        if let Some(v) = &s.method {
+            settings.insert("method".to_string(), v.clone());
+            settings.insert("cipher".to_string(), v.clone());
+        }
+        if let Some(v) = &s.sni {
+            settings.insert("sni".to_string(), v.clone());
+        }
+        if let Some(v) = &s.security {
+            settings.insert("security".to_string(), v.clone());
+        }
+        if let Some(v) = &s.flow {
+            settings.insert("flow".to_string(), v.clone());
+        }
+        if let Some(v) = s.alter_id {
+            settings.insert("alter_id".to_string(), v.to_string());
+        }
+        if let Some(v) = &s.plugin {
+            settings.insert("plugin".to_string(), v.clone());
+        }
+        if let Some(v) = &s.plugin_opts {
+            settings.insert("plugin_opts".to_string(), v.clone());
+        }
 
         ProxyNode {
             name: config.tag.clone(),
@@ -960,25 +1115,36 @@ impl ProxyNode {
 /// 解析 Clash YAML 为 ProxyNode 列表（pub 兼容）
 pub fn parse_clash_yaml_nodes(content: &str) -> Result<Vec<ProxyNode>> {
     let configs = parse_clash_yaml(content)?;
-    Ok(configs.iter().map(ProxyNode::from_outbound_config).collect())
+    Ok(configs
+        .iter()
+        .map(ProxyNode::from_outbound_config)
+        .collect())
 }
 
 /// 解析 sing-box JSON 为 ProxyNode 列表（pub 兼容）
 pub fn parse_singbox_json_nodes(content: &str) -> Result<Vec<ProxyNode>> {
     let configs = parse_singbox_json(content)?;
-    Ok(configs.iter().map(ProxyNode::from_outbound_config).collect())
+    Ok(configs
+        .iter()
+        .map(ProxyNode::from_outbound_config)
+        .collect())
 }
 
 /// 解析 Base64 编码的 URI 列表为 ProxyNode
 pub fn parse_base64(content: &str) -> Result<Vec<ProxyNode>> {
     let decoded = decode_base64_content(content)?;
     let configs = parse_uri_list(&decoded)?;
-    Ok(configs.iter().map(ProxyNode::from_outbound_config).collect())
+    Ok(configs
+        .iter()
+        .map(ProxyNode::from_outbound_config)
+        .collect())
 }
 
 /// 解析单个代理链接为 ProxyNode
 pub fn parse_proxy_link(line: &str) -> Option<ProxyNode> {
-    parse_proxy_uri(line).ok().map(|c| ProxyNode::from_outbound_config(&c))
+    parse_proxy_uri(line)
+        .ok()
+        .map(|c| ProxyNode::from_outbound_config(&c))
 }
 
 #[cfg(test)]
@@ -999,7 +1165,8 @@ mod tests {
 
     #[test]
     fn parse_ss_sip002() {
-        let method_pass = base64::engine::general_purpose::STANDARD.encode("aes-256-gcm:mypassword");
+        let method_pass =
+            base64::engine::general_purpose::STANDARD.encode("aes-256-gcm:mypassword");
         let uri = format!("ss://{}@server.com:8388#MySSNode", method_pass);
         let config = parse_proxy_uri(&uri).unwrap();
         assert_eq!(config.tag, "MySSNode");

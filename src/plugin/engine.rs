@@ -191,14 +191,20 @@ impl ScriptEngine {
                     message: "hour requires range like 0..6".into(),
                 });
             }
-            let start: u8 = parts[0].trim().parse().map_err(|_| ScriptError::ParseError {
-                line,
-                message: "invalid hour start".into(),
-            })?;
-            let end: u8 = parts[1].trim().parse().map_err(|_| ScriptError::ParseError {
-                line,
-                message: "invalid hour end".into(),
-            })?;
+            let start: u8 = parts[0]
+                .trim()
+                .parse()
+                .map_err(|_| ScriptError::ParseError {
+                    line,
+                    message: "invalid hour start".into(),
+                })?;
+            let end: u8 = parts[1]
+                .trim()
+                .parse()
+                .map_err(|_| ScriptError::ParseError {
+                    line,
+                    message: "invalid hour end".into(),
+                })?;
             return Ok(Condition::HourRange { start, end });
         }
 
@@ -324,13 +330,9 @@ impl ScriptEngine {
 
             Condition::InboundTag(tag) => ctx.inbound_tag == *tag,
 
-            Condition::And(conditions) => conditions
-                .iter()
-                .all(|c| Self::evaluate(c, ctx)),
+            Condition::And(conditions) => conditions.iter().all(|c| Self::evaluate(c, ctx)),
 
-            Condition::Or(conditions) => conditions
-                .iter()
-                .any(|c| Self::evaluate(c, ctx)),
+            Condition::Or(conditions) => conditions.iter().any(|c| Self::evaluate(c, ctx)),
 
             Condition::Not(c) => !Self::evaluate(c, ctx),
 
@@ -339,10 +341,7 @@ impl ScriptEngine {
     }
 
     /// 执行脚本，返回最终动作
-    pub fn execute(
-        script: &PluginScript,
-        ctx: &super::host_api::HostContext,
-    ) -> String {
+    pub fn execute(script: &PluginScript, ctx: &super::host_api::HostContext) -> String {
         for rule in &script.rules {
             if Self::evaluate(&rule.condition, ctx) {
                 return rule.action.clone();
@@ -483,8 +482,7 @@ mod tests {
 
     #[test]
     fn process_name_match() {
-        let script =
-            ScriptEngine::compile("t", r#"when process "BitTorrent" => reject"#).unwrap();
+        let script = ScriptEngine::compile("t", r#"when process "BitTorrent" => reject"#).unwrap();
         let mut ctx = default_ctx();
         ctx.process_name = Some("bittorrent".to_string());
         assert_eq!(ScriptEngine::execute(&script, &ctx), "reject");
@@ -492,8 +490,7 @@ mod tests {
 
     #[test]
     fn inbound_tag_match() {
-        let script =
-            ScriptEngine::compile("t", r#"when inbound "tun-in" => proxy"#).unwrap();
+        let script = ScriptEngine::compile("t", r#"when inbound "tun-in" => proxy"#).unwrap();
         let mut ctx = default_ctx();
 
         // 不匹配

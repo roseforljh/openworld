@@ -375,7 +375,11 @@ mod tests {
         let header = H2FrameHeader::decode(&frame[..FRAME_HEADER_SIZE].try_into().unwrap());
         assert_eq!(header.frame_type, FrameType::GoAway);
         assert_eq!(header.stream_id, 0);
-        let last_id = u32::from_be_bytes(frame[FRAME_HEADER_SIZE..FRAME_HEADER_SIZE + 4].try_into().unwrap());
+        let last_id = u32::from_be_bytes(
+            frame[FRAME_HEADER_SIZE..FRAME_HEADER_SIZE + 4]
+                .try_into()
+                .unwrap(),
+        );
         let error = u32::from_be_bytes(frame[FRAME_HEADER_SIZE + 4..].try_into().unwrap());
         assert_eq!(last_id, 7);
         assert_eq!(error, 0);

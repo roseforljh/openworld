@@ -127,7 +127,10 @@ impl ReleaseChecklist {
     pub fn validate(&self) -> Vec<ChecklistIssue> {
         let mut issues = Vec::new();
 
-        let has_breaking = self.changes.iter().any(|c| c.change_type == ChangeType::Breaking);
+        let has_breaking = self
+            .changes
+            .iter()
+            .any(|c| c.change_type == ChangeType::Breaking);
         if has_breaking && self.version.major == 0 && self.version.minor == 0 {
             issues.push(ChecklistIssue {
                 severity: IssueSeverity::Warn,
@@ -152,10 +155,7 @@ impl ReleaseChecklist {
             if sc.rollback_plan.is_none() {
                 issues.push(ChecklistIssue {
                     severity: IssueSeverity::Block,
-                    message: format!(
-                        "security change '{}' has no rollback plan",
-                        sc.description
-                    ),
+                    message: format!("security change '{}' has no rollback plan", sc.description),
                 });
             }
         }
@@ -168,10 +168,7 @@ impl ReleaseChecklist {
         for bc in &breaking_no_rollback {
             issues.push(ChecklistIssue {
                 severity: IssueSeverity::Warn,
-                message: format!(
-                    "breaking change '{}' has no rollback plan",
-                    bc.description
-                ),
+                message: format!("breaking change '{}' has no rollback plan", bc.description),
             });
         }
 

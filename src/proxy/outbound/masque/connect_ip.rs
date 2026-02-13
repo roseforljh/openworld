@@ -48,8 +48,7 @@ impl IpRoute {
             ip_protocol: 0,
             start_ip: IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
             end_ip: IpAddr::V6(std::net::Ipv6Addr::new(
-                0xffff, 0xffff, 0xffff, 0xffff,
-                0xffff, 0xffff, 0xffff, 0xffff,
+                0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff,
             )),
         }
     }
@@ -121,8 +120,7 @@ pub fn decode_varint(buf: &mut &[u8]) -> Result<u64> {
         }
         8 => {
             let v = u64::from_be_bytes([
-                buf[0], buf[1], buf[2], buf[3],
-                buf[4], buf[5], buf[6], buf[7],
+                buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7],
             ]) & 0x3fff_ffff_ffff_ffff;
             buf.advance(8);
             v

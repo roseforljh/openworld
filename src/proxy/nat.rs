@@ -211,9 +211,9 @@ impl NatTable {
             let active_table = self.entries.lock().await;
             let mut source_map = self.source_map.lock().await;
             for (source, outbound_tag) in &expired_sources {
-                let has_active = active_table.iter().any(|(k, e)| {
-                    k.source == *source && e.outbound_tag == *outbound_tag
-                });
+                let has_active = active_table
+                    .iter()
+                    .any(|(k, e)| k.source == *source && e.outbound_tag == *outbound_tag);
                 if !has_active {
                     source_map.remove(&(*source, outbound_tag.clone()));
                 }
@@ -240,8 +240,7 @@ impl NatTable {
     ) -> tokio::task::JoinHandle<()> {
         let table = self.clone();
         tokio::spawn(async move {
-            let mut interval =
-                tokio::time::interval(Duration::from_secs(CLEANUP_INTERVAL_SECS));
+            let mut interval = tokio::time::interval(Duration::from_secs(CLEANUP_INTERVAL_SECS));
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
@@ -296,10 +295,7 @@ mod tests {
     }
 
     fn test_dest() -> Address {
-        Address::Ip(SocketAddr::new(
-            IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
-            53,
-        ))
+        Address::Ip(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 53))
     }
 
     fn test_key() -> NatKey {
@@ -397,13 +393,15 @@ mod tests {
 
         let key = test_key();
 
-        let (entry, is_new) =
-            table.get_or_insert(key.clone(), transport.clone(), "direct".to_string()).await;
+        let (entry, is_new) = table
+            .get_or_insert(key.clone(), transport.clone(), "direct".to_string())
+            .await;
         assert!(is_new);
         assert_eq!(entry.outbound_tag, "direct");
 
-        let (entry2, is_new2) =
-            table.get_or_insert(key, transport, "direct".to_string()).await;
+        let (entry2, is_new2) = table
+            .get_or_insert(key, transport, "direct".to_string())
+            .await;
         assert!(!is_new2);
         assert_eq!(entry2.outbound_tag, "direct");
     }

@@ -12,21 +12,21 @@ use crate::proxy::group::selector::SelectorGroup;
 use crate::proxy::group::urltest::UrlTestGroup;
 use crate::proxy::outbound::chain::ProxyChain;
 use crate::proxy::outbound::direct::DirectOutbound;
-use crate::proxy::outbound::reject::{BlackholeOutbound, RejectOutbound};
+use crate::proxy::outbound::http::HttpOutbound;
 use crate::proxy::outbound::hysteria2::Hysteria2Outbound;
+use crate::proxy::outbound::hysteria_v1::HysteriaV1Outbound;
+use crate::proxy::outbound::masque::MasqueOutbound;
+use crate::proxy::outbound::naive::NaiveOutbound;
+use crate::proxy::outbound::reject::{BlackholeOutbound, RejectOutbound};
 use crate::proxy::outbound::shadowsocks::ShadowsocksOutbound;
+use crate::proxy::outbound::socks5::Socks5Outbound;
+use crate::proxy::outbound::ssh::SshOutbound;
+use crate::proxy::outbound::tor::TorOutbound;
 use crate::proxy::outbound::trojan::TrojanOutbound;
 use crate::proxy::outbound::tuic::TuicOutbound;
 use crate::proxy::outbound::vless::VlessOutbound;
 use crate::proxy::outbound::vmess::VmessOutbound;
 use crate::proxy::outbound::wireguard::WireGuardOutbound;
-use crate::proxy::outbound::http::HttpOutbound;
-use crate::proxy::outbound::socks5::Socks5Outbound;
-use crate::proxy::outbound::ssh::SshOutbound;
-use crate::proxy::outbound::naive::NaiveOutbound;
-use crate::proxy::outbound::hysteria_v1::HysteriaV1Outbound;
-use crate::proxy::outbound::tor::TorOutbound;
-use crate::proxy::outbound::masque::MasqueOutbound;
 use crate::proxy::OutboundHandler;
 
 /// 代理组元数据
@@ -55,7 +55,10 @@ impl OutboundManager {
             }
 
             let handler: Arc<dyn OutboundHandler> = match config.protocol.as_str() {
-                "direct" => Arc::new(DirectOutbound::new(config.tag.clone()).with_dialer(config.settings.dialer.clone())),
+                "direct" => Arc::new(
+                    DirectOutbound::new(config.tag.clone())
+                        .with_dialer(config.settings.dialer.clone()),
+                ),
                 "vless" => Arc::new(VlessOutbound::new(config)?),
                 "hysteria2" => Arc::new(Hysteria2Outbound::new(config)?),
                 "hysteria" | "hysteria1" => Arc::new(HysteriaV1Outbound::new(config)?),
@@ -87,13 +90,14 @@ impl OutboundManager {
                 continue;
             }
 
-            let chain_tags = config
-                .settings
-                .chain
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("chain outbound '{}' requires settings.chain", config.tag))?;
+            let chain_tags = config.settings.chain.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("chain outbound '{}' requires settings.chain", config.tag)
+            })?;
             if chain_tags.is_empty() {
-                anyhow::bail!("chain outbound '{}' requires non-empty settings.chain", config.tag);
+                anyhow::bail!(
+                    "chain outbound '{}' requires non-empty settings.chain",
+                    config.tag
+                );
             }
 
             let mut chain = Vec::with_capacity(chain_tags.len());
@@ -130,7 +134,11 @@ impl OutboundManager {
 
             let handler: Arc<dyn OutboundHandler> =
                 Arc::new(ProxyChain::new(config.tag.clone(), chain)?);
-            info!(tag = config.tag, protocol = config.protocol, "outbound registered");
+            info!(
+                tag = config.tag,
+                protocol = config.protocol,
+                "outbound registered"
+            );
             handlers.insert(config.tag.clone(), handler);
         }
 

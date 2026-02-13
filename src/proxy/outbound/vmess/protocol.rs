@@ -125,21 +125,15 @@ pub fn encode_request_header(
     rand::Rng::fill(&mut rand::thread_rng(), &mut nonce);
 
     // KDF 派生密钥
-    let header_key_material = kdf(
-        &cmd_key,
-        &[b"VMess Header AEAD Key", &auth_id, &nonce],
-    );
+    let header_key_material = kdf(&cmd_key, &[b"VMess Header AEAD Key", &auth_id, &nonce]);
     let header_key: [u8; 16] = header_key_material[..16].try_into().unwrap();
 
-    let header_nonce_material = kdf(
-        &cmd_key,
-        &[b"VMess Header AEAD Nonce", &auth_id, &nonce],
-    );
+    let header_nonce_material = kdf(&cmd_key, &[b"VMess Header AEAD Nonce", &auth_id, &nonce]);
     let header_nonce: [u8; 12] = header_nonce_material[..12].try_into().unwrap();
 
     // AES-128-GCM 加密 header
-    use aes_gcm::{Aes128Gcm, KeyInit, Nonce};
     use aes_gcm::aead::Aead;
+    use aes_gcm::{Aes128Gcm, KeyInit, Nonce};
 
     let cipher = Aes128Gcm::new_from_slice(&header_key)
         .map_err(|e| anyhow::anyhow!("AES key init failed: {}", e))?;
@@ -213,7 +207,10 @@ pub fn fnv1a_hash(data: &[u8]) -> u32 {
 }
 
 /// Derive response key/IV from request key/IV per VMess spec.
-pub fn derive_response_key_iv(req_body_key: &[u8; 16], req_body_iv: &[u8; 16]) -> ([u8; 16], [u8; 16]) {
+pub fn derive_response_key_iv(
+    req_body_key: &[u8; 16],
+    req_body_iv: &[u8; 16],
+) -> ([u8; 16], [u8; 16]) {
     let resp_key_material = Sha256::digest(req_body_key);
     let mut resp_key = [0u8; 16];
     resp_key.copy_from_slice(&resp_key_material[..16]);
@@ -233,7 +230,10 @@ pub struct ShakeSizeParser {
 
 impl ShakeSizeParser {
     pub fn new(nonce: &[u8]) -> Self {
-        use sha3::{Shake128, digest::{ExtendableOutput, Update}};
+        use sha3::{
+            digest::{ExtendableOutput, Update},
+            Shake128,
+        };
         let mut hasher = Shake128::default();
         hasher.update(nonce);
         let reader = hasher.finalize_xof();
@@ -302,14 +302,15 @@ impl VmessChunkCipher {
 
         let encrypted = match self.security {
             SecurityType::Aes128Gcm => {
-                use aes_gcm::{Aes128Gcm, KeyInit, Nonce, aead::Aead};
+                use aes_gcm::{aead::Aead, Aes128Gcm, KeyInit, Nonce};
                 let cipher = Aes128Gcm::new_from_slice(&self.key)
                     .map_err(|e| anyhow::anyhow!("AES key init: {}", e))?;
-                cipher.encrypt(Nonce::from_slice(&nonce), plaintext)
+                cipher
+                    .encrypt(Nonce::from_slice(&nonce), plaintext)
                     .map_err(|e| anyhow::anyhow!("AES encrypt: {}", e))?
             }
             SecurityType::Chacha20Poly1305 => {
-                use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead};
+                use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
                 let mut ck = [0u8; 32];
                 let md5_1 = Md5::digest(&self.key);
                 ck[..16].copy_from_slice(&md5_1);
@@ -317,12 +318,11 @@ impl VmessChunkCipher {
                 ck[16..].copy_from_slice(&md5_2);
                 let cipher = ChaCha20Poly1305::new_from_slice(&ck)
                     .map_err(|e| anyhow::anyhow!("ChaCha20 key init: {}", e))?;
-                cipher.encrypt(Nonce::from_slice(&nonce), plaintext)
+                cipher
+                    .encrypt(Nonce::from_slice(&nonce), plaintext)
                     .map_err(|e| anyhow::anyhow!("ChaCha20 encrypt: {}", e))?
             }
-            SecurityType::None | SecurityType::Zero => {
-                plaintext.to_vec()
-            }
+            SecurityType::None | SecurityType::Zero => plaintext.to_vec(),
         };
 
         let chunk_len = (encrypted.len()) as u16;
@@ -345,14 +345,15 @@ impl VmessChunkCipher {
 
         match self.security {
             SecurityType::Aes128Gcm => {
-                use aes_gcm::{Aes128Gcm, KeyInit, Nonce, aead::Aead};
+                use aes_gcm::{aead::Aead, Aes128Gcm, KeyInit, Nonce};
                 let cipher = Aes128Gcm::new_from_slice(&self.key)
                     .map_err(|e| anyhow::anyhow!("AES key init: {}", e))?;
-                cipher.decrypt(Nonce::from_slice(&nonce), ciphertext)
+                cipher
+                    .decrypt(Nonce::from_slice(&nonce), ciphertext)
                     .map_err(|e| anyhow::anyhow!("AES decrypt: {}", e))
             }
             SecurityType::Chacha20Poly1305 => {
-                use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce, aead::Aead};
+                use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, KeyInit, Nonce};
                 let mut ck = [0u8; 32];
                 let md5_1 = Md5::digest(&self.key);
                 ck[..16].copy_from_slice(&md5_1);
@@ -360,12 +361,11 @@ impl VmessChunkCipher {
                 ck[16..].copy_from_slice(&md5_2);
                 let cipher = ChaCha20Poly1305::new_from_slice(&ck)
                     .map_err(|e| anyhow::anyhow!("ChaCha20 key init: {}", e))?;
-                cipher.decrypt(Nonce::from_slice(&nonce), ciphertext)
+                cipher
+                    .decrypt(Nonce::from_slice(&nonce), ciphertext)
                     .map_err(|e| anyhow::anyhow!("ChaCha20 decrypt: {}", e))
             }
-            SecurityType::None | SecurityType::Zero => {
-                Ok(ciphertext.to_vec())
-            }
+            SecurityType::None | SecurityType::Zero => Ok(ciphertext.to_vec()),
         }
     }
 }
@@ -382,13 +382,14 @@ pub fn parse_response_header(
     let resp_header_key = kdf(resp_key, &[b"AEAD Resp Header Key"]);
     let resp_header_nonce = kdf(resp_iv, &[b"AEAD Resp Header IV"]);
 
-    use aes_gcm::{Aes128Gcm, KeyInit, Nonce, aead::Aead};
+    use aes_gcm::{aead::Aead, Aes128Gcm, KeyInit, Nonce};
     let key: [u8; 16] = resp_header_key[..16].try_into().unwrap();
     let nonce: [u8; 12] = resp_header_nonce[..12].try_into().unwrap();
 
     let cipher = Aes128Gcm::new_from_slice(&key)
         .map_err(|e| anyhow::anyhow!("response header key init: {}", e))?;
-    let decrypted = cipher.decrypt(Nonce::from_slice(&nonce), data)
+    let decrypted = cipher
+        .decrypt(Nonce::from_slice(&nonce), data)
         .map_err(|e| anyhow::anyhow!("response header decrypt: {}", e))?;
 
     if decrypted.is_empty() {
@@ -585,12 +586,14 @@ mod tests {
         let header_key = kdf(&resp_key, &[b"AEAD Resp Header Key"]);
         let header_nonce = kdf(&resp_iv, &[b"AEAD Resp Header IV"]);
 
-        use aes_gcm::{Aes128Gcm, KeyInit, Nonce, aead::Aead};
+        use aes_gcm::{aead::Aead, Aes128Gcm, KeyInit, Nonce};
         let k: [u8; 16] = header_key[..16].try_into().unwrap();
         let n: [u8; 12] = header_nonce[..12].try_into().unwrap();
         let cipher = Aes128Gcm::new_from_slice(&k).unwrap();
         let plaintext = [resp_auth, 0x00, 0x00, 0x00];
-        let encrypted = cipher.encrypt(Nonce::from_slice(&n), plaintext.as_ref()).unwrap();
+        let encrypted = cipher
+            .encrypt(Nonce::from_slice(&n), plaintext.as_ref())
+            .unwrap();
 
         assert!(parse_response_header(&encrypted, &resp_key, &resp_iv, resp_auth).is_ok());
     }
@@ -603,12 +606,14 @@ mod tests {
         let header_key = kdf(&resp_key, &[b"AEAD Resp Header Key"]);
         let header_nonce = kdf(&resp_iv, &[b"AEAD Resp Header IV"]);
 
-        use aes_gcm::{Aes128Gcm, KeyInit, Nonce, aead::Aead};
+        use aes_gcm::{aead::Aead, Aes128Gcm, KeyInit, Nonce};
         let k: [u8; 16] = header_key[..16].try_into().unwrap();
         let n: [u8; 12] = header_nonce[..12].try_into().unwrap();
         let cipher = Aes128Gcm::new_from_slice(&k).unwrap();
         let plaintext = [0xAA, 0x00, 0x00, 0x00];
-        let encrypted = cipher.encrypt(Nonce::from_slice(&n), plaintext.as_ref()).unwrap();
+        let encrypted = cipher
+            .encrypt(Nonce::from_slice(&n), plaintext.as_ref())
+            .unwrap();
 
         assert!(parse_response_header(&encrypted, &resp_key, &resp_iv, 0xBB).is_err());
     }

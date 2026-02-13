@@ -19,12 +19,13 @@ pub struct HttpOutbound {
 impl HttpOutbound {
     pub fn new(config: &OutboundConfig) -> Result<Self> {
         let settings = &config.settings;
-        let address = settings.address.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("http outbound '{}' missing 'address'", config.tag)
-        })?;
-        let port = settings.port.ok_or_else(|| {
-            anyhow::anyhow!("http outbound '{}' missing 'port'", config.tag)
-        })?;
+        let address = settings
+            .address
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("http outbound '{}' missing 'address'", config.tag))?;
+        let port = settings
+            .port
+            .ok_or_else(|| anyhow::anyhow!("http outbound '{}' missing 'port'", config.tag))?;
 
         let username = settings.uuid.clone(); // reuse uuid field for username
         let password = settings.password.clone();
@@ -61,7 +62,9 @@ impl OutboundHandler for HttpOutbound {
             Some(cfg) => Dialer::new(cfg.clone()),
             None => Dialer::default_dialer(),
         };
-        let mut stream = dialer.connect_host(&self.server_addr, self.server_port).await?;
+        let mut stream = dialer
+            .connect_host(&self.server_addr, self.server_port)
+            .await?;
 
         let target_str = match &session.target {
             Address::Domain(domain, port) => format!("{}:{}", domain, port),
@@ -69,12 +72,15 @@ impl OutboundHandler for HttpOutbound {
         };
 
         // Build CONNECT request
-        let mut request = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", target_str, target_str);
+        let mut request = format!(
+            "CONNECT {} HTTP/1.1\r\nHost: {}\r\n",
+            target_str, target_str
+        );
 
         if let (Some(user), Some(pass)) = (&self.username, &self.password) {
             use base64::Engine;
-            let cred = base64::engine::general_purpose::STANDARD
-                .encode(format!("{}:{}", user, pass));
+            let cred =
+                base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", user, pass));
             request.push_str(&format!("Proxy-Authorization: Basic {}\r\n", cred));
         }
 
@@ -90,7 +96,9 @@ impl OutboundHandler for HttpOutbound {
             .split_whitespace()
             .nth(1)
             .and_then(|s| s.parse::<u16>().ok())
-            .ok_or_else(|| anyhow::anyhow!("http proxy: invalid response: {}", status_line.trim()))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("http proxy: invalid response: {}", status_line.trim())
+            })?;
 
         if status_code != 200 {
             anyhow::bail!("http proxy CONNECT failed: {}", status_line.trim());

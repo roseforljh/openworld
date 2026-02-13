@@ -13,11 +13,11 @@ use openworld::dns::DnsResolver;
 use openworld::proxy::outbound::direct::DirectOutbound;
 use openworld::proxy::{InboundResult, Network, OutboundHandler, Session};
 use openworld::router::Router;
-use tokio_util::sync::CancellationToken;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio_util::sync::CancellationToken;
 
 struct MockResolver;
 
@@ -202,7 +202,14 @@ async fn phase3_dispatcher_udp_requires_inbound_transport() {
     }];
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Dispatcher::new(router, outbound_manager, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new());
+    let dispatcher = Dispatcher::new(
+        router,
+        outbound_manager,
+        tracker,
+        Arc::new(MockResolver) as Arc<dyn DnsResolver>,
+        None,
+        CancellationToken::new(),
+    );
 
     let session = Session {
         target: Address::Domain("example.com".to_string(), 53),
@@ -287,5 +294,12 @@ fn phase3_dispatcher_construction_baseline() {
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
 
     let tracker = Arc::new(ConnectionTracker::new());
-    let _dispatcher = Dispatcher::new(router, outbound_manager, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new());
+    let _dispatcher = Dispatcher::new(
+        router,
+        outbound_manager,
+        tracker,
+        Arc::new(MockResolver) as Arc<dyn DnsResolver>,
+        None,
+        CancellationToken::new(),
+    );
 }

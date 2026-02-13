@@ -6,7 +6,9 @@ use bytes::Bytes;
 use tokio::net::UdpSocket;
 use tracing::debug;
 
-use crate::common::{Address, BoxUdpTransport, Dialer, DialerConfig, ProxyStream, UdpPacket, UdpTransport};
+use crate::common::{
+    Address, BoxUdpTransport, Dialer, DialerConfig, ProxyStream, UdpPacket, UdpTransport,
+};
 use crate::proxy::{OutboundHandler, Session};
 
 use super::pool::ConnectionPool;
@@ -19,7 +21,11 @@ pub struct DirectOutbound {
 
 impl DirectOutbound {
     pub fn new(tag: String) -> Self {
-        Self { tag, dialer_config: None, pool: Arc::new(ConnectionPool::with_defaults()) }
+        Self {
+            tag,
+            dialer_config: None,
+            pool: Arc::new(ConnectionPool::with_defaults()),
+        }
     }
 
     pub fn with_dialer(mut self, dialer_config: Option<DialerConfig>) -> Self {

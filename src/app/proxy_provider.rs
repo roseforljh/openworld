@@ -62,7 +62,11 @@ impl ProxyProviderManager {
 
     /// Get nodes from a provider
     pub async fn get_nodes(&self, name: &str) -> Option<Vec<ProxyNode>> {
-        self.providers.read().await.get(name).map(|s| s.nodes.clone())
+        self.providers
+            .read()
+            .await
+            .get(name)
+            .map(|s| s.nodes.clone())
     }
 
     /// Get provider state
@@ -79,7 +83,9 @@ impl ProxyProviderManager {
     pub async fn update_file_provider(&self, name: &str) -> Result<usize> {
         let source = {
             let providers = self.providers.read().await;
-            let state = providers.get(name).ok_or_else(|| anyhow::anyhow!("provider not found: {}", name))?;
+            let state = providers
+                .get(name)
+                .ok_or_else(|| anyhow::anyhow!("provider not found: {}", name))?;
             state.source.clone()
         };
 
@@ -92,7 +98,10 @@ impl ProxyProviderManager {
         let nodes = parse_provider_content(&content)?;
         let node_count = nodes.len();
 
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         let mut providers = self.providers.write().await;
         if let Some(state) = providers.get_mut(name) {
             state.nodes = nodes;
@@ -128,7 +137,10 @@ impl ProxyProviderManager {
 
         let response = req.send().await?;
         let status = response.status();
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
 
         if status == reqwest::StatusCode::NOT_MODIFIED {
             let mut providers = self.providers.write().await;
@@ -169,7 +181,12 @@ impl ProxyProviderManager {
 
     /// Get total node count across all providers
     pub async fn total_node_count(&self) -> usize {
-        self.providers.read().await.values().map(|s| s.nodes.len()).sum()
+        self.providers
+            .read()
+            .await
+            .values()
+            .map(|s| s.nodes.len())
+            .sum()
     }
 
     pub async fn all_provider_nodes(&self) -> Vec<(String, ProxyNode)> {
@@ -267,7 +284,13 @@ mod tests {
     #[tokio::test]
     async fn provider_manager_add_and_list() {
         let mgr = ProxyProviderManager::new();
-        mgr.add_provider("test".to_string(), ProviderSource::File { path: "test.yaml".to_string() }).await;
+        mgr.add_provider(
+            "test".to_string(),
+            ProviderSource::File {
+                path: "test.yaml".to_string(),
+            },
+        )
+        .await;
         let providers = mgr.list_providers().await;
         assert_eq!(providers.len(), 1);
         assert!(providers.contains(&"test".to_string()));
@@ -276,7 +299,13 @@ mod tests {
     #[tokio::test]
     async fn provider_manager_get_state() {
         let mgr = ProxyProviderManager::new();
-        mgr.add_provider("p1".to_string(), ProviderSource::File { path: "p1.yaml".to_string() }).await;
+        mgr.add_provider(
+            "p1".to_string(),
+            ProviderSource::File {
+                path: "p1.yaml".to_string(),
+            },
+        )
+        .await;
         let state = mgr.get_state("p1").await.unwrap();
         assert_eq!(state.name, "p1");
         assert!(state.nodes.is_empty());
@@ -368,7 +397,8 @@ proxies:
             url: "https://example.com/sub".to_string(),
             interval_secs: 3600,
             enabled: true,
-        }).await;
+        })
+        .await;
 
         assert_eq!(sm.subscription_count().await, 1);
         let subs = sm.list_subscriptions().await;

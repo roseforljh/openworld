@@ -15,7 +15,8 @@ impl MetricsExporter {
     }
 
     pub fn with_label(mut self, name: &str, value: &str) -> Self {
-        self.custom_labels.push((name.to_string(), value.to_string()));
+        self.custom_labels
+            .push((name.to_string(), value.to_string()));
         self
     }
 
@@ -54,7 +55,11 @@ impl MetricsExporter {
         // 路由命中统计
         let route_stats = tracker.route_stats();
         if !route_stats.is_empty() {
-            writeln!(output, "# HELP openworld_route_hits_total Route rule hit count").unwrap();
+            writeln!(
+                output,
+                "# HELP openworld_route_hits_total Route rule hit count"
+            )
+            .unwrap();
             writeln!(output, "# TYPE openworld_route_hits_total counter").unwrap();
             for (rule, count) in &route_stats {
                 writeln!(
@@ -85,7 +90,11 @@ impl MetricsExporter {
 
         // 延迟分位数
         if let Some((p50, p95, p99)) = tracker.latency_percentiles_ms() {
-            writeln!(output, "# HELP openworld_latency_ms Connection latency in milliseconds").unwrap();
+            writeln!(
+                output,
+                "# HELP openworld_latency_ms Connection latency in milliseconds"
+            )
+            .unwrap();
             writeln!(output, "# TYPE openworld_latency_ms summary").unwrap();
             writeln!(output, "openworld_latency_ms{{quantile=\"0.5\"}} {}", p50).unwrap();
             writeln!(output, "openworld_latency_ms{{quantile=\"0.95\"}} {}", p95).unwrap();
@@ -181,7 +190,8 @@ impl InboundAuth {
     }
 
     pub fn add_user(&mut self, username: &str, password: &str) {
-        self.users.insert(username.to_string(), password.to_string());
+        self.users
+            .insert(username.to_string(), password.to_string());
     }
 
     pub fn verify(&self, username: &str, password: &str) -> bool {
@@ -419,8 +429,14 @@ pub mod fuzz_targets {
         let auth_info = &data[0..16];
         // Check if timestamp is somewhat reasonable
         let _timestamp = u64::from_be_bytes([
-            auth_info[0], auth_info[1], auth_info[2], auth_info[3],
-            auth_info[4], auth_info[5], auth_info[6], auth_info[7],
+            auth_info[0],
+            auth_info[1],
+            auth_info[2],
+            auth_info[3],
+            auth_info[4],
+            auth_info[5],
+            auth_info[6],
+            auth_info[7],
         ]);
         true
     }
@@ -474,17 +490,27 @@ pub enum SubRuleCondition {
 
 #[derive(Debug, Clone)]
 pub enum SubRuleAction {
-    Route(String),  // outbound tag
+    Route(String), // outbound tag
     Reject,
     Direct,
 }
 
 impl SubRule {
     pub fn new(tag: String, conditions: Vec<SubRuleCondition>, action: SubRuleAction) -> Self {
-        Self { tag, conditions, action }
+        Self {
+            tag,
+            conditions,
+            action,
+        }
     }
 
-    pub fn matches(&self, inbound_tag: &str, network: &str, protocol: Option<&str>, source_ip: Option<std::net::IpAddr>) -> bool {
+    pub fn matches(
+        &self,
+        inbound_tag: &str,
+        network: &str,
+        protocol: Option<&str>,
+        source_ip: Option<std::net::IpAddr>,
+    ) -> bool {
         self.conditions.iter().all(|cond| match cond {
             SubRuleCondition::InboundTag(t) => inbound_tag == t,
             SubRuleCondition::Network(n) => network == n,
@@ -664,11 +690,9 @@ mod tests {
 
     #[test]
     fn acl_allow_list() {
-        let acl = InboundAcl::with_allow_list(vec![
-            "127.0.0.0/8".to_string(),
-            "10.0.0.0/8".to_string(),
-        ])
-        .unwrap();
+        let acl =
+            InboundAcl::with_allow_list(vec!["127.0.0.0/8".to_string(), "10.0.0.0/8".to_string()])
+                .unwrap();
         assert!(acl.is_allowed("127.0.0.1".parse().unwrap()));
         assert!(acl.is_allowed("10.1.2.3".parse().unwrap()));
         assert!(!acl.is_allowed("8.8.8.8".parse().unwrap()));
@@ -908,11 +932,7 @@ mod tests {
 
     #[test]
     fn sub_rule_empty_conditions_matches_all() {
-        let rule = SubRule::new(
-            "test".to_string(),
-            vec![],
-            SubRuleAction::Direct,
-        );
+        let rule = SubRule::new("test".to_string(), vec![], SubRuleAction::Direct);
         assert!(rule.matches("any", "tcp", None, None));
     }
 
@@ -963,8 +983,14 @@ mod tests {
     #[cfg(windows)]
     fn signal_handler_windows_signals() {
         let handler = SignalHandler::new();
-        assert!(matches!(handler.get_action("CTRL_C"), Some(SignalAction::Shutdown)));
-        assert!(matches!(handler.get_action("CTRL_BREAK"), Some(SignalAction::Reload)));
+        assert!(matches!(
+            handler.get_action("CTRL_C"),
+            Some(SignalAction::Shutdown)
+        ));
+        assert!(matches!(
+            handler.get_action("CTRL_BREAK"),
+            Some(SignalAction::Reload)
+        ));
     }
 
     #[test]

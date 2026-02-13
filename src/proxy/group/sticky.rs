@@ -63,7 +63,11 @@ impl OutboundHandler for StickyGroup {
         };
 
         let proxy_idx = if let Some(i) = idx {
-            if i < self.proxies.len() { i } else { 0 }
+            if i < self.proxies.len() {
+                i
+            } else {
+                0
+            }
         } else {
             // Hash-based selection for new targets
             let hash = simple_hash(&key);
@@ -114,16 +118,16 @@ pub fn filter_proxies(
 }
 
 /// Filter proxy nodes by keyword matching
-pub fn filter_proxies_keyword(
-    names: &[String],
-    keywords: &[String],
-    exclude: bool,
-) -> Vec<String> {
+pub fn filter_proxies_keyword(names: &[String], keywords: &[String], exclude: bool) -> Vec<String> {
     names
         .iter()
         .filter(|name| {
             let matches = keywords.iter().any(|kw| name.contains(kw.as_str()));
-            if exclude { !matches } else { matches }
+            if exclude {
+                !matches
+            } else {
+                matches
+            }
         })
         .cloned()
         .collect()
@@ -170,11 +174,7 @@ mod tests {
     #[tokio::test]
     async fn sticky_group_clear() {
         let p1 = Arc::new(DirectOutbound::new("p1".to_string())) as Arc<dyn OutboundHandler>;
-        let group = StickyGroup::new(
-            "sticky".to_string(),
-            vec![p1],
-            vec!["p1".to_string()],
-        );
+        let group = StickyGroup::new("sticky".to_string(), vec![p1], vec!["p1".to_string()]);
         group.sticky_map.write().await.insert("test".to_string(), 0);
         assert_eq!(group.sticky_map_size().await, 1);
         group.clear_sticky().await;
@@ -222,11 +222,7 @@ mod tests {
             "Basic JP".to_string(),
             "Premium HK".to_string(),
         ];
-        let result = filter_proxies_keyword(
-            &names,
-            &["Premium".to_string()],
-            false,
-        );
+        let result = filter_proxies_keyword(&names, &["Premium".to_string()], false);
         assert_eq!(result, vec!["Premium US", "Premium HK"]);
     }
 
@@ -237,11 +233,7 @@ mod tests {
             "Basic JP".to_string(),
             "Premium HK".to_string(),
         ];
-        let result = filter_proxies_keyword(
-            &names,
-            &["Basic".to_string()],
-            true,
-        );
+        let result = filter_proxies_keyword(&names, &["Basic".to_string()], true);
         assert_eq!(result, vec!["Premium US", "Premium HK"]);
     }
 }

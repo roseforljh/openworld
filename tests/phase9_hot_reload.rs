@@ -37,7 +37,14 @@ async fn dispatcher_hot_swap_router() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new());
+    let dispatcher = Dispatcher::new(
+        router,
+        om,
+        tracker,
+        Arc::new(MockResolver) as Arc<dyn DnsResolver>,
+        None,
+        CancellationToken::new(),
+    );
 
     // 初始状态无规则
     assert!(dispatcher.router().await.rules().is_empty());
@@ -80,7 +87,14 @@ async fn dispatcher_hot_swap_outbound_manager() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new());
+    let dispatcher = Dispatcher::new(
+        router,
+        om,
+        tracker,
+        Arc::new(MockResolver) as Arc<dyn DnsResolver>,
+        None,
+        CancellationToken::new(),
+    );
 
     // 初始只有 direct
     assert!(dispatcher.outbound_manager().await.get("direct").is_some());
@@ -129,7 +143,14 @@ async fn dispatcher_snapshot_isolation() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Arc::new(Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new()));
+    let dispatcher = Arc::new(Dispatcher::new(
+        router,
+        om,
+        tracker,
+        Arc::new(MockResolver) as Arc<dyn DnsResolver>,
+        None,
+        CancellationToken::new(),
+    ));
 
     // 获取快照
     let snapshot_router = dispatcher.router().await;
@@ -176,7 +197,14 @@ async fn api_reload_config_success() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Arc::new(Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new()));
+    let dispatcher = Arc::new(Dispatcher::new(
+        router,
+        om,
+        tracker,
+        Arc::new(MockResolver) as Arc<dyn DnsResolver>,
+        None,
+        CancellationToken::new(),
+    ));
 
     // 创建临时配置文件
     let tmp = tempfile::NamedTempFile::new().unwrap();
@@ -252,7 +280,14 @@ async fn api_reload_config_file_not_found() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Arc::new(Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new()));
+    let dispatcher = Arc::new(Dispatcher::new(
+        router,
+        om,
+        tracker,
+        Arc::new(MockResolver) as Arc<dyn DnsResolver>,
+        None,
+        CancellationToken::new(),
+    ));
 
     let state = openworld::api::handlers::AppState {
         dispatcher,
@@ -308,7 +343,14 @@ async fn api_reload_config_invalid_config() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Arc::new(Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new()));
+    let dispatcher = Arc::new(Dispatcher::new(
+        router,
+        om,
+        tracker,
+        Arc::new(MockResolver) as Arc<dyn DnsResolver>,
+        None,
+        CancellationToken::new(),
+    ));
 
     // 创建无效配置
     let tmp = tempfile::NamedTempFile::new().unwrap();
@@ -365,7 +407,14 @@ async fn api_reload_config_uses_default_path() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Arc::new(Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new()));
+    let dispatcher = Arc::new(Dispatcher::new(
+        router,
+        om,
+        tracker,
+        Arc::new(MockResolver) as Arc<dyn DnsResolver>,
+        None,
+        CancellationToken::new(),
+    ));
 
     let tmp = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(
@@ -434,7 +483,14 @@ async fn dispatcher_tracker_persists_across_reload() {
     }];
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
-    let dispatcher = Dispatcher::new(router, om, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new());
+    let dispatcher = Dispatcher::new(
+        router,
+        om,
+        tracker,
+        Arc::new(MockResolver) as Arc<dyn DnsResolver>,
+        None,
+        CancellationToken::new(),
+    );
 
     // 获取 tracker 引用
     let tracker_before = Arc::as_ptr(dispatcher.tracker());

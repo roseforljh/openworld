@@ -145,18 +145,18 @@ impl CachedResolver {
             let now = Instant::now();
             let remaining = entry.expires_at.saturating_duration_since(now);
             let threshold = Duration::from_secs(
-                (entry.original_ttl.as_secs() as f64 * PREFETCH_THRESHOLD_RATIO) as u64
+                (entry.original_ttl.as_secs() as f64 * PREFETCH_THRESHOLD_RATIO) as u64,
             );
-            
+
             // Prefetch if:
             // 1. TTL remaining < 30% of original TTL
             // 2. TTL remaining > minimum (don't prefetch if already very close to expiry)
             // 3. Entry has been accessed at least 2 times (popular)
             let access_count = entry.access_count.load(Ordering::Relaxed);
-            let should = remaining < threshold 
+            let should = remaining < threshold
                 && remaining.as_secs() >= MIN_PREFETCH_TTL_SECS
                 && access_count >= 2;
-            
+
             if should {
                 debug!(
                     host = host,
@@ -181,11 +181,11 @@ impl CachedResolver {
             if matches!(entry.value, CacheValue::Positive(_)) {
                 let remaining = entry.expires_at.saturating_duration_since(now);
                 let threshold = Duration::from_secs(
-                    (entry.original_ttl.as_secs() as f64 * PREFETCH_THRESHOLD_RATIO) as u64
+                    (entry.original_ttl.as_secs() as f64 * PREFETCH_THRESHOLD_RATIO) as u64,
                 );
                 let access_count = entry.access_count.load(Ordering::Relaxed);
-                
-                if remaining < threshold 
+
+                if remaining < threshold
                     && remaining.as_secs() >= MIN_PREFETCH_TTL_SECS
                     && access_count >= 2
                 {
@@ -302,7 +302,7 @@ impl DnsResolver for CachedResolver {
     async fn flush_cache(&self) {
         self.clear().await;
     }
-    
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

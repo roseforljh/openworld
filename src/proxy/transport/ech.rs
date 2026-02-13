@@ -185,10 +185,8 @@ pub async fn resolve_ech_from_dns(domain: &str) -> Result<Option<Vec<u8>>> {
     use hickory_resolver::proto::rr::{RData, RecordType};
     use hickory_resolver::TokioAsyncResolver;
 
-    let resolver = TokioAsyncResolver::tokio(
-        ResolverConfig::cloudflare_https(),
-        ResolverOpts::default(),
-    );
+    let resolver =
+        TokioAsyncResolver::tokio(ResolverConfig::cloudflare_https(), ResolverOpts::default());
 
     let lookup = match resolver.lookup(domain, RecordType::HTTPS).await {
         Ok(lookup) => lookup,
@@ -202,7 +200,11 @@ pub async fn resolve_ech_from_dns(domain: &str) -> Result<Option<Vec<u8>>> {
         if let Some(RData::HTTPS(ref svcb)) = record.data() {
             for (key, value) in svcb.svc_params() {
                 if let (SvcParamKey::EchConfig, SvcParamValue::EchConfig(ref ech)) = (key, value) {
-                    debug!(domain = domain, len = ech.0.len(), "ECH config found via DNS HTTPS");
+                    debug!(
+                        domain = domain,
+                        len = ech.0.len(),
+                        "ECH config found via DNS HTTPS"
+                    );
                     return Ok(Some(ech.0.clone()));
                 }
             }
@@ -345,8 +347,7 @@ mod tests {
     #[test]
     fn test_build_ech_tls_config_disabled() {
         let ech = EchSettings::default();
-        let config =
-            build_ech_tls_config(&ech, FingerprintType::Chrome, false, None).unwrap();
+        let config = build_ech_tls_config(&ech, FingerprintType::Chrome, false, None).unwrap();
         // Falls back to fingerprinted config
         assert_eq!(config.alpn_protocols.len(), 2);
     }
@@ -357,8 +358,7 @@ mod tests {
             grease: true,
             ..Default::default()
         };
-        let config =
-            build_ech_tls_config(&ech, FingerprintType::None, false, None).unwrap();
+        let config = build_ech_tls_config(&ech, FingerprintType::None, false, None).unwrap();
         assert_eq!(config.alpn_protocols.len(), 2);
     }
 

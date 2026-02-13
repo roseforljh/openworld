@@ -102,7 +102,11 @@ impl DnsResolver for RaceResolver {
         while let Some((idx, result)) = rx.recv().await {
             match result {
                 Ok(addrs) if !addrs.is_empty() => {
-                    debug!(host = host, resolver_idx = idx, "race DNS resolved (winner)");
+                    debug!(
+                        host = host,
+                        resolver_idx = idx,
+                        "race DNS resolved (winner)"
+                    );
                     return Ok(addrs);
                 }
                 Ok(_) => {

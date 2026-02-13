@@ -1,17 +1,17 @@
+pub mod anytls;
 pub mod brutal;
-pub mod fragment;
 pub mod ech;
 pub mod fingerprint;
+pub mod fragment;
 pub mod grpc;
 pub mod h2;
 pub mod httpupgrade;
 pub mod reality;
 pub mod shadowtls;
+pub mod sudoku;
 pub mod tcp;
 pub mod tls;
-pub mod anytls;
 pub mod ws;
-pub mod sudoku;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -72,7 +72,8 @@ pub fn build_transport_with_dialer(
                     }
                 }
             } else {
-                let transport = tcp::TcpTransport::new(server_addr.to_string(), server_port, dialer_config);
+                let transport =
+                    tcp::TcpTransport::new(server_addr.to_string(), server_port, dialer_config);
                 Ok(Box::new(transport))
             }
         }
@@ -82,8 +83,13 @@ pub fn build_transport_with_dialer(
             } else {
                 None
             };
-            let transport =
-                ws::WsTransport::new(server_addr.to_string(), server_port, transport_config, tls, dialer_config);
+            let transport = ws::WsTransport::new(
+                server_addr.to_string(),
+                server_port,
+                transport_config,
+                tls,
+                dialer_config,
+            );
             Ok(Box::new(transport))
         }
         "h2" => {

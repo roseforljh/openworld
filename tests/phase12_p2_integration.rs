@@ -2,8 +2,6 @@
 //!
 //! 覆盖：订阅解析（端到端）、V2Ray Stats API、AnyTLS 帧协议、Hysteria v1 协议帧、ICMP 校验和
 
-use std::collections::HashMap;
-
 // ── 订阅解析端到端测试 ──
 
 /// 完整的 Clash YAML → OutboundConfig 端到端
@@ -42,7 +40,10 @@ proxies:
 
     // 验证每个节点的协议和关键字段
     assert_eq!(configs[0].protocol, "vless");
-    assert_eq!(configs[0].settings.uuid.as_deref(), Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+    assert_eq!(
+        configs[0].settings.uuid.as_deref(),
+        Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    );
 
     assert_eq!(configs[1].protocol, "shadowsocks");
     assert_eq!(configs[1].settings.method.as_deref(), Some("aes-256-gcm"));
@@ -51,22 +52,22 @@ proxies:
     assert_eq!(configs[2].settings.password.as_deref(), Some("trojanpass"));
 
     assert_eq!(configs[3].protocol, "hysteria2");
-    assert_eq!(configs[3].settings.address.as_deref(), Some("sg1.example.com"));
+    assert_eq!(
+        configs[3].settings.address.as_deref(),
+        Some("sg1.example.com")
+    );
 }
 
 /// 混合 URI 列表（Base64 编码）端到端
 #[test]
 fn subscription_base64_mixed_uris_e2e() {
-    let uris = vec![
+    let uris = [
         "vless://test-uuid@server1.com:443?security=tls&sni=server1.com#Node1",
         "trojan://trojanpass@server2.com:443?sni=server2.com#Node2",
         "hy2://hy2pass@server3.com:443?sni=server3.com#Node3",
     ];
     let content = uris.join("\n");
-    let encoded = base64::Engine::encode(
-        &base64::engine::general_purpose::STANDARD,
-        &content,
-    );
+    let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &content);
 
     let configs = openworld::config::subscription::parse_subscription(&encoded).unwrap();
     assert_eq!(configs.len(), 3);
@@ -100,7 +101,10 @@ fn subscription_sip008_e2e() {
     let configs = openworld::config::subscription::parse_subscription(json).unwrap();
     assert_eq!(configs.len(), 2);
     assert_eq!(configs[0].tag, "US-West");
-    assert_eq!(configs[0].settings.method.as_deref(), Some("2022-blake3-aes-256-gcm"));
+    assert_eq!(
+        configs[0].settings.method.as_deref(),
+        Some("2022-blake3-aes-256-gcm")
+    );
     assert_eq!(configs[1].tag, "EU-Central");
     assert_eq!(configs[1].settings.port, Some(8389));
 }
@@ -156,20 +160,31 @@ async fn v2ray_stats_service_e2e() {
     service.record_outbound_uplink("proxy", 512).await;
 
     // 查询单个统计
-    let stat = service.get_stats("inbound>>>socks>>>traffic>>>uplink", false).await;
+    let stat = service
+        .get_stats("inbound>>>socks>>>traffic>>>uplink", false)
+        .await;
     assert!(stat.is_some());
     let stat = stat.unwrap();
     assert_eq!(stat.value, 3072); // 1024 + 2048
 
     // 查询下行
-    let stat = service.get_stats("inbound>>>socks>>>traffic>>>downlink", false).await.unwrap();
+    let stat = service
+        .get_stats("inbound>>>socks>>>traffic>>>downlink", false)
+        .await
+        .unwrap();
     assert_eq!(stat.value, 4096);
 
     // 查询并重置
-    let stat = service.get_stats("inbound>>>socks>>>traffic>>>uplink", true).await.unwrap();
+    let stat = service
+        .get_stats("inbound>>>socks>>>traffic>>>uplink", true)
+        .await
+        .unwrap();
     assert_eq!(stat.value, 3072);
     // 重置后应为 0
-    let stat = service.get_stats("inbound>>>socks>>>traffic>>>uplink", false).await.unwrap();
+    let stat = service
+        .get_stats("inbound>>>socks>>>traffic>>>uplink", false)
+        .await
+        .unwrap();
     assert_eq!(stat.value, 0);
 
     // 查询所有统计
@@ -190,7 +205,7 @@ async fn v2ray_stats_service_e2e() {
 
 #[test]
 fn proxy_node_compat_round_trip() {
-    use openworld::config::subscription::{parse_proxy_link, ProxyNode};
+    use openworld::config::subscription::parse_proxy_link;
 
     // 从 URI 解析为 ProxyNode
     let node = parse_proxy_link("vless://test-uuid-123@server.com:443?security=tls&sni=server.com&flow=xtls-rprx-vision#TestNode").unwrap();
@@ -231,13 +246,22 @@ fn subscription_format_detection() {
     use openworld::config::subscription::{detect_format, SubFormat};
 
     // Clash YAML
-    assert_eq!(detect_format("proxies:\n  - name: test"), SubFormat::ClashYaml);
+    assert_eq!(
+        detect_format("proxies:\n  - name: test"),
+        SubFormat::ClashYaml
+    );
 
     // sing-box JSON
-    assert_eq!(detect_format(r#"{"outbounds": []}"#), SubFormat::SingBoxJson);
+    assert_eq!(
+        detect_format(r#"{"outbounds": []}"#),
+        SubFormat::SingBoxJson
+    );
 
     // URI 列表
-    assert_eq!(detect_format("vless://uuid@host:443#tag"), SubFormat::UriList);
+    assert_eq!(
+        detect_format("vless://uuid@host:443#tag"),
+        SubFormat::UriList
+    );
 
     // Base64
     let b64 = base64::Engine::encode(

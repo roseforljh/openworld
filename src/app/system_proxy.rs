@@ -159,9 +159,7 @@ pub fn get_proxy_json() -> String {
         ProxyMode::Socks5 { host, port } => {
             serde_json::json!({"mode":"socks5","host":host,"port":port}).to_string()
         }
-        ProxyMode::Pac { url } => {
-            serde_json::json!({"mode":"pac","url":url}).to_string()
-        }
+        ProxyMode::Pac { url } => serde_json::json!({"mode":"pac","url":url}).to_string(),
     }
 }
 
@@ -170,10 +168,14 @@ pub fn get_proxy_json() -> String {
 fn reg_set_dword(name: &str, value: u32) -> Result<(), String> {
     let output = std::process::Command::new("reg")
         .args([
-            "add", INTERNET_SETTINGS_KEY,
-            "/v", name,
-            "/t", "REG_DWORD",
-            "/d", &value.to_string(),
+            "add",
+            INTERNET_SETTINGS_KEY,
+            "/v",
+            name,
+            "/t",
+            "REG_DWORD",
+            "/d",
+            &value.to_string(),
             "/f",
         ])
         .output()
@@ -193,10 +195,14 @@ fn reg_set_dword(name: &str, value: u32) -> Result<(), String> {
 fn reg_set_string(name: &str, value: &str) -> Result<(), String> {
     let output = std::process::Command::new("reg")
         .args([
-            "add", INTERNET_SETTINGS_KEY,
-            "/v", name,
-            "/t", "REG_SZ",
-            "/d", value,
+            "add",
+            INTERNET_SETTINGS_KEY,
+            "/v",
+            name,
+            "/t",
+            "REG_SZ",
+            "/d",
+            value,
             "/f",
         ])
         .output()
@@ -215,11 +221,7 @@ fn reg_set_string(name: &str, value: &str) -> Result<(), String> {
 
 fn reg_delete_value(name: &str) -> Result<(), String> {
     let output = std::process::Command::new("reg")
-        .args([
-            "delete", INTERNET_SETTINGS_KEY,
-            "/v", name,
-            "/f",
-        ])
+        .args(["delete", INTERNET_SETTINGS_KEY, "/v", name, "/f"])
         .output()
         .map_err(|e| format!("reg.exe 执行失败: {}", e))?;
 
@@ -236,10 +238,7 @@ fn reg_delete_value(name: &str) -> Result<(), String> {
 
 fn reg_query_dword(name: &str) -> Result<u32, String> {
     let output = std::process::Command::new("reg")
-        .args([
-            "query", INTERNET_SETTINGS_KEY,
-            "/v", name,
-        ])
+        .args(["query", INTERNET_SETTINGS_KEY, "/v", name])
         .output()
         .map_err(|e| format!("reg.exe 执行失败: {}", e))?;
 
@@ -252,8 +251,7 @@ fn reg_query_dword(name: &str) -> Result<u32, String> {
     for line in stdout.lines() {
         if line.contains(name) && line.contains("REG_DWORD") {
             if let Some(hex) = line.split_whitespace().last() {
-                let val = u32::from_str_radix(hex.trim_start_matches("0x"), 16)
-                    .unwrap_or(0);
+                let val = u32::from_str_radix(hex.trim_start_matches("0x"), 16).unwrap_or(0);
                 return Ok(val);
             }
         }
@@ -263,10 +261,7 @@ fn reg_query_dword(name: &str) -> Result<u32, String> {
 
 fn reg_query_string(name: &str) -> Result<String, String> {
     let output = std::process::Command::new("reg")
-        .args([
-            "query", INTERNET_SETTINGS_KEY,
-            "/v", name,
-        ])
+        .args(["query", INTERNET_SETTINGS_KEY, "/v", name])
         .output()
         .map_err(|e| format!("reg.exe 执行失败: {}", e))?;
 
@@ -352,7 +347,10 @@ mod tests {
 
     #[test]
     fn parse_host_port_valid() {
-        assert_eq!(parse_host_port("127.0.0.1:8080"), Some(("127.0.0.1".into(), 8080)));
+        assert_eq!(
+            parse_host_port("127.0.0.1:8080"),
+            Some(("127.0.0.1".into(), 8080))
+        );
         assert_eq!(parse_host_port("::1:1080"), Some(("::1".into(), 1080)));
     }
 

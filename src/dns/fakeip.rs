@@ -26,11 +26,7 @@ pub struct FakeIpPool {
 }
 
 impl FakeIpPool {
-    pub fn new(
-        ipv4_cidr: &str,
-        ipv6_prefix: Option<&str>,
-        exclude_domains: Vec<String>,
-    ) -> Self {
+    pub fn new(ipv4_cidr: &str, ipv6_prefix: Option<&str>, exclude_domains: Vec<String>) -> Self {
         let (ipv4_base, ipv4_size) = parse_ipv4_cidr(ipv4_cidr);
         let ipv6_pre = ipv6_prefix
             .and_then(|s| parse_ipv6_prefix(s))
@@ -167,7 +163,11 @@ fn parse_ipv4_cidr(cidr: &str) -> (u32, u32) {
     if let Some((ip_str, prefix_str)) = cidr.split_once('/') {
         if let (Ok(ip), Ok(prefix)) = (ip_str.parse::<Ipv4Addr>(), prefix_str.parse::<u32>()) {
             let base = u32::from(ip);
-            let size = if prefix >= 32 { 1 } else { 1u32 << (32 - prefix) };
+            let size = if prefix >= 32 {
+                1
+            } else {
+                1u32 << (32 - prefix)
+            };
             return (base, size);
         }
     }

@@ -2,7 +2,6 @@
 ///
 /// 在 Sudoku 混淆之前，写入一个伪 HTTP/1.1 请求头，
 /// 使初始握手流量看起来像正常的 HTTP 请求。
-
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// 写入随机 HTTP/1.1 请求头（客户端用）
@@ -38,9 +37,7 @@ pub fn looks_like_http_request(peek: &[u8]) -> bool {
 }
 
 /// 消费 HTTP 请求头（服务端用）
-pub async fn consume_http_header<R: AsyncReadExt + Unpin>(
-    reader: &mut R,
-) -> std::io::Result<()> {
+pub async fn consume_http_header<R: AsyncReadExt + Unpin>(reader: &mut R) -> std::io::Result<()> {
     let mut buf = Vec::with_capacity(1024);
     loop {
         let byte = reader.read_u8().await?;
@@ -58,7 +55,9 @@ pub async fn consume_http_header<R: AsyncReadExt + Unpin>(
 }
 
 fn random_path() -> String {
-    let segments = ["api", "cdn", "assets", "static", "media", "content", "data", "v1", "v2"];
+    let segments = [
+        "api", "cdn", "assets", "static", "media", "content", "data", "v1", "v2",
+    ];
     let mut rng = rand::thread_rng();
     let seg = segments[rand::Rng::gen_range(&mut rng, 0..segments.len())];
     format!("/{}/{}", seg, random_segment())

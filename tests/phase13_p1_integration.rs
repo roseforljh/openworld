@@ -1,3 +1,8 @@
+#![allow(
+    clippy::field_reassign_with_default,
+    clippy::redundant_field_names,
+    clippy::needless_return
+)]
 //! Phase 13: P1 新增模块集成测试
 //!
 //! 覆盖：SSM API、WireGuard Noise 握手、NTP 协议嗅探、
@@ -12,7 +17,9 @@ struct MockResolver;
 #[async_trait::async_trait]
 impl openworld::dns::DnsResolver for MockResolver {
     async fn resolve(&self, _host: &str) -> anyhow::Result<Vec<std::net::IpAddr>> {
-        Ok(vec![std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1))])
+        Ok(vec![std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+            127, 0, 0, 1,
+        ))])
     }
 }
 
@@ -41,9 +48,12 @@ async fn start_ssm_api() -> String {
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
     let dispatcher = Arc::new(Dispatcher::new(
-        router, outbound_manager, tracker,
+        router,
+        outbound_manager,
+        tracker,
         Arc::new(MockResolver) as Arc<dyn DnsResolver>,
-        None, CancellationToken::new(),
+        None,
+        CancellationToken::new(),
     ));
 
     let state = api::handlers::AppState {
@@ -56,10 +66,18 @@ async fn start_ssm_api() -> String {
     };
 
     let app = axum::Router::new()
-        .route("/ssm/users", axum::routing::get(api::handlers::ssm_list_users)
-            .post(api::handlers::ssm_add_user))
-        .route("/ssm/users/{name}", axum::routing::delete(api::handlers::ssm_remove_user))
-        .route("/ssm/users/{name}/reset", axum::routing::post(api::handlers::ssm_reset_traffic))
+        .route(
+            "/ssm/users",
+            axum::routing::get(api::handlers::ssm_list_users).post(api::handlers::ssm_add_user),
+        )
+        .route(
+            "/ssm/users/{name}",
+            axum::routing::delete(api::handlers::ssm_remove_user),
+        )
+        .route(
+            "/ssm/users/{name}/reset",
+            axum::routing::post(api::handlers::ssm_reset_traffic),
+        )
         .route("/ssm/stats", axum::routing::get(api::handlers::ssm_stats))
         .with_state(state);
 
@@ -89,9 +107,12 @@ async fn ssm_stats_no_inbound() {
 async fn ssm_add_user_no_inbound() {
     let base = start_ssm_api().await;
     let client = reqwest::Client::new();
-    let resp = client.post(format!("{}/ssm/users", base))
+    let resp = client
+        .post(format!("{}/ssm/users", base))
         .json(&serde_json::json!({"name": "test", "password": "123456"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 404);
 }
 
@@ -99,8 +120,11 @@ async fn ssm_add_user_no_inbound() {
 async fn ssm_remove_user_no_inbound() {
     let base = start_ssm_api().await;
     let client = reqwest::Client::new();
-    let resp = client.delete(format!("{}/ssm/users/testuser", base))
-        .send().await.unwrap();
+    let resp = client
+        .delete(format!("{}/ssm/users/testuser", base))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 404);
 }
 
@@ -108,8 +132,11 @@ async fn ssm_remove_user_no_inbound() {
 async fn ssm_reset_traffic_no_inbound() {
     let base = start_ssm_api().await;
     let client = reqwest::Client::new();
-    let resp = client.post(format!("{}/ssm/users/testuser/reset", base))
-        .send().await.unwrap();
+    let resp = client
+        .post(format!("{}/ssm/users/testuser/reset", base))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 404);
 }
 
@@ -171,9 +198,8 @@ fn wireguard_noise_full_handshake_creates_resp() {
     assert_eq!(peer_sender_idx, 100);
 
     let eph_bytes: [u8; 32] = init_msg[8..40].try_into().unwrap();
-    let (resp_msg, server_transport) = create_handshake_resp(
-        &server_keys, 200, peer_sender_idx, ck, h, &eph_bytes,
-    ).unwrap();
+    let (resp_msg, server_transport) =
+        create_handshake_resp(&server_keys, 200, peer_sender_idx, ck, h, &eph_bytes).unwrap();
 
     // 验证 response 消息格式
     assert_eq!(resp_msg.len(), 92);
@@ -200,14 +226,18 @@ fn wireguard_noise_server_encrypt_transport() {
     let (server_priv, server_pub) = generate_keypair();
 
     let client_keys = WireGuardKeys {
-        private_key: client_priv, public_key: client_pub,
-        peer_public_key: server_pub, preshared_key: [0u8; 32],
+        private_key: client_priv,
+        public_key: client_pub,
+        peer_public_key: server_pub,
+        preshared_key: [0u8; 32],
     };
     let (init_msg, _, _) = create_handshake_init(&client_keys, 1).unwrap();
 
     let server_keys = WireGuardKeys {
-        private_key: server_priv, public_key: server_pub,
-        peer_public_key: client_pub, preshared_key: [0u8; 32],
+        private_key: server_priv,
+        public_key: server_pub,
+        peer_public_key: client_pub,
+        preshared_key: [0u8; 32],
     };
     let (_, _, ck, h) = parse_handshake_init(&init_msg, &server_keys).unwrap();
     let eph: [u8; 32] = init_msg[8..40].try_into().unwrap();
@@ -227,8 +257,10 @@ fn wireguard_noise_bad_init_rejected() {
     let (_, wrong_pub) = generate_keypair();
 
     let server_keys = WireGuardKeys {
-        private_key: server_priv, public_key: server_pub,
-        peer_public_key: wrong_pub, preshared_key: [0u8; 32],
+        private_key: server_priv,
+        public_key: server_pub,
+        peer_public_key: wrong_pub,
+        preshared_key: [0u8; 32],
     };
 
     // 随机数据应被拒绝
@@ -303,7 +335,7 @@ fn ntp_timestamp_parsing_server() {
     // NTP 服务端响应 (Mode=4)
     let mut pkt = vec![0u8; 48];
     pkt[0] = 0x24; // VN=4, Mode=4
-    // Transmit Timestamp 在 offset 40-47
+                   // Transmit Timestamp 在 offset 40-47
     pkt[40] = 0xE2;
     pkt[41] = 0xD2;
     pkt[42] = 0x5F;
@@ -370,8 +402,8 @@ fn tls_cert_reloader_creation_with_interval() {
     use openworld::common::tls_reload::CertReloader;
     use std::time::Duration;
 
-    let reloader = CertReloader::new("/tmp/cert.pem", "/tmp/key.pem")
-        .with_interval(Duration::from_secs(60));
+    let reloader =
+        CertReloader::new("/tmp/cert.pem", "/tmp/key.pem").with_interval(Duration::from_secs(60));
     drop(reloader);
 }
 
@@ -379,10 +411,7 @@ fn tls_cert_reloader_creation_with_interval() {
 fn tls_cert_reloader_load_nonexistent_fails() {
     use openworld::common::tls_reload::CertReloader;
 
-    let reloader = CertReloader::new(
-        "/nonexistent/path/cert.pem",
-        "/nonexistent/path/key.pem"
-    );
+    let reloader = CertReloader::new("/nonexistent/path/cert.pem", "/nonexistent/path/key.pem");
     let result = reloader.load_initial();
     assert!(result.is_err(), "不存在的证书文件应导致加载失败");
 }
@@ -398,14 +427,16 @@ async fn tls_reloadable_config_replace() {
 
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let server_config = rustls::ServerConfig::builder_with_provider(provider)
-        .with_safe_default_protocol_versions().unwrap()
+        .with_safe_default_protocol_versions()
+        .unwrap()
         .with_no_client_auth()
         .with_single_cert(
             vec![rustls::pki_types::CertificateDer::from(cert_der)],
-            rustls::pki_types::PrivateKeyDer::Pkcs8(
-                rustls::pki_types::PrivatePkcs8KeyDer::from(key_der),
-            ),
-        ).unwrap();
+            rustls::pki_types::PrivateKeyDer::Pkcs8(rustls::pki_types::PrivatePkcs8KeyDer::from(
+                key_der,
+            )),
+        )
+        .unwrap();
 
     let reloadable = ReloadableServerConfig::new(server_config);
     let config1 = reloadable.current().await;
@@ -417,14 +448,16 @@ async fn tls_reloadable_config_replace() {
 
     let provider2 = Arc::new(rustls::crypto::ring::default_provider());
     let new_config = rustls::ServerConfig::builder_with_provider(provider2)
-        .with_safe_default_protocol_versions().unwrap()
+        .with_safe_default_protocol_versions()
+        .unwrap()
         .with_no_client_auth()
         .with_single_cert(
             vec![rustls::pki_types::CertificateDer::from(cert2_der)],
-            rustls::pki_types::PrivateKeyDer::Pkcs8(
-                rustls::pki_types::PrivatePkcs8KeyDer::from(key2_der),
-            ),
-        ).unwrap();
+            rustls::pki_types::PrivateKeyDer::Pkcs8(rustls::pki_types::PrivatePkcs8KeyDer::from(
+                key2_der,
+            )),
+        )
+        .unwrap();
 
     reloadable.replace(new_config).await;
     let config2 = reloadable.current().await;

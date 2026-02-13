@@ -65,7 +65,10 @@ fn detect_wifi_ssid_windows() -> Option<String> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     for line in stdout.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("SSID") && !trimmed.starts_with("SSID ") && !trimmed.contains("BSSID") {
+        if trimmed.starts_with("SSID")
+            && !trimmed.starts_with("SSID ")
+            && !trimmed.contains("BSSID")
+        {
             // "SSID                   : MyWifi" 或 "SSID : MyWifi"
             if let Some(pos) = trimmed.find(':') {
                 let ssid = trimmed[pos + 1..].trim();
@@ -190,9 +193,7 @@ pub enum RuleAction {
     /// 触发协议嗅探（Non-final）
     Sniff,
     /// 触发 DNS 解析（Non-final）
-    Resolve {
-        strategy: Option<String>,
-    },
+    Resolve { strategy: Option<String> },
 }
 
 impl RuleAction {
@@ -215,7 +216,14 @@ impl RuleAction {
     }
 
     pub fn is_final(&self) -> bool {
-        matches!(self, RuleAction::Route(_) | RuleAction::Reject | RuleAction::RejectDrop | RuleAction::Bypass | RuleAction::HijackDns)
+        matches!(
+            self,
+            RuleAction::Route(_)
+                | RuleAction::Reject
+                | RuleAction::RejectDrop
+                | RuleAction::Bypass
+                | RuleAction::HijackDns
+        )
     }
 
     pub fn outbound_tag(&self) -> Option<&str> {
@@ -251,9 +259,9 @@ impl Rule {
             "domain-regex" => {
                 let regexes: Result<Vec<regex::Regex>, _> =
                     config.values.iter().map(|s| regex::Regex::new(s)).collect();
-                Ok(Rule::DomainRegex(
-                    regexes.map_err(|e| anyhow::anyhow!("invalid domain regex: {}", e))?,
-                ))
+                Ok(Rule::DomainRegex(regexes.map_err(|e| {
+                    anyhow::anyhow!("invalid domain regex: {}", e)
+                })?))
             }
             "ip-cidr" => {
                 let nets: Result<Vec<IpNet>, _> =
@@ -522,14 +530,36 @@ impl Rule {
                 }
             }
             Rule::And(sub_rules) => sub_rules.iter().all(|r| {
-                r.matches_session(addr, geoip_db, geosite_db, source, network, inbound_tag, detected_protocol)
+                r.matches_session(
+                    addr,
+                    geoip_db,
+                    geosite_db,
+                    source,
+                    network,
+                    inbound_tag,
+                    detected_protocol,
+                )
             }),
             Rule::Or(sub_rules) => sub_rules.iter().any(|r| {
-                r.matches_session(addr, geoip_db, geosite_db, source, network, inbound_tag, detected_protocol)
+                r.matches_session(
+                    addr,
+                    geoip_db,
+                    geosite_db,
+                    source,
+                    network,
+                    inbound_tag,
+                    detected_protocol,
+                )
             }),
-            Rule::Not(inner) => {
-                !inner.matches_session(addr, geoip_db, geosite_db, source, network, inbound_tag, detected_protocol)
-            }
+            Rule::Not(inner) => !inner.matches_session(
+                addr,
+                geoip_db,
+                geosite_db,
+                source,
+                network,
+                inbound_tag,
+                detected_protocol,
+            ),
             Rule::WifiSsid(ssids) => {
                 if let Some(current) = get_current_wifi_ssid() {
                     ssids.iter().any(|s| s.eq_ignore_ascii_case(&current))
@@ -1008,9 +1038,7 @@ mod tests {
     // Domain Regex
     #[test]
     fn domain_regex_match() {
-        let rule = Rule::DomainRegex(vec![
-            regex::Regex::new(r"^(www\.)?google\.com$").unwrap(),
-        ]);
+        let rule = Rule::DomainRegex(vec![regex::Regex::new(r"^(www\.)?google\.com$").unwrap()]);
         assert!(rule.matches(&domain("google.com", 443), None, None));
         assert!(rule.matches(&domain("www.google.com", 443), None, None));
         assert!(!rule.matches(&domain("notgoogle.com", 443), None, None));
@@ -1044,9 +1072,7 @@ mod tests {
 
     #[test]
     fn domain_regex_display() {
-        let rule = Rule::DomainRegex(vec![
-            regex::Regex::new(r"^ad\.").unwrap(),
-        ]);
+        let rule = Rule::DomainRegex(vec![regex::Regex::new(r"^ad\.").unwrap()]);
         assert_eq!(format!("{}", rule), r"domain-regex(^ad\.)");
     }
 }

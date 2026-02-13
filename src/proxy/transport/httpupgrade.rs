@@ -59,8 +59,13 @@ impl StreamTransport for HttpUpgradeTransport {
         let host = self.host.as_deref().unwrap_or(&self.server_addr);
 
         // 1. 建立底层 TCP 连接
-        let tcp_stream =
-            super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config, None).await?;
+        let tcp_stream = super::dial_tcp(
+            &self.server_addr,
+            self.server_port,
+            &self.dialer_config,
+            None,
+        )
+        .await?;
 
         // 2. 可选 TLS 层
         let use_tls = self.tls_config.as_ref().map_or(false, |c| c.enabled);
@@ -86,8 +91,7 @@ impl StreamTransport for HttpUpgradeTransport {
                 tls_cfg.allow_insecure,
                 alpn.as_deref(),
             )?;
-            let connector =
-                tokio_rustls::TlsConnector::from(std::sync::Arc::new(rustls_config));
+            let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(rustls_config));
             let server_name = rustls::pki_types::ServerName::try_from(sni.to_string())?;
             let tls_stream = connector.connect(server_name, tcp_stream).await?;
             Box::new(tls_stream)
@@ -127,7 +131,9 @@ impl StreamTransport for HttpUpgradeTransport {
             .split_whitespace()
             .nth(1)
             .and_then(|s| s.parse::<u16>().ok())
-            .ok_or_else(|| anyhow::anyhow!("httpupgrade: invalid response: {}", status_line.trim()))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("httpupgrade: invalid response: {}", status_line.trim())
+            })?;
 
         if status_code != 101 {
             anyhow::bail!(
@@ -145,7 +151,11 @@ impl StreamTransport for HttpUpgradeTransport {
             }
         }
 
-        debug!(path = self.path, host = host, "HTTPUpgrade connection established");
+        debug!(
+            path = self.path,
+            host = host,
+            "HTTPUpgrade connection established"
+        );
 
         // 5. 返回裸流 — 不需要 WS 帧封装
         Ok(stream)
@@ -188,13 +198,7 @@ mod tests {
             host: Some("cdn.example.com".to_string()),
             ..Default::default()
         };
-        let transport = HttpUpgradeTransport::new(
-            "1.2.3.4".to_string(),
-            443,
-            &tc,
-            None,
-            None,
-        );
+        let transport = HttpUpgradeTransport::new("1.2.3.4".to_string(), 443, &tc, None, None);
         assert_eq!(transport.path, "/tunnel");
         assert_eq!(transport.host.as_deref(), Some("cdn.example.com"));
         assert_eq!(transport.server_port, 443);
@@ -203,13 +207,7 @@ mod tests {
     #[test]
     fn httpupgrade_default_path() {
         let tc = TransportConfig::default();
-        let transport = HttpUpgradeTransport::new(
-            "1.2.3.4".to_string(),
-            443,
-            &tc,
-            None,
-            None,
-        );
+        let transport = HttpUpgradeTransport::new("1.2.3.4".to_string(), 443, &tc, None, None);
         assert_eq!(transport.path, "/");
     }
 
@@ -217,9 +215,11 @@ mod tests {
     fn ws_key_generation() {
         let key = generate_ws_key();
         assert!(key.len() > 20); // base64 of 16 bytes = 24 chars
-        // Verify it's valid base64
+                                 // Verify it's valid base64
         use base64::Engine;
-        let decoded = base64::engine::general_purpose::STANDARD.decode(&key).unwrap();
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(&key)
+            .unwrap();
         assert_eq!(decoded.len(), 16);
     }
 
@@ -233,13 +233,7 @@ mod tests {
             path: Some("/proxy".to_string()),
             ..Default::default()
         };
-        let transport = HttpUpgradeTransport::new(
-            "127.0.0.1".to_string(),
-            port,
-            &tc,
-            None,
-            None,
-        );
+        let transport = HttpUpgradeTransport::new("127.0.0.1".to_string(), port, &tc, None, None);
 
         // 模拟 HTTP Upgrade 服务器
         let handle = tokio::spawn(async move {
@@ -286,13 +280,7 @@ mod tests {
             transport_type: "httpupgrade".to_string(),
             ..Default::default()
         };
-        let transport = HttpUpgradeTransport::new(
-            "127.0.0.1".to_string(),
-            port,
-            &tc,
-            None,
-            None,
-        );
+        let transport = HttpUpgradeTransport::new("127.0.0.1".to_string(), port, &tc, None, None);
 
         let handle = tokio::spawn(async move {
             let (mut sock, _) = listener.accept().await.unwrap();

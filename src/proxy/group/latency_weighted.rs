@@ -98,13 +98,16 @@ impl LatencyWeightedGroup {
         for (idx, name) in self.proxy_names.iter().enumerate() {
             // Combine health check latency with historical average
             let current = latencies.get(name).copied().flatten();
-            let hist_avg = history.get(name).map(|samples| {
-                if samples.is_empty() {
-                    return None;
-                }
-                let sum: u64 = samples.iter().map(|s| s.latency_ms).sum();
-                Some(sum / samples.len() as u64)
-            }).flatten();
+            let hist_avg = history
+                .get(name)
+                .map(|samples| {
+                    if samples.is_empty() {
+                        return None;
+                    }
+                    let sum: u64 = samples.iter().map(|s| s.latency_ms).sum();
+                    Some(sum / samples.len() as u64)
+                })
+                .flatten();
 
             let avg_latency = match (current, hist_avg) {
                 (Some(c), Some(h)) => (c + h) / 2, // Blend current and historical
@@ -131,7 +134,9 @@ impl LatencyWeightedGroup {
 
         if weights.is_empty() {
             // Fallback to round-robin
-            let cnt = self.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let cnt = self
+                .counter
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return (cnt as usize) % self.proxies.len();
         }
 
@@ -141,7 +146,9 @@ impl LatencyWeightedGroup {
         }
 
         // Deterministic weighted selection using counter (not random, for reproducibility)
-        let cnt = self.counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let cnt = self
+            .counter
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let position = (cnt as f64 % (total_weight * 1000.0)) / 1000.0;
 
         let mut cumulative = 0.0;
@@ -164,7 +171,12 @@ impl LatencyWeightedGroup {
     }
 
     pub async fn history_size(&self, name: &str) -> usize {
-        self.history.read().await.get(name).map(|s| s.len()).unwrap_or(0)
+        self.history
+            .read()
+            .await
+            .get(name)
+            .map(|s| s.len())
+            .unwrap_or(0)
     }
 }
 
@@ -211,7 +223,11 @@ pub fn validate_group_nesting(
         max_depth: usize,
     ) -> Result<()> {
         if depth > max_depth {
-            anyhow::bail!("proxy group nesting depth exceeds maximum ({}) at group '{}'", max_depth, name);
+            anyhow::bail!(
+                "proxy group nesting depth exceeds maximum ({}) at group '{}'",
+                max_depth,
+                name
+            );
         }
         if visited.contains(name) {
             anyhow::bail!("circular reference detected in proxy group '{}'", name);
@@ -221,7 +237,14 @@ pub fn validate_group_nesting(
         if let Some(config) = configs.iter().find(|c| c.name == name) {
             for proxy_name in &config.proxies {
                 if group_names.contains(proxy_name.as_str()) {
-                    check_depth(proxy_name, configs, group_names, visited, depth + 1, max_depth)?;
+                    check_depth(
+                        proxy_name,
+                        configs,
+                        group_names,
+                        visited,
+                        depth + 1,
+                        max_depth,
+                    )?;
                 }
             }
         }
@@ -232,7 +255,14 @@ pub fn validate_group_nesting(
 
     for config in configs {
         let mut visited = HashSet::new();
-        check_depth(&config.name, configs, &group_names, &mut visited, 0, max_depth)?;
+        check_depth(
+            &config.name,
+            configs,
+            &group_names,
+            &mut visited,
+            0,
+            max_depth,
+        )?;
     }
 
     Ok(())
@@ -251,17 +281,15 @@ mod tests {
 
     #[test]
     fn validate_nesting_flat() {
-        let configs = vec![
-            ProxyGroupConfig {
-                name: "group-a".to_string(),
-                group_type: "selector".to_string(),
-                proxies: vec!["proxy-1".to_string(), "proxy-2".to_string()],
-                url: None,
-                interval: 300,
-                tolerance: 150,
-                strategy: None,
-            },
-        ];
+        let configs = vec![ProxyGroupConfig {
+            name: "group-a".to_string(),
+            group_type: "selector".to_string(),
+            proxies: vec!["proxy-1".to_string(), "proxy-2".to_string()],
+            url: None,
+            interval: 300,
+            tolerance: 150,
+            strategy: None,
+        }];
         assert!(validate_group_nesting(&configs, 5).is_ok());
     }
 

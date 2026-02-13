@@ -12,7 +12,6 @@
 /// ## 限制
 /// - 需要 raw socket 权限（Linux: CAP_NET_RAW, Windows: 管理员权限）
 /// - 某些出站代理不支持 ICMP（如纯 TCP 代理）
-
 use std::net::IpAddr;
 
 use anyhow::Result;
@@ -194,22 +193,22 @@ impl IcmpProxy {
 
         // IPv4 header
         packet[0] = 0x45; // version=4, ihl=5
-        packet[1] = 0;    // DSCP/ECN
+        packet[1] = 0; // DSCP/ECN
         let total = total_len as u16;
         packet[2..4].copy_from_slice(&total.to_be_bytes());
         packet[4..6].copy_from_slice(&0u16.to_be_bytes()); // identification
         packet[6] = 0x40; // flags: DF
-        packet[7] = 0;    // fragment offset
-        packet[8] = 64;   // TTL
-        packet[9] = 1;    // protocol: ICMP
-        // checksum computed later
+        packet[7] = 0; // fragment offset
+        packet[8] = 64; // TTL
+        packet[9] = 1; // protocol: ICMP
+                       // checksum computed later
         packet[12..16].copy_from_slice(&src_ip.octets());
         packet[16..20].copy_from_slice(&dst_ip.octets());
 
         // ICMP header
         packet[20] = ICMP_ECHO_REPLY; // type
-        packet[21] = 0;               // code
-        // checksum computed later
+        packet[21] = 0; // code
+                        // checksum computed later
         packet[24..26].copy_from_slice(&req.id.to_be_bytes());
         packet[26..28].copy_from_slice(&req.sequence.to_be_bytes());
         packet[28..].copy_from_slice(&req.payload);
@@ -243,8 +242,8 @@ impl IcmpProxy {
         packet[0] = 0x60; // version=6
         let payload_len = icmp_len as u16;
         packet[4..6].copy_from_slice(&payload_len.to_be_bytes());
-        packet[6] = 58;  // next header: ICMPv6
-        packet[7] = 64;  // hop limit
+        packet[6] = 58; // next header: ICMPv6
+        packet[7] = 64; // hop limit
         packet[8..24].copy_from_slice(&src_ip.octets());
         packet[24..40].copy_from_slice(&dst_ip.octets());
 
@@ -308,7 +307,11 @@ impl IcmpProxy {
         raw_socket.set_nonblocking(true)?;
 
         // 构建 ICMP Echo Request payload
-        let icmp_type = if is_v4 { ICMP_ECHO_REQUEST } else { ICMPV6_ECHO_REQUEST };
+        let icmp_type = if is_v4 {
+            ICMP_ECHO_REQUEST
+        } else {
+            ICMPV6_ECHO_REQUEST
+        };
         let mut icmp_buf = Vec::with_capacity(8 + echo.payload.len());
         icmp_buf.push(icmp_type);
         icmp_buf.push(0); // code
@@ -333,40 +336,41 @@ impl IcmpProxy {
         let async_fd = tokio::io::unix::AsyncFd::new(raw_socket.as_raw_fd())?;
         let mut reply_buf = vec![0u8; 1500];
 
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            async {
-                loop {
-                    let guard = async_fd.readable().await?;
-                    match raw_socket.recv(&mut reply_buf) {
-                        Ok(n) => {
-                            if n >= 8 {
-                                let reply_type = if is_v4 { ICMP_ECHO_REPLY } else { ICMPV6_ECHO_REPLY };
-                                if reply_buf[0] == reply_type {
-                                    let reply_id = u16::from_be_bytes([reply_buf[4], reply_buf[5]]);
-                                    let reply_seq = u16::from_be_bytes([reply_buf[6], reply_buf[7]]);
-                                    if reply_id == echo.id && reply_seq == echo.sequence {
-                                        return Ok::<_, anyhow::Error>(IcmpEchoPacket {
-                                            target: echo.source,
-                                            source: echo.target,
-                                            id: reply_id,
-                                            sequence: reply_seq,
-                                            payload: reply_buf[8..n].to_vec(),
-                                            ttl: 64,
-                                        });
-                                    }
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let guard = async_fd.readable().await?;
+                match raw_socket.recv(&mut reply_buf) {
+                    Ok(n) => {
+                        if n >= 8 {
+                            let reply_type = if is_v4 {
+                                ICMP_ECHO_REPLY
+                            } else {
+                                ICMPV6_ECHO_REPLY
+                            };
+                            if reply_buf[0] == reply_type {
+                                let reply_id = u16::from_be_bytes([reply_buf[4], reply_buf[5]]);
+                                let reply_seq = u16::from_be_bytes([reply_buf[6], reply_buf[7]]);
+                                if reply_id == echo.id && reply_seq == echo.sequence {
+                                    return Ok::<_, anyhow::Error>(IcmpEchoPacket {
+                                        target: echo.source,
+                                        source: echo.target,
+                                        id: reply_id,
+                                        sequence: reply_seq,
+                                        payload: reply_buf[8..n].to_vec(),
+                                        ttl: 64,
+                                    });
                                 }
                             }
-                            guard.clear_ready();
                         }
-                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            guard.clear_ready();
-                        }
-                        Err(e) => return Err(e.into()),
+                        guard.clear_ready();
                     }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        guard.clear_ready();
+                    }
+                    Err(e) => return Err(e.into()),
                 }
-            },
-        )
+            }
+        })
         .await
         .map_err(|_| anyhow::anyhow!("ICMP echo timeout"))?;
 
@@ -459,8 +463,8 @@ mod tests {
         // Minimal IPv4 ICMP Echo Request
         let mut pkt = vec![0u8; 28];
         pkt[0] = 0x45; // IPv4, IHL=5
-        pkt[9] = 1;    // ICMP
-        pkt[20] = 8;   // Echo Request
+        pkt[9] = 1; // ICMP
+        pkt[20] = 8; // Echo Request
         assert!(IcmpProxy::is_echo_request(&pkt));
     }
 
@@ -477,16 +481,26 @@ mod tests {
         let mut pkt = vec![0u8; 36]; // 20 IP + 8 ICMP + 8 payload
         pkt[0] = 0x45;
         pkt[8] = 64; // TTL
-        pkt[9] = 1;  // ICMP
-        // source: 10.0.0.1
-        pkt[12] = 10; pkt[13] = 0; pkt[14] = 0; pkt[15] = 1;
+        pkt[9] = 1; // ICMP
+                    // source: 10.0.0.1
+        pkt[12] = 10;
+        pkt[13] = 0;
+        pkt[14] = 0;
+        pkt[15] = 1;
         // target: 8.8.8.8
-        pkt[16] = 8; pkt[17] = 8; pkt[18] = 8; pkt[19] = 8;
+        pkt[16] = 8;
+        pkt[17] = 8;
+        pkt[18] = 8;
+        pkt[19] = 8;
         pkt[20] = ICMP_ECHO_REQUEST;
-        pkt[24] = 0x12; pkt[25] = 0x34; // id
-        pkt[26] = 0x00; pkt[27] = 0x01; // seq
-        // payload
-        for i in 0..8 { pkt[28 + i] = i as u8; }
+        pkt[24] = 0x12;
+        pkt[25] = 0x34; // id
+        pkt[26] = 0x00;
+        pkt[27] = 0x01; // seq
+                        // payload
+        for i in 0..8 {
+            pkt[28 + i] = i as u8;
+        }
 
         let echo = IcmpProxy::parse_echo_request(&pkt).unwrap();
         assert_eq!(echo.id, 0x1234);

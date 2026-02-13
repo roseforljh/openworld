@@ -23,7 +23,10 @@ pub struct SshOutbound {
 #[derive(Debug, Clone)]
 pub enum SshAuthMethod {
     Password(String),
-    PrivateKey { key_data: String, passphrase: Option<String> },
+    PrivateKey {
+        key_data: String,
+        passphrase: Option<String>,
+    },
     None,
 }
 
@@ -53,11 +56,7 @@ impl SshOutbound {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("ssh: address required"))?;
         let port = settings.port.unwrap_or(22);
-        let username = settings
-            .username
-            .as_deref()
-            .unwrap_or("root")
-            .to_string();
+        let username = settings.username.as_deref().unwrap_or("root").to_string();
         let auth_method = if let Some(ref pw) = settings.password {
             SshAuthMethod::Password(pw.clone())
         } else if let Some(ref key) = settings.private_key {
@@ -110,9 +109,7 @@ impl OutboundHandler for SshOutbound {
             };
 
             let addr = format!("{}:{}", self.server_addr, self.server_port);
-            let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host(&addr)
-                .await?
-                .collect();
+            let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host(&addr).await?.collect();
             if addrs.is_empty() {
                 anyhow::bail!("ssh: failed to resolve {}", addr);
             }
@@ -123,12 +120,9 @@ impl OutboundHandler for SshOutbound {
                 "SSH connecting"
             );
 
-            let mut handle = russh::client::connect(
-                std::sync::Arc::new(ssh_config),
-                addrs[0],
-                SshHandler {},
-            )
-            .await?;
+            let mut handle =
+                russh::client::connect(std::sync::Arc::new(ssh_config), addrs[0], SshHandler {})
+                    .await?;
 
             // === 2. 认证 ===
             match &self.auth_method {
@@ -137,10 +131,16 @@ impl OutboundHandler for SshOutbound {
                         .authenticate_password(&self.username, password)
                         .await?;
                     if !auth_ok {
-                        anyhow::bail!("ssh: password authentication failed for user '{}'", self.username);
+                        anyhow::bail!(
+                            "ssh: password authentication failed for user '{}'",
+                            self.username
+                        );
                     }
                 }
-                SshAuthMethod::PrivateKey { key_data, passphrase } => {
+                SshAuthMethod::PrivateKey {
+                    key_data,
+                    passphrase,
+                } => {
                     let key = if let Some(pass) = passphrase {
                         russh_keys::decode_secret_key(key_data, Some(pass))?
                     } else {
@@ -150,15 +150,19 @@ impl OutboundHandler for SshOutbound {
                         .authenticate_publickey(&self.username, std::sync::Arc::new(key))
                         .await?;
                     if !auth_ok {
-                        anyhow::bail!("ssh: public key authentication failed for user '{}'", self.username);
+                        anyhow::bail!(
+                            "ssh: public key authentication failed for user '{}'",
+                            self.username
+                        );
                     }
                 }
                 SshAuthMethod::None => {
-                    let auth_ok = handle
-                        .authenticate_none(&self.username)
-                        .await?;
+                    let auth_ok = handle.authenticate_none(&self.username).await?;
                     if !auth_ok {
-                        anyhow::bail!("ssh: none authentication failed for user '{}'", self.username);
+                        anyhow::bail!(
+                            "ssh: none authentication failed for user '{}'",
+                            self.username
+                        );
                     }
                 }
             }
@@ -183,12 +187,7 @@ impl OutboundHandler for SshOutbound {
             );
 
             let channel = handle
-                .channel_open_direct_tcpip(
-                    &host,
-                    port.into(),
-                    "127.0.0.1",
-                    0,
-                )
+                .channel_open_direct_tcpip(&host, port.into(), "127.0.0.1", 0)
                 .await?;
 
             debug!(
@@ -224,7 +223,6 @@ impl OutboundHandler for SshOutbound {
         self
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -286,14 +284,20 @@ mod tests {
             protocol: "ssh".to_string(),
             settings: OutboundSettings {
                 address: Some("host.com".to_string()),
-                private_key: Some("-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----".to_string()),
+                private_key: Some(
+                    "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----"
+                        .to_string(),
+                ),
                 private_key_passphrase: Some("mypass".to_string()),
                 ..Default::default()
             },
         };
         let outbound = SshOutbound::new(&config).unwrap();
         match outbound.auth_method() {
-            SshAuthMethod::PrivateKey { key_data, passphrase } => {
+            SshAuthMethod::PrivateKey {
+                key_data,
+                passphrase,
+            } => {
                 assert!(key_data.contains("OPENSSH"));
                 assert_eq!(passphrase.as_deref(), Some("mypass"));
             }

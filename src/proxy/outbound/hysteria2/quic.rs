@@ -38,8 +38,7 @@ impl QuicManager {
         brutal_send_mbps: Option<u64>,
     ) -> Result<Self> {
         // Build TLS config with 0-RTT support and h3 ALPN
-        let mut tls_config =
-            crate::common::tls::build_tls_config(allow_insecure, Some(&["h3"]))?;
+        let mut tls_config = crate::common::tls::build_tls_config(allow_insecure, Some(&["h3"]))?;
         tls_config.enable_early_data = true;
 
         let quic_crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls_config)?;

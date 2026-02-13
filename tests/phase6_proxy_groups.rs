@@ -5,10 +5,10 @@ use openworld::app::outbound_manager::OutboundManager;
 use openworld::config::types::{OutboundConfig, OutboundSettings, ProxyGroupConfig};
 use openworld::dns::DnsResolver;
 use openworld::proxy::group::loadbalance::LoadBalanceGroup;
-use tokio_util::sync::CancellationToken;
 use openworld::proxy::group::selector::SelectorGroup;
 use openworld::proxy::outbound::direct::DirectOutbound;
 use openworld::proxy::OutboundHandler;
+use tokio_util::sync::CancellationToken;
 
 struct MockResolver;
 
@@ -86,7 +86,12 @@ async fn selector_as_any_downcast() {
 #[tokio::test]
 async fn loadbalance_round_robin() {
     let (proxies, names) = make_direct_proxies(3);
-    let group = LoadBalanceGroup::new("lb".to_string(), proxies, names, openworld::proxy::group::loadbalance::LbStrategy::RoundRobin);
+    let group = LoadBalanceGroup::new(
+        "lb".to_string(),
+        proxies,
+        names,
+        openworld::proxy::group::loadbalance::LbStrategy::RoundRobin,
+    );
     // 杞鍒嗛厤: 0, 1, 2, 0, 1, 2
     assert_eq!(group.tag(), "lb");
     assert_eq!(group.proxy_names(), &["direct-0", "direct-1", "direct-2"]);
@@ -95,8 +100,12 @@ async fn loadbalance_round_robin() {
 #[tokio::test]
 async fn loadbalance_as_any_downcast() {
     let (proxies, names) = make_direct_proxies(2);
-    let group: Arc<dyn OutboundHandler> =
-        Arc::new(LoadBalanceGroup::new("lb".to_string(), proxies, names, openworld::proxy::group::loadbalance::LbStrategy::RoundRobin));
+    let group: Arc<dyn OutboundHandler> = Arc::new(LoadBalanceGroup::new(
+        "lb".to_string(),
+        proxies,
+        names,
+        openworld::proxy::group::loadbalance::LbStrategy::RoundRobin,
+    ));
     assert!(group.as_any().downcast_ref::<LoadBalanceGroup>().is_some());
 }
 
@@ -526,7 +535,14 @@ async fn start_test_api_with_group() -> String {
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &groups).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
 
-    let dispatcher = Arc::new(Dispatcher::new(router, outbound_manager, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new()));
+    let dispatcher = Arc::new(Dispatcher::new(
+        router,
+        outbound_manager,
+        tracker,
+        Arc::new(MockResolver) as Arc<dyn DnsResolver>,
+        None,
+        CancellationToken::new(),
+    ));
 
     let state = api::handlers::AppState {
         dispatcher,

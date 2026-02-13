@@ -22,13 +22,12 @@ use crate::common::ProxyStream;
 use crate::config::types::MuxConfig;
 
 pub use h2mux::{
-    frame_flags as h2_frame_flags, encode_data_frame, encode_rst_stream, FrameType, H2FrameHeader,
+    encode_data_frame, encode_rst_stream, frame_flags as h2_frame_flags, FrameType, H2FrameHeader,
     H2MuxPool, H2MuxStream,
 };
 pub use singmux::{
     auto_select_mux, decode_frames, encode_frames, MuxBackpressure, MuxClient,
-    MuxConfig as SingMuxConfig, MuxFrame, MuxNegotiation, MuxPaddingPolicy, MuxProtocol,
-    MuxServer,
+    MuxConfig as SingMuxConfig, MuxFrame, MuxNegotiation, MuxPaddingPolicy, MuxProtocol, MuxServer,
 };
 pub use smux::{decode_smux_frames, SmuxFrame, SmuxSession, SmuxStream};
 pub use xudp::{XudpFrame, XudpMux};
@@ -125,8 +124,12 @@ impl MuxConnection {
 
         let stream = match &self.runtime {
             RuntimeConnection::Sing(client) => Box::new(client.open_stream().await?) as ProxyStream,
-            RuntimeConnection::Smux(session) => Box::new(session.open_stream().await?) as ProxyStream,
-            RuntimeConnection::Yamux(runtime) => Box::new(runtime.open_stream().await?) as ProxyStream,
+            RuntimeConnection::Smux(session) => {
+                Box::new(session.open_stream().await?) as ProxyStream
+            }
+            RuntimeConnection::Yamux(runtime) => {
+                Box::new(runtime.open_stream().await?) as ProxyStream
+            }
             RuntimeConnection::H2(runtime) => Box::new(runtime.open_stream().await?) as ProxyStream,
         };
 
@@ -278,7 +281,8 @@ impl YamuxRuntime {
 
 async fn build_yamux_runtime(stream: ProxyStream) -> Result<RuntimeConnection> {
     let session = Arc::new(YamuxSession::client());
-    let streams: Arc<Mutex<HashMap<u32, mpsc::Sender<Vec<u8>>>>> = Arc::new(Mutex::new(HashMap::new()));
+    let streams: Arc<Mutex<HashMap<u32, mpsc::Sender<Vec<u8>>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
     let (write_tx, mut write_rx) = mpsc::channel::<YamuxWriteCmd>(256);
 
     let (mut reader, mut writer) = tokio::io::split(stream);
@@ -287,9 +291,13 @@ async fn build_yamux_runtime(stream: ProxyStream) -> Result<RuntimeConnection> {
     tokio::spawn(async move {
         while let Some(cmd) = write_rx.recv().await {
             let bytes = match cmd {
-                YamuxWriteCmd::Open(stream_id) => encode_yamux_data(stream_id, yamux_flags::SYN, &[]),
+                YamuxWriteCmd::Open(stream_id) => {
+                    encode_yamux_data(stream_id, yamux_flags::SYN, &[])
+                }
                 YamuxWriteCmd::Data(stream_id, data) => encode_yamux_data(stream_id, 0, &data),
-                YamuxWriteCmd::Close(stream_id) => encode_yamux_data(stream_id, yamux_flags::FIN, &[]),
+                YamuxWriteCmd::Close(stream_id) => {
+                    encode_yamux_data(stream_id, yamux_flags::FIN, &[])
+                }
             };
             if writer.write_all(&bytes).await.is_err() {
                 break;
@@ -383,7 +391,8 @@ impl H2Runtime {
 
 async fn build_h2_runtime(stream: ProxyStream) -> Result<RuntimeConnection> {
     let pool = Arc::new(H2MuxPool::with_defaults());
-    let streams: Arc<Mutex<HashMap<u32, mpsc::Sender<Vec<u8>>>>> = Arc::new(Mutex::new(HashMap::new()));
+    let streams: Arc<Mutex<HashMap<u32, mpsc::Sender<Vec<u8>>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
     let (write_tx, mut write_rx) = mpsc::channel::<H2WriteCmd>(256);
 
     let (mut reader, mut writer) = tokio::io::split(stream);

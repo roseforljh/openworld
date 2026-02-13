@@ -313,9 +313,7 @@ fn extract_subject_cn(data: &[u8]) -> Result<String> {
                 if oid_content == [0x55, 0x04, 0x03] {
                     // Value follows the OID
                     if let Ok((_, value_content)) = read_asn1_element(&seq_content[oid_total..]) {
-                        return Ok(
-                            String::from_utf8_lossy(value_content).to_string()
-                        );
+                        return Ok(String::from_utf8_lossy(value_content).to_string());
                     }
                 }
             }
@@ -379,12 +377,20 @@ mod tests {
         // Use rcgen (dev-dependency) to generate a test certificate
         let subject_alt_names = vec!["test.example.com".to_string()];
         let params = rcgen::CertificateParams::new(subject_alt_names).unwrap();
-        let cert = params.self_signed(&rcgen::KeyPair::generate().unwrap()).unwrap();
+        let cert = params
+            .self_signed(&rcgen::KeyPair::generate().unwrap())
+            .unwrap();
         let pem = cert.pem();
 
         let info = CertManager::check_expiry(pem.as_bytes()).unwrap();
-        assert!(!info.is_expired, "freshly generated cert should not be expired");
-        assert!(info.days_until_expiry > 0, "should have positive days until expiry");
+        assert!(
+            !info.is_expired,
+            "freshly generated cert should not be expired"
+        );
+        assert!(
+            info.days_until_expiry > 0,
+            "should have positive days until expiry"
+        );
     }
 
     #[test]

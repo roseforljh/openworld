@@ -58,7 +58,13 @@ impl StreamTransport for WsTransport {
         let host = self.host.as_deref().unwrap_or(&self.server_addr);
 
         // 建立底层 TCP 连接（通过统一 Dialer）
-        let tcp_stream = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config, None).await?;
+        let tcp_stream = super::dial_tcp(
+            &self.server_addr,
+            self.server_port,
+            &self.dialer_config,
+            None,
+        )
+        .await?;
 
         let stream: ProxyStream = if use_tls {
             let tls_cfg = self
@@ -76,8 +82,12 @@ impl StreamTransport for WsTransport {
                 .map(fingerprint::FingerprintType::from_str)
                 .unwrap_or(fingerprint::FingerprintType::None);
             let ech_settings = ech::resolve_ech_settings(tls_cfg, sni).await?;
-            let rustls_config =
-                ech::build_ech_tls_config(&ech_settings, fp, tls_cfg.allow_insecure, alpn.as_deref())?;
+            let rustls_config = ech::build_ech_tls_config(
+                &ech_settings,
+                fp,
+                tls_cfg.allow_insecure,
+                alpn.as_deref(),
+            )?;
             let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(rustls_config));
             let server_name = rustls::pki_types::ServerName::try_from(sni.to_string())?;
             let tls_stream = connector.connect(server_name, tcp_stream).await?;

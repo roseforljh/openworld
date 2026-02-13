@@ -1,12 +1,12 @@
 pub mod addr;
 pub mod dialer;
 pub mod error;
+pub mod ktls;
 pub mod stream;
 pub mod tls;
+pub mod tls_reload;
 pub mod traffic;
 pub mod udp;
-pub mod ktls;
-pub mod tls_reload;
 
 pub use addr::Address;
 pub use dialer::{Dialer, DialerConfig};

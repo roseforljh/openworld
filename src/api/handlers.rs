@@ -18,6 +18,7 @@ use crate::proxy::group::latency_weighted::LatencyWeightedGroup;
 use crate::proxy::group::loadbalance::LoadBalanceGroup;
 use crate::proxy::group::selector::SelectorGroup;
 use crate::proxy::group::urltest::UrlTestGroup;
+use crate::proxy::outbound::chain::ProxyChain;
 use crate::proxy::outbound::direct::DirectOutbound;
 use crate::proxy::outbound::http::HttpOutbound;
 use crate::proxy::outbound::hysteria2::Hysteria2Outbound;
@@ -30,7 +31,6 @@ use crate::proxy::outbound::tuic::TuicOutbound;
 use crate::proxy::outbound::vless::VlessOutbound;
 use crate::proxy::outbound::vmess::VmessOutbound;
 use crate::proxy::outbound::wireguard::WireGuardOutbound;
-use crate::proxy::outbound::chain::ProxyChain;
 
 use super::models::*;
 
@@ -285,8 +285,14 @@ pub async fn healthcheck_proxy(
     } else {
         // 非代理组，直接测试单个代理
         return match outbound_manager.test_delay(&name, &url, timeout).await {
-            Some(delay) => (StatusCode::OK, Json(serde_json::json!({"delay": delay}))).into_response(),
-            None => (StatusCode::REQUEST_TIMEOUT, Json(serde_json::json!({"message": "timeout"}))).into_response(),
+            Some(delay) => {
+                (StatusCode::OK, Json(serde_json::json!({"delay": delay}))).into_response()
+            }
+            None => (
+                StatusCode::REQUEST_TIMEOUT,
+                Json(serde_json::json!({"message": "timeout"})),
+            )
+                .into_response(),
         };
     };
 
@@ -471,13 +477,22 @@ pub async fn get_metrics(State(state): State<AppState>) -> impl IntoResponse {
     // Active connections (gauge)
     out.push_str("# HELP openworld_connections_active Current active connections\n");
     out.push_str("# TYPE openworld_connections_active gauge\n");
-    out.push_str(&format!("openworld_connections_active {}\n\n", snap.active_count));
+    out.push_str(&format!(
+        "openworld_connections_active {}\n\n",
+        snap.active_count
+    ));
 
     // Total traffic (counters)
     out.push_str("# HELP openworld_traffic_bytes_total Total traffic in bytes\n");
     out.push_str("# TYPE openworld_traffic_bytes_total counter\n");
-    out.push_str(&format!("openworld_traffic_bytes_total{{direction=\"upload\"}} {}\n", snap.total_up));
-    out.push_str(&format!("openworld_traffic_bytes_total{{direction=\"download\"}} {}\n\n", snap.total_down));
+    out.push_str(&format!(
+        "openworld_traffic_bytes_total{{direction=\"upload\"}} {}\n",
+        snap.total_up
+    ));
+    out.push_str(&format!(
+        "openworld_traffic_bytes_total{{direction=\"download\"}} {}\n\n",
+        snap.total_down
+    ));
 
     // Route hits (counter with label)
     if !route_stats.is_empty() {
@@ -486,7 +501,11 @@ pub async fn get_metrics(State(state): State<AppState>) -> impl IntoResponse {
         let mut sorted: Vec<_> = route_stats.iter().collect();
         sorted.sort_by(|(a, _), (b, _)| a.cmp(b));
         for (route, count) in sorted {
-            out.push_str(&format!("openworld_route_hits_total{{route=\"{}\"}} {}\n", prom_escape(route), count));
+            out.push_str(&format!(
+                "openworld_route_hits_total{{route=\"{}\"}} {}\n",
+                prom_escape(route),
+                count
+            ));
         }
         out.push('\n');
     }
@@ -498,18 +517,33 @@ pub async fn get_metrics(State(state): State<AppState>) -> impl IntoResponse {
         let mut sorted: Vec<_> = error_stats.iter().collect();
         sorted.sort_by(|(a, _), (b, _)| a.cmp(b));
         for (code, count) in sorted {
-            out.push_str(&format!("openworld_errors_total{{code=\"{}\"}} {}\n", prom_escape(code), count));
+            out.push_str(&format!(
+                "openworld_errors_total{{code=\"{}\"}} {}\n",
+                prom_escape(code),
+                count
+            ));
         }
         out.push('\n');
     }
 
     // Latency summary
     if let Some((p50, p95, p99)) = latency {
-        out.push_str("# HELP openworld_connection_duration_ms Connection latency in milliseconds\n");
+        out.push_str(
+            "# HELP openworld_connection_duration_ms Connection latency in milliseconds\n",
+        );
         out.push_str("# TYPE openworld_connection_duration_ms summary\n");
-        out.push_str(&format!("openworld_connection_duration_ms{{quantile=\"0.5\"}} {}\n", p50));
-        out.push_str(&format!("openworld_connection_duration_ms{{quantile=\"0.95\"}} {}\n", p95));
-        out.push_str(&format!("openworld_connection_duration_ms{{quantile=\"0.99\"}} {}\n\n", p99));
+        out.push_str(&format!(
+            "openworld_connection_duration_ms{{quantile=\"0.5\"}} {}\n",
+            p50
+        ));
+        out.push_str(&format!(
+            "openworld_connection_duration_ms{{quantile=\"0.95\"}} {}\n",
+            p95
+        ));
+        out.push_str(&format!(
+            "openworld_connection_duration_ms{{quantile=\"0.99\"}} {}\n\n",
+            p99
+        ));
     }
 
     // Uptime (gauge)
@@ -519,13 +553,18 @@ pub async fn get_metrics(State(state): State<AppState>) -> impl IntoResponse {
     out.push_str(&format!("openworld_uptime_seconds {}\n", uptime_secs));
 
     (
-        [(axum::http::header::CONTENT_TYPE, "text/plain; version=0.0.4; charset=utf-8")],
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
         out,
     )
 }
 
 fn prom_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
 }
 
 /// GET /logs (WebSocket) - 实时日志流
@@ -911,7 +950,8 @@ pub async fn get_proxy_providers(State(state): State<AppState>) -> Json<ProxyPro
     // 将代理组作为 proxy provider 暴露
     for (name, handler) in outbound_manager.list() {
         let any = handler.as_any();
-        let (group_type, proxy_names) = if let Some(selector) = any.downcast_ref::<SelectorGroup>() {
+        let (group_type, proxy_names) = if let Some(selector) = any.downcast_ref::<SelectorGroup>()
+        {
             ("Selector", selector.proxy_names().to_vec())
         } else if let Some(urltest) = any.downcast_ref::<UrlTestGroup>() {
             ("URLTest", urltest.proxy_names().to_vec())
@@ -986,7 +1026,11 @@ pub async fn refresh_proxy_provider(
         }
     }
 
-    info!(provider = name.as_str(), tested = results.len(), "proxy provider refreshed via API");
+    info!(
+        provider = name.as_str(),
+        tested = results.len(),
+        "proxy provider refreshed via API"
+    );
     (StatusCode::OK, Json(serde_json::json!({"tested": results}))).into_response()
 }
 
@@ -1032,31 +1076,31 @@ pub async fn refresh_rule_provider(
     };
 
     let provider_for_refresh = provider.clone();
-    let refresh_result = tokio::task::spawn_blocking(move || {
-        provider_for_refresh.refresh_http_provider()
-    }).await;
+    let refresh_result =
+        tokio::task::spawn_blocking(move || provider_for_refresh.refresh_http_provider()).await;
 
     match refresh_result {
         Ok(Ok(changed)) => {
             if changed {
                 let current_router = state.dispatcher.router().await;
                 state.dispatcher.update_router(current_router).await;
-                info!(provider = name.as_str(), "rule provider refreshed and router updated via API");
+                info!(
+                    provider = name.as_str(),
+                    "rule provider refreshed and router updated via API"
+                );
             }
             StatusCode::NO_CONTENT.into_response()
         }
-        Ok(Err(e)) => {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"message": format!("refresh failed: {}", e)})),
-            ).into_response()
-        }
-        Err(e) => {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"message": format!("task join error: {}", e)})),
-            ).into_response()
-        }
+        Ok(Err(e)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"message": format!("refresh failed: {}", e)})),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"message": format!("task join error: {}", e)})),
+        )
+            .into_response(),
     }
 }
 
@@ -1085,8 +1129,9 @@ pub async fn get_configs(State(state): State<AppState>) -> Json<ConfigsResponse>
 /// GET /traffic/sse — SSE 版流量推送
 pub async fn traffic_sse(
     State(state): State<AppState>,
-) -> axum::response::sse::Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>
-{
+) -> axum::response::sse::Sse<
+    impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
+> {
     let tracker = state.dispatcher.tracker().clone();
 
     let stream = futures_util::stream::unfold(
@@ -1113,15 +1158,15 @@ pub async fn traffic_sse(
         },
     );
 
-    axum::response::sse::Sse::new(stream)
-        .keep_alive(axum::response::sse::KeepAlive::default())
+    axum::response::sse::Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
 }
 
 /// GET /connections/sse — SSE 版连接列表推送
 pub async fn connections_sse(
     State(state): State<AppState>,
-) -> axum::response::sse::Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>
-{
+) -> axum::response::sse::Sse<
+    impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>,
+> {
     let tracker = state.dispatcher.tracker().clone();
 
     let stream = futures_util::stream::unfold(tracker, |tracker| async move {
@@ -1167,8 +1212,7 @@ pub async fn connections_sse(
         Some((Ok(event), tracker))
     });
 
-    axum::response::sse::Sse::new(stream)
-        .keep_alive(axum::response::sse::KeepAlive::default())
+    axum::response::sse::Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::default())
 }
 
 // ==================== SSM API ====================
@@ -1187,9 +1231,13 @@ pub async fn ssm_list_users(State(state): State<AppState>) -> impl IntoResponse 
             let users = ss.list_users().await;
             (StatusCode::OK, Json(serde_json::json!({ "users": users }))).into_response()
         }
-        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({
-            "error": "SS 入站未启用"
-        }))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "SS 入站未启用"
+            })),
+        )
+            .into_response(),
     }
 }
 
@@ -1200,16 +1248,28 @@ pub async fn ssm_add_user(
 ) -> impl IntoResponse {
     match &state.ss_inbound {
         Some(ss) => match ss.add_user(body.name.clone(), &body.password).await {
-            Ok(()) => (StatusCode::CREATED, Json(serde_json::json!({
-                "message": format!("用户 '{}' 已添加", body.name)
-            }))).into_response(),
-            Err(e) => (StatusCode::CONFLICT, Json(serde_json::json!({
-                "error": e.to_string()
-            }))).into_response(),
+            Ok(()) => (
+                StatusCode::CREATED,
+                Json(serde_json::json!({
+                    "message": format!("用户 '{}' 已添加", body.name)
+                })),
+            )
+                .into_response(),
+            Err(e) => (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({
+                    "error": e.to_string()
+                })),
+            )
+                .into_response(),
         },
-        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({
-            "error": "SS 入站未启用"
-        }))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "SS 入站未启用"
+            })),
+        )
+            .into_response(),
     }
 }
 
@@ -1221,18 +1281,30 @@ pub async fn ssm_remove_user(
     match &state.ss_inbound {
         Some(ss) => {
             if ss.remove_user(&name).await {
-                (StatusCode::OK, Json(serde_json::json!({
-                    "message": format!("用户 '{}' 已删除", name)
-                }))).into_response()
+                (
+                    StatusCode::OK,
+                    Json(serde_json::json!({
+                        "message": format!("用户 '{}' 已删除", name)
+                    })),
+                )
+                    .into_response()
             } else {
-                (StatusCode::NOT_FOUND, Json(serde_json::json!({
-                    "error": format!("用户 '{}' 不存在", name)
-                }))).into_response()
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({
+                        "error": format!("用户 '{}' 不存在", name)
+                    })),
+                )
+                    .into_response()
             }
         }
-        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({
-            "error": "SS 入站未启用"
-        }))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "SS 入站未启用"
+            })),
+        )
+            .into_response(),
     }
 }
 
@@ -1244,18 +1316,30 @@ pub async fn ssm_reset_traffic(
     match &state.ss_inbound {
         Some(ss) => {
             if ss.reset_user_traffic(&name).await {
-                (StatusCode::OK, Json(serde_json::json!({
-                    "message": format!("用户 '{}' 流量已重置", name)
-                }))).into_response()
+                (
+                    StatusCode::OK,
+                    Json(serde_json::json!({
+                        "message": format!("用户 '{}' 流量已重置", name)
+                    })),
+                )
+                    .into_response()
             } else {
-                (StatusCode::NOT_FOUND, Json(serde_json::json!({
-                    "error": format!("用户 '{}' 不存在", name)
-                }))).into_response()
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({
+                        "error": format!("用户 '{}' 不存在", name)
+                    })),
+                )
+                    .into_response()
             }
         }
-        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({
-            "error": "SS 入站未启用"
-        }))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "SS 入站未启用"
+            })),
+        )
+            .into_response(),
     }
 }
 
@@ -1266,15 +1350,23 @@ pub async fn ssm_stats(State(state): State<AppState>) -> impl IntoResponse {
             let users = ss.list_users().await;
             let total_up: u64 = users.iter().map(|u| u.traffic_up).sum();
             let total_down: u64 = users.iter().map(|u| u.traffic_down).sum();
-            (StatusCode::OK, Json(serde_json::json!({
-                "user_count": users.len(),
-                "total_upload": total_up,
-                "total_download": total_down,
-                "method": format!("{:?}", ss.cipher_kind()),
-            }))).into_response()
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "user_count": users.len(),
+                    "total_upload": total_up,
+                    "total_download": total_down,
+                    "method": format!("{:?}", ss.cipher_kind()),
+                })),
+            )
+                .into_response()
         }
-        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({
-            "error": "SS 入站未启用"
-        }))).into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": "SS 入站未启用"
+            })),
+        )
+            .into_response(),
     }
 }

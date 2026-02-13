@@ -2,16 +2,15 @@
 ///
 /// 核心数据结构：将每个字节 (0..255) 映射为一组 4 字节提示，
 /// 这些提示唯一确定一个 4x4 数独网格。
-
 use std::collections::HashMap;
 
-use sha2::{Sha256, Digest};
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use sha2::{Digest, Sha256};
 
-use super::grid::{Grid, generate_all_grids};
-use super::layout::{ByteLayout, resolve_layout};
+use super::grid::{generate_all_grids, Grid};
+use super::layout::{resolve_layout, ByteLayout};
 
 /// Sudoku 编解码表
 pub struct Table {
@@ -137,16 +136,23 @@ impl Table {
 /// 将 4 个提示排序后打包为 u32 键
 pub fn pack_hints_to_key(mut hints: [u8; 4]) -> u32 {
     // 排序网络（4 元素冒泡排序展开）
-    if hints[0] > hints[1] { hints.swap(0, 1); }
-    if hints[2] > hints[3] { hints.swap(2, 3); }
-    if hints[0] > hints[2] { hints.swap(0, 2); }
-    if hints[1] > hints[3] { hints.swap(1, 3); }
-    if hints[1] > hints[2] { hints.swap(1, 2); }
+    if hints[0] > hints[1] {
+        hints.swap(0, 1);
+    }
+    if hints[2] > hints[3] {
+        hints.swap(2, 3);
+    }
+    if hints[0] > hints[2] {
+        hints.swap(0, 2);
+    }
+    if hints[1] > hints[3] {
+        hints.swap(1, 3);
+    }
+    if hints[1] > hints[2] {
+        hints.swap(1, 2);
+    }
 
-    (hints[0] as u32) << 24
-        | (hints[1] as u32) << 16
-        | (hints[2] as u32) << 8
-        | hints[3] as u32
+    (hints[0] as u32) << 24 | (hints[1] as u32) << 16 | (hints[2] as u32) << 8 | hints[3] as u32
 }
 
 /// 生成 C(n, k) 组合
@@ -196,12 +202,7 @@ mod tests {
         for byte_val in 0..=255u8 {
             let hints = table.encode_byte(byte_val, &mut rng);
             let decoded = table.decode_hints(hints);
-            assert_eq!(
-                decoded,
-                Some(byte_val),
-                "字节 {} 编解码不一致",
-                byte_val
-            );
+            assert_eq!(decoded, Some(byte_val), "字节 {} 编解码不一致", byte_val);
         }
     }
 
@@ -213,12 +214,7 @@ mod tests {
         for byte_val in 0..=255u8 {
             let hints = table.encode_byte(byte_val, &mut rng);
             let decoded = table.decode_hints(hints);
-            assert_eq!(
-                decoded,
-                Some(byte_val),
-                "字节 {} 编解码不一致",
-                byte_val
-            );
+            assert_eq!(decoded, Some(byte_val), "字节 {} 编解码不一致", byte_val);
         }
     }
 

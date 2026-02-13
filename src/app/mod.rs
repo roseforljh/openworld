@@ -27,15 +27,17 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::config::subscription::ProxyNode;
-use crate::config::types::{ApiConfig, DerpConfig, OutboundConfig, OutboundSettings, ProxyGroupConfig};
+use crate::config::types::{
+    ApiConfig, DerpConfig, OutboundConfig, OutboundSettings, ProxyGroupConfig,
+};
 use crate::config::Config;
 use crate::dns::{self, DnsResolver, SystemResolver};
+#[cfg(target_os = "windows")]
+use crate::proxy::inbound::tun_device::WindowsProxyState;
 use crate::proxy::inbound::tun_device::{
     FirewallBackend, SystemProxy, TransparentProxyConfig, TransparentProxyManager,
     TransparentProxyMode,
 };
-#[cfg(target_os = "windows")]
-use crate::proxy::inbound::tun_device::WindowsProxyState;
 use crate::router::geo_update::{GeoUpdateConfig, GeoUpdater};
 use crate::router::Router;
 
@@ -89,14 +91,16 @@ impl App {
             &config.outbounds,
             &config.proxy_groups,
         )?);
-        let (resolver, fakeip_pool): (Arc<dyn DnsResolver>, Option<Arc<crate::dns::fakeip::FakeIpPool>>) =
-            match config.dns.as_ref() {
-                Some(dns_config) => {
-                    let (r, pool) = dns::build_resolver(dns_config)?;
-                    (Arc::from(r), pool)
-                }
-                None => (Arc::new(SystemResolver), None),
-            };
+        let (resolver, fakeip_pool): (
+            Arc<dyn DnsResolver>,
+            Option<Arc<crate::dns::fakeip::FakeIpPool>>,
+        ) = match config.dns.as_ref() {
+            Some(dns_config) => {
+                let (r, pool) = dns::build_resolver(dns_config)?;
+                (Arc::from(r), pool)
+            }
+            None => (Arc::new(SystemResolver), None),
+        };
         let tracker = Arc::new(ConnectionTracker::new());
         let dispatcher = Arc::new(Dispatcher::new(
             router,
@@ -106,11 +110,16 @@ impl App {
             fakeip_pool,
             cancel_token.clone(),
         ));
-        let inbound_manager =
-            InboundManager::new(&config.inbounds, dispatcher.clone(), cancel_token.clone(), config.max_connections)?;
+        let inbound_manager = InboundManager::new(
+            &config.inbounds,
+            dispatcher.clone(),
+            cancel_token.clone(),
+            config.max_connections,
+        )?;
 
         let system_proxy = build_system_proxy_from_inbounds(&config.inbounds);
-        let transparent_proxy_manager = build_transparent_proxy_manager_from_inbounds(&config.inbounds);
+        let transparent_proxy_manager =
+            build_transparent_proxy_manager_from_inbounds(&config.inbounds);
         #[cfg(target_os = "windows")]
         let windows_proxy_state = None;
 
@@ -182,8 +191,12 @@ impl App {
         }
 
         self.spawn_rule_provider_refresh_tasks().await;
-        self.dispatcher.spawn_pool_cleanup(self.cancel_token.clone()).await;
-        self.dispatcher.spawn_dns_prefetch(self.cancel_token.clone()).await;
+        self.dispatcher
+            .spawn_pool_cleanup(self.cancel_token.clone())
+            .await;
+        self.dispatcher
+            .spawn_dns_prefetch(self.cancel_token.clone())
+            .await;
 
         let _geo_updater_handle = self.geo_updater.as_ref().map(|u| u.clone().start());
 
@@ -218,9 +231,17 @@ impl App {
         // Hot reload: file watcher + SIGHUP (Unix)
         if let Some(ref path) = self.config_path {
             #[cfg(feature = "cli")]
-            spawn_config_watcher(self.dispatcher.clone(), path.clone(), self.cancel_token.clone());
+            spawn_config_watcher(
+                self.dispatcher.clone(),
+                path.clone(),
+                self.cancel_token.clone(),
+            );
             #[cfg(unix)]
-            spawn_sighup_reload(self.dispatcher.clone(), path.clone(), self.cancel_token.clone());
+            spawn_sighup_reload(
+                self.dispatcher.clone(),
+                path.clone(),
+                self.cancel_token.clone(),
+            );
         }
 
         let cancel_token = self.cancel_token.clone();
@@ -451,7 +472,10 @@ impl App {
                             Upgrade: DERP\r\n\
                             Connection: Upgrade\r\n\
                             \r\n";
-                        if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes()).await {
+                        if let Err(e) =
+                            tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes())
+                                .await
+                        {
                             warn!(error = %e, "DERP 发送升级响应失败");
                             return;
                         }
@@ -468,7 +492,9 @@ impl App {
                             info_body.len(),
                             &*info_body
                         );
-                        let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes()).await;
+                        let _ =
+                            tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes())
+                                .await;
                     }
                 });
             }

@@ -60,7 +60,10 @@ impl GeoUpdater {
         let shutdown = self.shutdown.clone();
         tokio::spawn(async move {
             let interval = Duration::from_secs(self.config.interval_secs.max(3600));
-            info!(interval_secs = interval.as_secs(), "geo auto-updater started");
+            info!(
+                interval_secs = interval.as_secs(),
+                "geo auto-updater started"
+            );
 
             loop {
                 tokio::select! {
@@ -93,7 +96,9 @@ impl GeoUpdater {
             }
         }
 
-        if let (Some(ref path), Some(ref url)) = (&self.config.geosite_path, &self.config.geosite_url) {
+        if let (Some(ref path), Some(ref url)) =
+            (&self.config.geosite_path, &self.config.geosite_url)
+        {
             match download_if_updated(path, url).await {
                 Ok(true) => info!(path = path.as_str(), "GeoSite database updated"),
                 Ok(false) => debug!(path = path.as_str(), "GeoSite database up to date"),

@@ -51,8 +51,13 @@ impl Hysteria2Outbound {
         }
 
         let brutal_mbps = if up_mbps > 0 { Some(up_mbps) } else { None };
-        let quic_manager =
-            quic::QuicManager::with_brutal(address.clone(), port, sni.clone(), allow_insecure, brutal_mbps)?;
+        let quic_manager = quic::QuicManager::with_brutal(
+            address.clone(),
+            port,
+            sni.clone(),
+            allow_insecure,
+            brutal_mbps,
+        )?;
 
         Ok(Self {
             tag: config.tag.clone(),

@@ -19,7 +19,7 @@ pub trait DnsResolver: Send + Sync {
 
     /// 清空 DNS 缓存（默认无操作）
     async fn flush_cache(&self) {}
-    
+
     /// Support downcasting for type-specific operations
     fn as_any(&self) -> &dyn std::any::Any {
         &()

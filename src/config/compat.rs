@@ -164,9 +164,10 @@ pub fn parse_clash_config(content: &str) -> Result<CompatResult> {
     });
 
     // DNS 深度解析
-    let dns_config = clash.dns.as_ref().and_then(|dns_val| {
-        convert_clash_dns(dns_val)
-    });
+    let dns_config = clash
+        .dns
+        .as_ref()
+        .and_then(|dns_val| convert_clash_dns(dns_val));
 
     // rule-providers 映射
     let mut rule_provider_map = HashMap::new();
@@ -233,7 +234,10 @@ fn convert_clash_proxy(value: &serde_json::Value) -> Result<OutboundConfig> {
     let port = value.get("port").and_then(|v| v.as_u64()).map(|p| p as u16);
 
     // 提取传输层配置（所有协议通用）
-    let network = value.get("network").and_then(|v| v.as_str()).unwrap_or("tcp");
+    let network = value
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("tcp");
     let transport = if network != "tcp" {
         let mut path = None;
         let mut host = None;
@@ -246,36 +250,54 @@ fn convert_clash_proxy(value: &serde_json::Value) -> Result<OutboundConfig> {
                     if let Some(h) = opts.get("headers").and_then(|v| v.as_object()) {
                         let mut hm = HashMap::new();
                         for (k, v) in h {
-                            if let Some(s) = v.as_str() { hm.insert(k.clone(), s.to_string()); }
+                            if let Some(s) = v.as_str() {
+                                hm.insert(k.clone(), s.to_string());
+                            }
                         }
                         host = hm.get("Host").cloned();
-                        if !hm.is_empty() { headers = Some(hm); }
+                        if !hm.is_empty() {
+                            headers = Some(hm);
+                        }
                     }
                 }
             }
             "grpc" => {
                 if let Some(opts) = value.get("grpc-opts").or(value.get("grpc-opt")) {
-                    service_name = opts.get("grpc-service-name").and_then(|v| v.as_str()).map(String::from);
+                    service_name = opts
+                        .get("grpc-service-name")
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
                 }
             }
             "h2" => {
                 if let Some(opts) = value.get("h2-opts").or(value.get("h2-opt")) {
                     path = opts.get("path").and_then(|v| v.as_str()).map(String::from);
-                    host = opts.get("host").and_then(|v| v.as_array())
-                        .and_then(|a| a.first()).and_then(|v| v.as_str()).map(String::from);
+                    host = opts
+                        .get("host")
+                        .and_then(|v| v.as_array())
+                        .and_then(|a| a.first())
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
                 }
             }
             "http" => {
                 if let Some(opts) = value.get("http-opts") {
-                    path = opts.get("path").and_then(|v| v.as_array())
-                        .and_then(|a| a.first()).and_then(|v| v.as_str()).map(String::from);
+                    path = opts
+                        .get("path")
+                        .and_then(|v| v.as_array())
+                        .and_then(|a| a.first())
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
                 }
             }
             _ => {}
         }
         Some(TransportConfig {
             transport_type: network.to_string(),
-            path, host, service_name, headers,
+            path,
+            host,
+            service_name,
+            headers,
             ..Default::default()
         })
     } else {
@@ -284,117 +306,255 @@ fn convert_clash_proxy(value: &serde_json::Value) -> Result<OutboundConfig> {
 
     // 提取 TLS 配置
     let tls_bool = value.get("tls").and_then(|v| v.as_bool()).unwrap_or(false);
-    let skip_cert = value.get("skip-cert-verify").and_then(|v| v.as_bool()).unwrap_or(false);
-    let fp = value.get("client-fingerprint").and_then(|v| v.as_str()).map(String::from);
-    let alpn_vec = value.get("alpn").and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<_>>());
+    let skip_cert = value
+        .get("skip-cert-verify")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let fp = value
+        .get("client-fingerprint")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let alpn_vec = value.get("alpn").and_then(|v| v.as_array()).map(|a| {
+        a.iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect::<Vec<_>>()
+    });
 
     let (protocol, mut settings) = match proxy_type {
         "ss" | "shadowsocks" => {
-            let method = value.get("cipher").and_then(|v| v.as_str()).map(String::from);
-            let password = value.get("password").and_then(|v| v.as_str()).map(String::from);
-            let plugin = value.get("plugin").and_then(|v| v.as_str()).map(String::from);
-            let plugin_opts = value.get("plugin-opts").or(value.get("plugin_opts"))
-                .and_then(|v| v.as_str()).map(String::from);
-            ("shadowsocks".to_string(), OutboundSettings {
-                address: server, port, method, password, plugin, plugin_opts,
-                ..Default::default()
-            })
+            let method = value
+                .get("cipher")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let password = value
+                .get("password")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let plugin = value
+                .get("plugin")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let plugin_opts = value
+                .get("plugin-opts")
+                .or(value.get("plugin_opts"))
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            (
+                "shadowsocks".to_string(),
+                OutboundSettings {
+                    address: server,
+                    port,
+                    method,
+                    password,
+                    plugin,
+                    plugin_opts,
+                    ..Default::default()
+                },
+            )
         }
         "vless" => {
             let uuid = value.get("uuid").and_then(|v| v.as_str()).map(String::from);
-            let sni = value.get("servername").or(value.get("sni"))
-                .and_then(|v| v.as_str()).map(String::from);
+            let sni = value
+                .get("servername")
+                .or(value.get("sni"))
+                .and_then(|v| v.as_str())
+                .map(String::from);
             let flow = value.get("flow").and_then(|v| v.as_str()).map(String::from);
             let reality_opts = value.get("reality-opts");
             let (public_key, short_id, security) = if let Some(ro) = reality_opts {
-                (ro.get("public-key").and_then(|v| v.as_str()).map(String::from),
-                 ro.get("short-id").and_then(|v| v.as_str()).map(String::from),
-                 Some("reality".to_string()))
+                (
+                    ro.get("public-key")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
+                    ro.get("short-id")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
+                    Some("reality".to_string()),
+                )
             } else {
                 (None, None, Some("tls".to_string()))
             };
-            ("vless".to_string(), OutboundSettings {
-                address: server, port, uuid, sni, flow, security,
-                public_key, short_id,
-                ..Default::default()
-            })
+            (
+                "vless".to_string(),
+                OutboundSettings {
+                    address: server,
+                    port,
+                    uuid,
+                    sni,
+                    flow,
+                    security,
+                    public_key,
+                    short_id,
+                    ..Default::default()
+                },
+            )
         }
         "vmess" => {
             let uuid = value.get("uuid").and_then(|v| v.as_str()).map(String::from);
-            let sni = value.get("servername").or(value.get("sni"))
-                .and_then(|v| v.as_str()).map(String::from);
-            let method = value.get("cipher").or(value.get("security"))
-                .and_then(|v| v.as_str()).map(String::from);
-            let alter_id = value.get("alterId").and_then(|v| v.as_u64()).map(|v| v as u16);
+            let sni = value
+                .get("servername")
+                .or(value.get("sni"))
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let method = value
+                .get("cipher")
+                .or(value.get("security"))
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let alter_id = value
+                .get("alterId")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u16);
             let tls_enabled = value.get("tls").and_then(|v| v.as_bool()).unwrap_or(false);
-            ("vmess".to_string(), OutboundSettings {
-                address: server, port, uuid, method, sni, alter_id,
-                security: Some(if tls_enabled { "tls" } else { "none" }.to_string()),
-                ..Default::default()
-            })
+            (
+                "vmess".to_string(),
+                OutboundSettings {
+                    address: server,
+                    port,
+                    uuid,
+                    method,
+                    sni,
+                    alter_id,
+                    security: Some(if tls_enabled { "tls" } else { "none" }.to_string()),
+                    ..Default::default()
+                },
+            )
         }
         "trojan" => {
-            let password = value.get("password").and_then(|v| v.as_str()).map(String::from);
+            let password = value
+                .get("password")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             let sni = value.get("sni").and_then(|v| v.as_str()).map(String::from);
-            ("trojan".to_string(), OutboundSettings {
-                address: server, port, password, sni,
-                security: Some("tls".to_string()),
-                ..Default::default()
-            })
+            (
+                "trojan".to_string(),
+                OutboundSettings {
+                    address: server,
+                    port,
+                    password,
+                    sni,
+                    security: Some("tls".to_string()),
+                    ..Default::default()
+                },
+            )
         }
         "hysteria2" | "hy2" => {
-            let password = value.get("password").and_then(|v| v.as_str()).map(String::from);
+            let password = value
+                .get("password")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             let sni = value.get("sni").and_then(|v| v.as_str()).map(String::from);
             let up_mbps = value.get("up").and_then(|v| v.as_u64());
             let down_mbps = value.get("down").and_then(|v| v.as_u64());
-            ("hysteria2".to_string(), OutboundSettings {
-                address: server, port, password, sni, up_mbps, down_mbps,
-                ..Default::default()
-            })
+            (
+                "hysteria2".to_string(),
+                OutboundSettings {
+                    address: server,
+                    port,
+                    password,
+                    sni,
+                    up_mbps,
+                    down_mbps,
+                    ..Default::default()
+                },
+            )
         }
         "hysteria" => {
-            let password = value.get("auth-str").or(value.get("auth_str"))
-                .and_then(|v| v.as_str()).map(String::from);
+            let password = value
+                .get("auth-str")
+                .or(value.get("auth_str"))
+                .and_then(|v| v.as_str())
+                .map(String::from);
             let sni = value.get("sni").and_then(|v| v.as_str()).map(String::from);
             let up_mbps = value.get("up").and_then(|v| v.as_u64());
             let down_mbps = value.get("down").and_then(|v| v.as_u64());
             let obfs = value.get("obfs").and_then(|v| v.as_str()).map(String::from);
-            ("hysteria".to_string(), OutboundSettings {
-                address: server, port, password, sni, up_mbps, down_mbps, obfs,
-                ..Default::default()
-            })
+            (
+                "hysteria".to_string(),
+                OutboundSettings {
+                    address: server,
+                    port,
+                    password,
+                    sni,
+                    up_mbps,
+                    down_mbps,
+                    obfs,
+                    ..Default::default()
+                },
+            )
         }
         "tuic" => {
             let uuid = value.get("uuid").and_then(|v| v.as_str()).map(String::from);
-            let password = value.get("password").and_then(|v| v.as_str()).map(String::from);
+            let password = value
+                .get("password")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             let sni = value.get("sni").and_then(|v| v.as_str()).map(String::from);
-            let congestion_control = value.get("congestion-controller")
-                .and_then(|v| v.as_str()).map(String::from);
-            ("tuic".to_string(), OutboundSettings {
-                address: server, port, uuid, password, sni, congestion_control,
-                ..Default::default()
-            })
+            let congestion_control = value
+                .get("congestion-controller")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            (
+                "tuic".to_string(),
+                OutboundSettings {
+                    address: server,
+                    port,
+                    uuid,
+                    password,
+                    sni,
+                    congestion_control,
+                    ..Default::default()
+                },
+            )
         }
         "wireguard" | "wg" => {
-            let private_key = value.get("private-key").and_then(|v| v.as_str()).map(String::from);
-            let peer_public_key = value.get("public-key").and_then(|v| v.as_str()).map(String::from);
-            let preshared_key = value.get("pre-shared-key").and_then(|v| v.as_str()).map(String::from);
+            let private_key = value
+                .get("private-key")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let peer_public_key = value
+                .get("public-key")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let preshared_key = value
+                .get("pre-shared-key")
+                .and_then(|v| v.as_str())
+                .map(String::from);
             let local_address = value.get("ip").and_then(|v| v.as_str()).map(String::from);
             let mtu = value.get("mtu").and_then(|v| v.as_u64()).map(|v| v as u16);
-            ("wireguard".to_string(), OutboundSettings {
-                address: server, port, private_key, peer_public_key, preshared_key,
-                local_address, mtu,
-                ..Default::default()
-            })
+            (
+                "wireguard".to_string(),
+                OutboundSettings {
+                    address: server,
+                    port,
+                    private_key,
+                    peer_public_key,
+                    preshared_key,
+                    local_address,
+                    mtu,
+                    ..Default::default()
+                },
+            )
         }
         "ssh" => {
-            let username = value.get("username").and_then(|v| v.as_str()).map(String::from);
-            let password = value.get("password").and_then(|v| v.as_str()).map(String::from);
-            ("ssh".to_string(), OutboundSettings {
-                address: server, port, username, password,
-                ..Default::default()
-            })
+            let username = value
+                .get("username")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let password = value
+                .get("password")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            (
+                "ssh".to_string(),
+                OutboundSettings {
+                    address: server,
+                    port,
+                    username,
+                    password,
+                    ..Default::default()
+                },
+            )
         }
         "direct" => ("direct".to_string(), OutboundSettings::default()),
         other => anyhow::bail!("unsupported clash proxy type: {}", other),
@@ -411,7 +571,10 @@ fn convert_clash_proxy(value: &serde_json::Value) -> Result<OutboundConfig> {
     if needs_tls {
         settings.tls = Some(TlsConfig {
             enabled: true,
-            security: settings.security.clone().unwrap_or_else(|| "tls".to_string()),
+            security: settings
+                .security
+                .clone()
+                .unwrap_or_else(|| "tls".to_string()),
             sni: settings.sni.clone(),
             allow_insecure: skip_cert,
             fingerprint: fp,
@@ -540,30 +703,48 @@ fn parse_listen_addr(addr: &str) -> (String, u16) {
 
 /// 将 Clash DNS 配置 JSON 转换为 DnsConfig
 fn convert_clash_dns(dns_val: &serde_json::Value) -> Option<DnsConfig> {
-    if !dns_val.get("enable").and_then(|v| v.as_bool()).unwrap_or(true) {
+    if !dns_val
+        .get("enable")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true)
+    {
         return None;
     }
 
     let parse_servers = |key: &str| -> Vec<DnsServerConfig> {
-        dns_val.get(key)
+        dns_val
+            .get(key)
             .and_then(|v| v.as_array())
             .map(|arr| {
-                arr.iter().filter_map(|item| {
-                    if let Some(s) = item.as_str() {
-                        Some(DnsServerConfig { address: s.to_string(), domains: vec![] })
-                    } else if let Some(obj) = item.as_object() {
-                        // 高级格式: { "address": "...", "domains": [...] }
-                        let address = obj.get("address").or(obj.get("addr"))
-                            .and_then(|v| v.as_str())?.to_string();
-                        let domains = obj.get("domains")
-                            .and_then(|v| v.as_array())
-                            .map(|a| a.iter().filter_map(|d| d.as_str().map(String::from)).collect())
-                            .unwrap_or_default();
-                        Some(DnsServerConfig { address, domains })
-                    } else {
-                        None
-                    }
-                }).collect()
+                arr.iter()
+                    .filter_map(|item| {
+                        if let Some(s) = item.as_str() {
+                            Some(DnsServerConfig {
+                                address: s.to_string(),
+                                domains: vec![],
+                            })
+                        } else if let Some(obj) = item.as_object() {
+                            // 高级格式: { "address": "...", "domains": [...] }
+                            let address = obj
+                                .get("address")
+                                .or(obj.get("addr"))
+                                .and_then(|v| v.as_str())?
+                                .to_string();
+                            let domains = obj
+                                .get("domains")
+                                .and_then(|v| v.as_array())
+                                .map(|a| {
+                                    a.iter()
+                                        .filter_map(|d| d.as_str().map(String::from))
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            Some(DnsServerConfig { address, domains })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
             })
             .unwrap_or_default()
     };
@@ -588,17 +769,24 @@ fn convert_clash_dns(dns_val: &serde_json::Value) -> Option<DnsConfig> {
     all_servers.extend(policy_servers);
 
     // fake-ip
-    let fake_ip = dns_val.get("enhanced-mode")
+    let fake_ip = dns_val
+        .get("enhanced-mode")
         .and_then(|v| v.as_str())
         .filter(|m| *m == "fake-ip")
         .map(|_| {
-            let range = dns_val.get("fake-ip-range")
+            let range = dns_val
+                .get("fake-ip-range")
                 .and_then(|v| v.as_str())
                 .unwrap_or("198.18.0.1/16")
                 .to_string();
-            let exclude = dns_val.get("fake-ip-filter")
+            let exclude = dns_val
+                .get("fake-ip-filter")
                 .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|d| d.as_str().map(String::from)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|d| d.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
             FakeIpConfig {
                 ipv4_range: range,
@@ -608,7 +796,8 @@ fn convert_clash_dns(dns_val: &serde_json::Value) -> Option<DnsConfig> {
         });
 
     // hosts
-    let hosts = dns_val.get("hosts")
+    let hosts = dns_val
+        .get("hosts")
         .and_then(|v| v.as_object())
         .map(|obj| {
             obj.iter()
@@ -619,22 +808,41 @@ fn convert_clash_dns(dns_val: &serde_json::Value) -> Option<DnsConfig> {
 
     // fallback-filter
     let fallback_filter = dns_val.get("fallback-filter").and_then(|ff| {
-        let ip_cidr: Vec<String> = ff.get("ipcidr")
+        let ip_cidr: Vec<String> = ff
+            .get("ipcidr")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|s| s.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
-        let domain: Vec<String> = ff.get("domain")
+        let domain: Vec<String> = ff
+            .get("domain")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|s| s.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
-        if ip_cidr.is_empty() && domain.is_empty() { None }
-        else { Some(FallbackFilterConfig { ip_cidr, domain }) }
+        if ip_cidr.is_empty() && domain.is_empty() {
+            None
+        } else {
+            Some(FallbackFilterConfig { ip_cidr, domain })
+        }
     });
 
     // 模式
     let mode = match dns_val.get("enhanced-mode").and_then(|v| v.as_str()) {
         Some("fake-ip") => "split".to_string(), // fake-ip 模式使用 split
-        _ => if !fallback.is_empty() { "fallback".to_string() } else { "split".to_string() },
+        _ => {
+            if !fallback.is_empty() {
+                "fallback".to_string()
+            } else {
+                "split".to_string()
+            }
+        }
     };
 
     Some(DnsConfig {
@@ -654,9 +862,21 @@ fn convert_clash_dns(dns_val: &serde_json::Value) -> Option<DnsConfig> {
 
 /// 将 Clash rule-provider 转换为 RuleProviderConfig
 fn convert_clash_rule_provider(rp: &serde_json::Value) -> Option<RuleProviderConfig> {
-    let provider_type = rp.get("type").and_then(|v| v.as_str()).unwrap_or("http").to_string();
-    let behavior = rp.get("behavior").and_then(|v| v.as_str()).unwrap_or("domain").to_string();
-    let path = rp.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let provider_type = rp
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("http")
+        .to_string();
+    let behavior = rp
+        .get("behavior")
+        .and_then(|v| v.as_str())
+        .unwrap_or("domain")
+        .to_string();
+    let path = rp
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     let url = rp.get("url").and_then(|v| v.as_str()).map(String::from);
     let interval = rp.get("interval").and_then(|v| v.as_u64()).unwrap_or(86400);
 
@@ -859,7 +1079,12 @@ rules:
   - MATCH,vmess-ws
 "#;
         let result = parse_clash_config(yaml).unwrap();
-        let vmess = result.config.outbounds.iter().find(|o| o.tag == "vmess-ws").unwrap();
+        let vmess = result
+            .config
+            .outbounds
+            .iter()
+            .find(|o| o.tag == "vmess-ws")
+            .unwrap();
         assert_eq!(vmess.protocol, "vmess");
         let transport = vmess.settings.transport.as_ref().unwrap();
         assert_eq!(transport.transport_type, "ws");
@@ -888,7 +1113,12 @@ rules:
   - MATCH,trojan-grpc
 "#;
         let result = parse_clash_config(yaml).unwrap();
-        let trojan = result.config.outbounds.iter().find(|o| o.tag == "trojan-grpc").unwrap();
+        let trojan = result
+            .config
+            .outbounds
+            .iter()
+            .find(|o| o.tag == "trojan-grpc")
+            .unwrap();
         assert_eq!(trojan.protocol, "trojan");
         let transport = trojan.settings.transport.as_ref().unwrap();
         assert_eq!(transport.transport_type, "grpc");
@@ -912,10 +1142,21 @@ rules:
   - MATCH,wg-node
 "#;
         let result = parse_clash_config(yaml).unwrap();
-        let wg = result.config.outbounds.iter().find(|o| o.tag == "wg-node").unwrap();
+        let wg = result
+            .config
+            .outbounds
+            .iter()
+            .find(|o| o.tag == "wg-node")
+            .unwrap();
         assert_eq!(wg.protocol, "wireguard");
-        assert_eq!(wg.settings.private_key.as_deref(), Some("yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk="));
-        assert_eq!(wg.settings.peer_public_key.as_deref(), Some("bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="));
+        assert_eq!(
+            wg.settings.private_key.as_deref(),
+            Some("yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=")
+        );
+        assert_eq!(
+            wg.settings.peer_public_key.as_deref(),
+            Some("bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=")
+        );
         assert_eq!(wg.settings.local_address.as_deref(), Some("172.16.0.2/32"));
         assert_eq!(wg.settings.mtu, Some(1280));
     }
@@ -1002,13 +1243,24 @@ rule-providers:
     interval: 86400
 "#;
         let result = parse_clash_config(yaml).unwrap();
-        let rp = result.config.router.rule_providers.get("my-provider").unwrap();
+        let rp = result
+            .config
+            .router
+            .rule_providers
+            .get("my-provider")
+            .unwrap();
         assert_eq!(rp.provider_type, "http");
         assert_eq!(rp.behavior, "domain");
         assert_eq!(rp.url.as_deref(), Some("https://example.com/rules.yaml"));
         assert_eq!(rp.interval, 86400);
         // 规则中引用了
-        let rule = result.config.router.rules.iter().find(|r| r.rule_type == "rule-set").unwrap();
+        let rule = result
+            .config
+            .router
+            .rules
+            .iter()
+            .find(|r| r.rule_type == "rule-set")
+            .unwrap();
         assert_eq!(rule.values, vec!["my-provider"]);
     }
 
@@ -1023,9 +1275,21 @@ rules:
   - MATCH,direct
 "#;
         let result = parse_clash_config(yaml).unwrap();
-        let proc_rule = result.config.router.rules.iter().find(|r| r.rule_type == "process-name").unwrap();
+        let proc_rule = result
+            .config
+            .router
+            .rules
+            .iter()
+            .find(|r| r.rule_type == "process-name")
+            .unwrap();
         assert_eq!(proc_rule.values, vec!["chrome.exe"]);
-        let path_rule = result.config.router.rules.iter().find(|r| r.rule_type == "process-path").unwrap();
+        let path_rule = result
+            .config
+            .router
+            .rules
+            .iter()
+            .find(|r| r.rule_type == "process-path")
+            .unwrap();
         assert_eq!(path_rule.values, vec!["/usr/bin/curl"]);
     }
 
@@ -1056,7 +1320,12 @@ rules:
   - MATCH,relay-chain
 "#;
         let result = parse_clash_config(yaml).unwrap();
-        let relay = result.config.proxy_groups.iter().find(|g| g.name == "relay-chain").unwrap();
+        let relay = result
+            .config
+            .proxy_groups
+            .iter()
+            .find(|g| g.name == "relay-chain")
+            .unwrap();
         assert_eq!(relay.group_type, "relay");
         assert_eq!(relay.proxies, vec!["node-a", "node-b"]);
     }

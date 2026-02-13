@@ -52,7 +52,13 @@ impl H2Transport {
 #[async_trait]
 impl StreamTransport for H2Transport {
     async fn connect(&self, _addr: &Address) -> Result<ProxyStream> {
-        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config, None).await?;
+        let tcp = super::dial_tcp(
+            &self.server_addr,
+            self.server_port,
+            &self.dialer_config,
+            None,
+        )
+        .await?;
 
         let stream: ProxyStream = if let Some(ref tls_cfg) = self.tls_config {
             let sni = tls_cfg.sni.as_deref().unwrap_or(&self.server_addr);

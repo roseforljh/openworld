@@ -79,7 +79,12 @@ impl XudpFrame {
                     if pos + 6 > data.len() {
                         anyhow::bail!("insufficient data for xudp ipv4 address");
                     }
-                    let ip = std::net::Ipv4Addr::new(data[pos], data[pos + 1], data[pos + 2], data[pos + 3]);
+                    let ip = std::net::Ipv4Addr::new(
+                        data[pos],
+                        data[pos + 1],
+                        data[pos + 2],
+                        data[pos + 3],
+                    );
                     let port = u16::from_be_bytes([data[pos + 4], data[pos + 5]]);
                     pos += 6;
                     Some(Address::Ip(SocketAddr::from((ip, port))))

@@ -1,22 +1,21 @@
+pub mod conn;
+pub mod crypto;
 /// Sudoku 传输层
 ///
 /// 将 Sudoku 流量混淆协议集成为 OpenWorld 的传输层选项。
-
 pub mod grid;
-pub mod layout;
-pub mod table;
-pub mod conn;
-pub mod crypto;
 pub mod handshake;
 pub mod httpmask;
+pub mod layout;
+pub mod table;
 
 use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::common::{Address, DialerConfig, ProxyStream};
 use super::StreamTransport;
+use crate::common::{Address, DialerConfig, ProxyStream};
 
 /// Sudoku 传输层配置
 pub struct SudokuTransportConfig {
@@ -79,7 +78,13 @@ impl SudokuTransport {
 impl StreamTransport for SudokuTransport {
     async fn connect(&self, addr: &Address) -> Result<ProxyStream> {
         // 建立 TCP 连接
-        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config, None).await?;
+        let tcp = super::dial_tcp(
+            &self.server_addr,
+            self.server_port,
+            &self.dialer_config,
+            None,
+        )
+        .await?;
         // 将 TcpStream 包装为 ProxyStream
         let stream: ProxyStream = Box::new(tcp);
 

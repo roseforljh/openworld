@@ -1,9 +1,9 @@
-﻿//! Phase 5: Mixed 鍏ョ珯闆嗘垚娴嬭瘯
+//! Phase 5: Mixed 鍏ョ珯闆嗘垚娴嬭瘯
 
+use openworld::dns::DnsResolver;
 use openworld::proxy::inbound::mixed::MixedInbound;
 use openworld::proxy::inbound::shadowsocks::ShadowsocksInbound;
 use openworld::proxy::inbound::tun::TunInbound;
-use openworld::dns::DnsResolver;
 use openworld::proxy::InboundHandler;
 use tokio_util::sync::CancellationToken;
 
@@ -67,7 +67,14 @@ fn inbound_manager_registers_mixed() {
     let om = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
     let resolver = Arc::new(MockResolver) as Arc<dyn DnsResolver>;
-    let _dispatcher = Arc::new(Dispatcher::new(router, om, tracker, resolver, None, CancellationToken::new()));
+    let _dispatcher = Arc::new(Dispatcher::new(
+        router,
+        om,
+        tracker,
+        resolver,
+        None,
+        CancellationToken::new(),
+    ));
 
     // InboundManager 能够注册 mixed 协议
     // 由于 InboundManager::new 需要 CancellationToken 和 bind，这里直接验证 MixedInbound 可创建。

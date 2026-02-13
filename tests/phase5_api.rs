@@ -1,4 +1,4 @@
-﻿//! Phase 5: API 绔偣闆嗘垚娴嬭瘯
+//! Phase 5: API 绔偣闆嗘垚娴嬭瘯
 
 use std::sync::Arc;
 
@@ -39,7 +39,14 @@ async fn start_test_api() -> String {
     let outbound_manager = Arc::new(OutboundManager::new(&outbounds, &[]).unwrap());
     let tracker = Arc::new(ConnectionTracker::new());
 
-    let dispatcher = Arc::new(Dispatcher::new(router, outbound_manager, tracker, Arc::new(MockResolver) as Arc<dyn DnsResolver>, None, CancellationToken::new()));
+    let dispatcher = Arc::new(Dispatcher::new(
+        router,
+        outbound_manager,
+        tracker,
+        Arc::new(MockResolver) as Arc<dyn DnsResolver>,
+        None,
+        CancellationToken::new(),
+    ));
 
     // 鎵嬪姩鍒涘缓 API 鏈嶅姟鍣ㄤ互鑾峰彇瀹為檯绔彛
     let state = openworld::api::handlers::AppState {

@@ -80,7 +80,7 @@ impl ProfileManager {
                 rule_type: "domain-suffix".to_string(),
                 values: vec!["cn".to_string()],
                 outbound: "direct".to_string(),
-            ..Default::default()
+                ..Default::default()
             })
             .with_rule(RuleConfig {
                 rule_type: "ip-cidr".to_string(),
@@ -90,7 +90,7 @@ impl ProfileManager {
                     "192.168.0.0/16".to_string(),
                 ],
                 outbound: "direct".to_string(),
-            ..Default::default()
+                ..Default::default()
             });
         self.profiles.insert("default".to_string(), default);
 
@@ -107,7 +107,7 @@ impl ProfileManager {
                 rule_type: "domain-suffix".to_string(),
                 values: vec!["cn".to_string(), "com.cn".to_string()],
                 outbound: "direct".to_string(),
-            ..Default::default()
+                ..Default::default()
             })
             .with_rule(RuleConfig {
                 rule_type: "ip-cidr".to_string(),
@@ -118,7 +118,7 @@ impl ProfileManager {
                     "127.0.0.0/8".to_string(),
                 ],
                 outbound: "direct".to_string(),
-            ..Default::default()
+                ..Default::default()
             })
             .with_rule(RuleConfig {
                 rule_type: "domain-keyword".to_string(),
@@ -128,7 +128,7 @@ impl ProfileManager {
                     "twitter".to_string(),
                 ],
                 outbound: "proxy".to_string(),
-            ..Default::default()
+                ..Default::default()
             })
             .with_log_level("debug");
         self.profiles.insert("full".to_string(), full);

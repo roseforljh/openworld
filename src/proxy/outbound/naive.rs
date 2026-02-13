@@ -13,7 +13,6 @@
 ///     uuid: "username"         # 用户名
 ///     password: "password"     # 密码
 /// ```
-
 use anyhow::Result;
 use async_trait::async_trait;
 use base64::Engine;
@@ -39,9 +38,10 @@ pub struct NaiveOutbound {
 impl NaiveOutbound {
     pub fn new(config: &OutboundConfig) -> Result<Self> {
         let settings = &config.settings;
-        let address = settings.address.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("naive outbound '{}' missing 'address'", config.tag)
-        })?;
+        let address = settings
+            .address
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("naive outbound '{}' missing 'address'", config.tag))?;
         let port = settings.port.unwrap_or(443);
         let username = settings.uuid.as_deref().unwrap_or("").to_string();
         let password = settings.password.as_deref().unwrap_or("").to_string();
@@ -145,12 +145,10 @@ impl AsyncWrite for NaiveH2Stream {
             Poll::Ready(Some(Err(e))) => {
                 Poll::Ready(Err(std::io::Error::new(std::io::ErrorKind::Other, e)))
             }
-            Poll::Ready(None) => {
-                Poll::Ready(Err(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    "h2 stream closed",
-                )))
-            }
+            Poll::Ready(None) => Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "h2 stream closed",
+            ))),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -209,10 +207,11 @@ impl OutboundHandler for NaiveOutbound {
             std::sync::Arc::new(config)
         };
 
-        let server_name = tokio_rustls::rustls::pki_types::ServerName::try_from(
-            self.server_addr.clone(),
-        )
-        .map_err(|e| anyhow::anyhow!("invalid server name '{}': {}", self.server_addr, e))?;
+        let server_name =
+            tokio_rustls::rustls::pki_types::ServerName::try_from(self.server_addr.clone())
+                .map_err(|e| {
+                    anyhow::anyhow!("invalid server name '{}': {}", self.server_addr, e)
+                })?;
 
         let tls_connector = tokio_rustls::TlsConnector::from(tls_connector);
         let tls_stream = tls_connector.connect(server_name, tcp_stream).await?;
@@ -244,16 +243,15 @@ impl OutboundHandler for NaiveOutbound {
         // NaiveProxy padding header
         req_builder = req_builder.header("padding", generate_padding());
 
-        let req = req_builder.body(()).map_err(|e| anyhow::anyhow!("build request: {}", e))?;
+        let req = req_builder
+            .body(())
+            .map_err(|e| anyhow::anyhow!("build request: {}", e))?;
 
         let (resp, send_stream) = client.send_request(req, false)?;
         let resp = resp.await?;
 
         if resp.status() != http::StatusCode::OK {
-            anyhow::bail!(
-                "naive proxy CONNECT failed: {}",
-                resp.status()
-            );
+            anyhow::bail!("naive proxy CONNECT failed: {}", resp.status());
         }
 
         let recv_stream = resp.into_body();

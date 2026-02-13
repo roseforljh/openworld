@@ -347,9 +347,9 @@ pub fn is_ntp(data: &[u8]) -> bool {
         return false;
     }
     let first = data[0];
-    let version = (first >> 3) & 0x07;  // bits 3-5
-    let mode = first & 0x07;            // bits 0-2
-    // NTP v3 or v4, Mode: 1=symmetric active, 2=symmetric passive, 3=client, 4=server, 5=broadcast
+    let version = (first >> 3) & 0x07; // bits 3-5
+    let mode = first & 0x07; // bits 0-2
+                             // NTP v3 or v4, Mode: 1=symmetric active, 2=symmetric passive, 3=client, 4=server, 5=broadcast
     (version == 3 || version == 4) && (1..=5).contains(&mode)
 }
 

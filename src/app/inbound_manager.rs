@@ -56,19 +56,27 @@ impl InboundManager {
         let mut entries = Vec::new();
 
         for config in configs {
-            let auth_users: Vec<(String, String)> = config.settings.auth.as_ref()
-                .map(|users| users.iter().map(|u| (u.username.clone(), u.password.clone())).collect())
+            let auth_users: Vec<(String, String)> = config
+                .settings
+                .auth
+                .as_ref()
+                .map(|users| {
+                    users
+                        .iter()
+                        .map(|u| (u.username.clone(), u.password.clone()))
+                        .collect()
+                })
                 .unwrap_or_default();
 
-            let per_inbound_limiter = config.max_connections.map(|max| {
-                Arc::new(ConnectionLimiter::new(max))
-            });
+            let per_inbound_limiter = config
+                .max_connections
+                .map(|max| Arc::new(ConnectionLimiter::new(max)));
 
             match config.protocol.as_str() {
                 "socks5" => {
                     let handler: Arc<dyn InboundHandler> = Arc::new(
                         Socks5Inbound::new(config.tag.clone(), config.listen.clone())
-                            .with_auth(auth_users)
+                            .with_auth(auth_users),
                     );
                     entries.push(InboundEntry::Tcp {
                         tag: config.tag.clone(),
@@ -80,10 +88,8 @@ impl InboundManager {
                     });
                 }
                 "http" => {
-                    let handler: Arc<dyn InboundHandler> = Arc::new(
-                        HttpInbound::new(config.tag.clone())
-                            .with_auth(auth_users)
-                    );
+                    let handler: Arc<dyn InboundHandler> =
+                        Arc::new(HttpInbound::new(config.tag.clone()).with_auth(auth_users));
                     entries.push(InboundEntry::Tcp {
                         tag: config.tag.clone(),
                         handler,
@@ -96,7 +102,7 @@ impl InboundManager {
                 "mixed" => {
                     let handler: Arc<dyn InboundHandler> = Arc::new(
                         MixedInbound::new(config.tag.clone(), config.listen.clone())
-                            .with_auth(auth_users)
+                            .with_auth(auth_users),
                     );
                     entries.push(InboundEntry::Tcp {
                         tag: config.tag.clone(),
@@ -108,7 +114,8 @@ impl InboundManager {
                     });
                 }
                 "shadowsocks" | "ss" => {
-                    let handler: Arc<dyn InboundHandler> = Arc::new(ShadowsocksInbound::new(config)?);
+                    let handler: Arc<dyn InboundHandler> =
+                        Arc::new(ShadowsocksInbound::new(config)?);
                     entries.push(InboundEntry::Tcp {
                         tag: config.tag.clone(),
                         handler,
@@ -249,7 +256,8 @@ impl InboundManager {
                             let global_max = global_limiter.max_connections().max(1) as u64;
                             let global_active = global_limiter.active_count();
                             if global_active.saturating_mul(100) >= global_max.saturating_mul(90) {
-                                let backpressure_delay = if global_active >= global_max { 50 } else { 10 };
+                                let backpressure_delay =
+                                    if global_active >= global_max { 50 } else { 10 };
                                 tokio::select! {
                                     _ = tokio::time::sleep(Duration::from_millis(backpressure_delay)) => {}
                                     _ = cancel.cancelled() => {
@@ -350,7 +358,9 @@ impl InboundManager {
                             name: handler.name().to_string(),
                             ..Default::default()
                         };
-                        match crate::proxy::inbound::tun_device::create_platform_tun_device(&tun_config) {
+                        match crate::proxy::inbound::tun_device::create_platform_tun_device(
+                            &tun_config,
+                        ) {
                             Ok(device) => {
                                 let stack_config = TunStackConfig {
                                     inbound_tag: handler.tag().to_string(),

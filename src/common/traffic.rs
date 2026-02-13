@@ -162,13 +162,15 @@ pub async fn happy_eyeballs_connect(
     timeout_ms: u64,
     resolver: Option<&dyn crate::dns::DnsResolver>,
 ) -> anyhow::Result<tokio::net::TcpStream> {
-    use tokio::net::TcpStream;
     use std::net::ToSocketAddrs;
+    use tokio::net::TcpStream;
 
     let addrs: Vec<std::net::SocketAddr> = if let Some(r) = resolver {
         // Use custom resolver
         let ips = r.resolve(host).await?;
-        ips.into_iter().map(|ip| std::net::SocketAddr::new(ip, port)).collect()
+        ips.into_iter()
+            .map(|ip| std::net::SocketAddr::new(ip, port))
+            .collect()
     } else {
         // Use system DNS
         let addr_str = format!("{}:{}", host, port);
@@ -304,7 +306,8 @@ impl RoutingMark {
         if s.starts_with("0x") || s.starts_with("0X") {
             Self::from_hex(s)
         } else {
-            let mark: u32 = s.parse()
+            let mark: u32 = s
+                .parse()
                 .map_err(|e| anyhow::anyhow!("invalid routing mark: {}", e))?;
             Ok(Self { mark })
         }
@@ -332,7 +335,10 @@ impl RoutingMark {
     /// 非 Linux 平台：使用接口绑定实现等效功能
     #[cfg(not(target_os = "linux"))]
     pub fn apply_to_socket(&self, _fd: i32) -> anyhow::Result<()> {
-        tracing::debug!(mark = self.mark, "SO_MARK not supported on this platform, using bind interface");
+        tracing::debug!(
+            mark = self.mark,
+            "SO_MARK not supported on this platform, using bind interface"
+        );
         Ok(())
     }
 }
@@ -436,7 +442,8 @@ mod tests {
     #[tokio::test]
     async fn happy_eyeballs_connect_invalid_host() {
         // Use a domain that can't possibly resolve
-        let result = happy_eyeballs_connect("this-host-does-not-exist-at-all.invalid", 1, 100, None).await;
+        let result =
+            happy_eyeballs_connect("this-host-does-not-exist-at-all.invalid", 1, 100, None).await;
         assert!(result.is_err());
     }
 

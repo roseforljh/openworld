@@ -49,10 +49,13 @@ impl MuxBackpressure {
 
     /// 记录接收到的数据量，返回是否应暂停读取
     pub fn on_data_received(&self, bytes: usize) -> bool {
-        let prev = self.buffered.fetch_add(bytes, std::sync::atomic::Ordering::Relaxed);
+        let prev = self
+            .buffered
+            .fetch_add(bytes, std::sync::atomic::Ordering::Relaxed);
         let total = prev + bytes;
         if total >= self.window_size {
-            self.paused.store(true, std::sync::atomic::Ordering::Relaxed);
+            self.paused
+                .store(true, std::sync::atomic::Ordering::Relaxed);
             true
         } else {
             false
@@ -61,11 +64,17 @@ impl MuxBackpressure {
 
     /// 记录数据被消费，可能恢复读取
     pub fn on_data_consumed(&self, bytes: usize) -> bool {
-        let prev = self.buffered.fetch_sub(bytes.min(self.buffered.load(std::sync::atomic::Ordering::Relaxed)), std::sync::atomic::Ordering::Relaxed);
+        let prev = self.buffered.fetch_sub(
+            bytes.min(self.buffered.load(std::sync::atomic::Ordering::Relaxed)),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let remaining = prev.saturating_sub(bytes);
         // 当缓冲量低于窗口的一半时恢复读取
-        if remaining < self.window_size / 2 && self.paused.load(std::sync::atomic::Ordering::Relaxed) {
-            self.paused.store(false, std::sync::atomic::Ordering::Relaxed);
+        if remaining < self.window_size / 2
+            && self.paused.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            self.paused
+                .store(false, std::sync::atomic::Ordering::Relaxed);
             return true; // 恢复读取
         }
         false
@@ -759,7 +768,9 @@ mod tests {
 
     #[test]
     fn negotiate_encode_decode() {
-        let neg = MuxNegotiation::default().with_padding().with_max_streams(64);
+        let neg = MuxNegotiation::default()
+            .with_padding()
+            .with_max_streams(64);
         let encoded = neg.encode();
         let decoded = MuxNegotiation::decode(&encoded).unwrap();
         assert!(decoded.padding_supported);
@@ -777,8 +788,16 @@ mod tests {
 
     #[test]
     fn negotiate_merge_takes_intersection() {
-        let a = MuxNegotiation { padding_supported: true, max_streams: 128, version: 1 };
-        let b = MuxNegotiation { padding_supported: false, max_streams: 64, version: 1 };
+        let a = MuxNegotiation {
+            padding_supported: true,
+            max_streams: 128,
+            version: 1,
+        };
+        let b = MuxNegotiation {
+            padding_supported: false,
+            max_streams: 64,
+            version: 1,
+        };
         let merged = a.merge(&b);
         assert!(!merged.padding_supported); // false wins
         assert_eq!(merged.max_streams, 64); // min
@@ -828,7 +847,10 @@ mod tests {
 
     #[test]
     fn mux_protocol_from_str() {
-        assert_eq!(MuxProtocol::from_str("sing-mux"), Some(MuxProtocol::SingMux));
+        assert_eq!(
+            MuxProtocol::from_str("sing-mux"),
+            Some(MuxProtocol::SingMux)
+        );
         assert_eq!(MuxProtocol::from_str("smux"), Some(MuxProtocol::Smux));
         assert_eq!(MuxProtocol::from_str("yamux"), Some(MuxProtocol::Yamux));
         assert_eq!(MuxProtocol::from_str("h2mux"), Some(MuxProtocol::H2Mux));

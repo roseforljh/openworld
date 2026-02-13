@@ -116,7 +116,8 @@ impl VersionComparison {
         for (name, current) in &self.current {
             if let Some(baseline) = self.baseline.get(name) {
                 let regression = if baseline.avg_ns > 0 {
-                    ((current.avg_ns as f64 - baseline.avg_ns as f64) / baseline.avg_ns as f64) * 100.0
+                    ((current.avg_ns as f64 - baseline.avg_ns as f64) / baseline.avg_ns as f64)
+                        * 100.0
                 } else {
                     0.0
                 };
@@ -161,28 +162,34 @@ mod tests {
     #[test]
     fn version_comparison_detects_regression() {
         let mut baseline = HashMap::new();
-        baseline.insert("test".to_string(), BenchmarkResult {
-            name: "test".to_string(),
-            iterations: 1000,
-            total_duration: Duration::from_millis(10),
-            avg_ns: 10000,
-            p50_ns: 9000,
-            p95_ns: 15000,
-            p99_ns: 20000,
-            throughput_ops_per_sec: 100000.0,
-        });
+        baseline.insert(
+            "test".to_string(),
+            BenchmarkResult {
+                name: "test".to_string(),
+                iterations: 1000,
+                total_duration: Duration::from_millis(10),
+                avg_ns: 10000,
+                p50_ns: 9000,
+                p95_ns: 15000,
+                p99_ns: 20000,
+                throughput_ops_per_sec: 100000.0,
+            },
+        );
 
         let mut current = HashMap::new();
-        current.insert("test".to_string(), BenchmarkResult {
-            name: "test".to_string(),
-            iterations: 1000,
-            total_duration: Duration::from_millis(12),
-            avg_ns: 12000, // 20% regression
-            p50_ns: 11000,
-            p95_ns: 18000,
-            p99_ns: 25000,
-            throughput_ops_per_sec: 83333.0,
-        });
+        current.insert(
+            "test".to_string(),
+            BenchmarkResult {
+                name: "test".to_string(),
+                iterations: 1000,
+                total_duration: Duration::from_millis(12),
+                avg_ns: 12000, // 20% regression
+                p50_ns: 11000,
+                p95_ns: 18000,
+                p99_ns: 25000,
+                throughput_ops_per_sec: 83333.0,
+            },
+        );
 
         let comparison = VersionComparison { baseline, current };
         let reports = comparison.check_regressions(10.0);

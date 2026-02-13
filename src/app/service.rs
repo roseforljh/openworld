@@ -83,7 +83,11 @@ impl ServiceConfig {
         };
         format!(
             "sc create {} binPath= {} DisplayName= \"{}\" start= {} description= \"{}\"",
-            self.name, bin_path, self.display_name, self.start_type.as_str(), self.description
+            self.name,
+            bin_path,
+            self.display_name,
+            self.start_type.as_str(),
+            self.description
         )
     }
 
@@ -252,8 +256,7 @@ mod tests {
 
     #[test]
     fn systemd_unit_content() {
-        let config = ServiceConfig::new("OpenWorld")
-            .with_config_path("/etc/openworld/config.yaml");
+        let config = ServiceConfig::new("OpenWorld").with_config_path("/etc/openworld/config.yaml");
         let unit = config.systemd_unit();
         assert!(unit.contains("[Unit]"));
         assert!(unit.contains("[Service]"));
@@ -264,18 +267,36 @@ mod tests {
     #[test]
     fn service_start_type_from_str() {
         assert_eq!(ServiceStartType::from_str("auto"), ServiceStartType::Auto);
-        assert_eq!(ServiceStartType::from_str("automatic"), ServiceStartType::Auto);
-        assert_eq!(ServiceStartType::from_str("manual"), ServiceStartType::Manual);
-        assert_eq!(ServiceStartType::from_str("demand"), ServiceStartType::Manual);
-        assert_eq!(ServiceStartType::from_str("disabled"), ServiceStartType::Disabled);
-        assert_eq!(ServiceStartType::from_str("unknown"), ServiceStartType::Manual);
+        assert_eq!(
+            ServiceStartType::from_str("automatic"),
+            ServiceStartType::Auto
+        );
+        assert_eq!(
+            ServiceStartType::from_str("manual"),
+            ServiceStartType::Manual
+        );
+        assert_eq!(
+            ServiceStartType::from_str("demand"),
+            ServiceStartType::Manual
+        );
+        assert_eq!(
+            ServiceStartType::from_str("disabled"),
+            ServiceStartType::Disabled
+        );
+        assert_eq!(
+            ServiceStartType::from_str("unknown"),
+            ServiceStartType::Manual
+        );
     }
 
     #[test]
     fn service_status_from_str() {
         assert_eq!(ServiceStatus::from_str("RUNNING"), ServiceStatus::Running);
         assert_eq!(ServiceStatus::from_str("STOPPED"), ServiceStatus::Stopped);
-        assert_eq!(ServiceStatus::from_str("STATE: RUNNING"), ServiceStatus::Running);
+        assert_eq!(
+            ServiceStatus::from_str("STATE: RUNNING"),
+            ServiceStatus::Running
+        );
         assert_eq!(ServiceStatus::from_str("???"), ServiceStatus::Unknown);
     }
 
@@ -300,8 +321,7 @@ mod tests {
 
     #[test]
     fn autostart_registry_command_with_config() {
-        let mut config = ServiceConfig::new("OpenWorld")
-            .with_config_path("C:\\config.yaml");
+        let mut config = ServiceConfig::new("OpenWorld").with_config_path("C:\\config.yaml");
         config.binary_path = "C:\\openworld.exe".to_string();
         let cmd = config.autostart_registry_command();
         assert!(cmd.contains("C:\\openworld.exe"));
@@ -321,12 +341,18 @@ mod tests {
     #[test]
     fn systemd_enable_command_format() {
         let config = ServiceConfig::new("OpenWorld");
-        assert_eq!(config.systemd_enable_command(), "systemctl enable openworld");
+        assert_eq!(
+            config.systemd_enable_command(),
+            "systemctl enable openworld"
+        );
     }
 
     #[test]
     fn systemd_disable_command_format() {
         let config = ServiceConfig::new("OpenWorld");
-        assert_eq!(config.systemd_disable_command(), "systemctl disable openworld");
+        assert_eq!(
+            config.systemd_disable_command(),
+            "systemctl disable openworld"
+        );
     }
 }

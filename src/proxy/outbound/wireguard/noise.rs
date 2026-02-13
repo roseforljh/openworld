@@ -97,7 +97,13 @@ fn aead_encrypt(key: &[u8; 32], counter: u64, plaintext: &[u8], aad: &[u8]) -> R
 
     use chacha20poly1305::aead::Payload;
     cipher
-        .encrypt(nonce, Payload { msg: plaintext, aad })
+        .encrypt(
+            nonce,
+            Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
         .map_err(|e| anyhow::anyhow!("aead encrypt: {}", e))
 }
 
@@ -110,7 +116,13 @@ fn aead_decrypt(key: &[u8; 32], counter: u64, ciphertext: &[u8], aad: &[u8]) -> 
 
     use chacha20poly1305::aead::Payload;
     cipher
-        .decrypt(nonce, Payload { msg: ciphertext, aad })
+        .decrypt(
+            nonce,
+            Payload {
+                msg: ciphertext,
+                aad,
+            },
+        )
         .map_err(|e| anyhow::anyhow!("aead decrypt: {}", e))
 }
 
@@ -134,7 +146,10 @@ fn tai64n_now() -> [u8; 12] {
     ts
 }
 
-pub fn create_handshake_init(keys: &WireGuardKeys, sender_index: u32) -> Result<(Vec<u8>, [u8; 32], [u8; 32])> {
+pub fn create_handshake_init(
+    keys: &WireGuardKeys,
+    sender_index: u32,
+) -> Result<(Vec<u8>, [u8; 32], [u8; 32])> {
     let initial_chain_key = hash(CONSTRUCTION);
     let initial_hash = hash(&[hash(CONSTRUCTION).as_ref(), IDENTIFIER].concat());
 
@@ -398,8 +413,8 @@ pub fn create_handshake_resp(
     // Derive transport keys (server: send=recv_key for client, recv=send_key for client)
     let (t1, t2) = kdf2(&ck, &[]);
     let transport = TransportKeys {
-        send_key: t2,  // server sends with key 2
-        recv_key: t1,  // server receives with key 1
+        send_key: t2, // server sends with key 2
+        recv_key: t1, // server receives with key 1
         send_index: sender_index,
         recv_index: peer_sender_index,
         send_counter: 0,

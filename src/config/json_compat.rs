@@ -6,9 +6,8 @@
 use serde::Deserialize;
 
 use crate::config::types::{
-    Config, DnsConfig, DnsServerConfig, InboundConfig, InboundSettings,
-    LogConfig, OutboundConfig, OutboundSettings, ProxyGroupConfig,
-    RouterConfig, RuleConfig, SniffingConfig,
+    Config, DnsConfig, DnsServerConfig, InboundConfig, InboundSettings, LogConfig, OutboundConfig,
+    OutboundSettings, ProxyGroupConfig, RouterConfig, RuleConfig, SniffingConfig,
 };
 
 /// 顶层 sing-box 配置
@@ -32,7 +31,9 @@ struct SingBoxLog {
     level: String,
 }
 
-fn default_log_level() -> String { "info".into() }
+fn default_log_level() -> String {
+    "info".into()
+}
 
 #[derive(Debug, Deserialize)]
 struct SingBoxDns {
@@ -249,12 +250,14 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
 
     // DNS
     let dns = sb.dns.map(|d| {
-        let servers: Vec<DnsServerConfig> = d.servers.iter().map(|s| {
-            DnsServerConfig {
+        let servers: Vec<DnsServerConfig> = d
+            .servers
+            .iter()
+            .map(|s| DnsServerConfig {
                 address: s.address.clone(),
                 domains: Vec::new(),
-            }
-        }).collect();
+            })
+            .collect();
         DnsConfig {
             servers,
             cache_size: 1024,
@@ -271,32 +274,40 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
     });
 
     // Inbounds
-    let inbounds: Vec<InboundConfig> = sb.inbounds.iter().map(|ib| {
-        let protocol = match ib.inbound_type.as_str() {
-            "mixed" => "socks5".to_string(),
-            "tun" => "tun".to_string(),
-            other => other.to_string(),
-        };
-        let tag = if ib.tag.is_empty() { format!("{}-in", protocol) } else { ib.tag.clone() };
-        let listen = ib.listen.clone().unwrap_or_else(|| "127.0.0.1".into());
-        let port = ib.listen_port.unwrap_or(1080);
+    let inbounds: Vec<InboundConfig> = sb
+        .inbounds
+        .iter()
+        .map(|ib| {
+            let protocol = match ib.inbound_type.as_str() {
+                "mixed" => "socks5".to_string(),
+                "tun" => "tun".to_string(),
+                other => other.to_string(),
+            };
+            let tag = if ib.tag.is_empty() {
+                format!("{}-in", protocol)
+            } else {
+                ib.tag.clone()
+            };
+            let listen = ib.listen.clone().unwrap_or_else(|| "127.0.0.1".into());
+            let port = ib.listen_port.unwrap_or(1080);
 
-        InboundConfig {
-            tag,
-            protocol,
-            listen,
-            port,
-            sniffing: SniffingConfig {
-                enabled: ib.sniff.unwrap_or(false),
-                ..Default::default()
-            },
-            settings: InboundSettings {
-                auto_route: ib.auto_route.unwrap_or(false),
-                ..Default::default()
-            },
-            max_connections: None,
-        }
-    }).collect();
+            InboundConfig {
+                tag,
+                protocol,
+                listen,
+                port,
+                sniffing: SniffingConfig {
+                    enabled: ib.sniff.unwrap_or(false),
+                    ..Default::default()
+                },
+                settings: InboundSettings {
+                    auto_route: ib.auto_route.unwrap_or(false),
+                    ..Default::default()
+                },
+                max_connections: None,
+            }
+        })
+        .collect();
 
     // Outbounds + proxy groups
     let mut outbounds: Vec<OutboundConfig> = Vec::new();
@@ -306,13 +317,21 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
         match ob.outbound_type.as_str() {
             "direct" | "block" | "dns" => {
                 outbounds.push(OutboundConfig {
-                    tag: if ob.tag.is_empty() { ob.outbound_type.clone() } else { ob.tag.clone() },
+                    tag: if ob.tag.is_empty() {
+                        ob.outbound_type.clone()
+                    } else {
+                        ob.tag.clone()
+                    },
                     protocol: ob.outbound_type.clone(),
                     settings: OutboundSettings::default(),
                 });
             }
             "selector" | "urltest" | "url-test" => {
-                let group_type = if ob.outbound_type == "selector" { "selector" } else { "url-test" };
+                let group_type = if ob.outbound_type == "selector" {
+                    "selector"
+                } else {
+                    "url-test"
+                };
                 proxy_groups.push(ProxyGroupConfig {
                     name: ob.tag.clone(),
                     group_type: group_type.to_string(),
@@ -327,7 +346,11 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                 let tls_ref = ob.tls.as_ref();
                 let sni = tls_ref.and_then(|t| t.server_name.clone());
                 let tls_enabled = tls_ref.map(|t| t.enabled.unwrap_or(false)).unwrap_or(false);
-                let security = if tls_enabled { Some("tls".to_string()) } else { None };
+                let security = if tls_enabled {
+                    Some("tls".to_string())
+                } else {
+                    None
+                };
 
                 // 构建 TlsConfig
                 let tls_config = if tls_enabled {
@@ -336,7 +359,11 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                         let is_reality = reality.and_then(|r| r.enabled).unwrap_or(false);
                         crate::config::types::TlsConfig {
                             enabled: true,
-                            security: if is_reality { "reality".to_string() } else { "tls".to_string() },
+                            security: if is_reality {
+                                "reality".to_string()
+                            } else {
+                                "tls".to_string()
+                            },
                             sni: t.server_name.clone(),
                             allow_insecure: t.insecure.unwrap_or(false),
                             alpn: t.alpn.clone(),
@@ -346,12 +373,16 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                             ..Default::default()
                         }
                     })
-                } else { None };
+                } else {
+                    None
+                };
 
                 // 构建 TransportConfig
                 let transport_config = ob.transport.as_ref().and_then(|t| {
                     let tt = t.transport_type.as_str();
-                    if tt.is_empty() || tt == "tcp" { return None; }
+                    if tt.is_empty() || tt == "tcp" {
+                        return None;
+                    }
                     Some(crate::config::types::TransportConfig {
                         transport_type: tt.to_string(),
                         path: t.path.clone(),
@@ -378,14 +409,17 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                         transport: transport_config,
                         // WireGuard
                         private_key: ob.private_key.clone(),
-                        peer_public_key: ob.peers.as_ref()
+                        peer_public_key: ob
+                            .peers
+                            .as_ref()
                             .and_then(|p| p.first())
                             .and_then(|p| p.public_key.clone()),
-                        preshared_key: ob.peers.as_ref()
+                        preshared_key: ob
+                            .peers
+                            .as_ref()
                             .and_then(|p| p.first())
                             .and_then(|p| p.pre_shared_key.clone()),
-                        local_address: ob.local_address.as_ref()
-                            .and_then(|a| a.first()).cloned(),
+                        local_address: ob.local_address.as_ref().and_then(|a| a.first()).cloned(),
                         mtu: ob.mtu,
                         // TUIC
                         congestion_control: ob.congestion_control.clone(),
@@ -413,7 +447,7 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                     rule_type: "domain-suffix".into(),
                     values: domains.clone(),
                     outbound: r.outbound.clone(),
-                ..Default::default()
+                    ..Default::default()
                 });
             }
             if let Some(domains) = &r.domain_keyword {
@@ -421,7 +455,7 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                     rule_type: "domain-keyword".into(),
                     values: domains.clone(),
                     outbound: r.outbound.clone(),
-                ..Default::default()
+                    ..Default::default()
                 });
             }
             if let Some(cidrs) = &r.ip_cidr {
@@ -429,7 +463,7 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                     rule_type: "ip-cidr".into(),
                     values: cidrs.clone(),
                     outbound: r.outbound.clone(),
-                ..Default::default()
+                    ..Default::default()
                 });
             }
             if let Some(geoips) = &r.geoip {
@@ -437,7 +471,7 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                     rule_type: "geoip".into(),
                     values: geoips.clone(),
                     outbound: r.outbound.clone(),
-                ..Default::default()
+                    ..Default::default()
                 });
             }
             if let Some(geosites) = &r.geosite {
@@ -445,7 +479,7 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                     rule_type: "geosite".into(),
                     values: geosites.clone(),
                     outbound: r.outbound.clone(),
-                ..Default::default()
+                    ..Default::default()
                 });
             }
             if let Some(domains) = &r.domain {
@@ -453,7 +487,7 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                     rule_type: "domain-full".into(),
                     values: domains.clone(),
                     outbound: r.outbound.clone(),
-                ..Default::default()
+                    ..Default::default()
                 });
             }
             if let Some(procs) = &r.process_name {
@@ -461,7 +495,7 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                     rule_type: "process-name".into(),
                     values: procs.clone(),
                     outbound: r.outbound.clone(),
-                ..Default::default()
+                    ..Default::default()
                 });
             }
             if let Some(sets) = &r.rule_set {
@@ -470,14 +504,15 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
                         rule_type: "rule-set".into(),
                         values: vec![set_name.clone()],
                         outbound: r.outbound.clone(),
-                    ..Default::default()
+                        ..Default::default()
                     });
                 }
             }
         }
     }
 
-    let default_outbound = sb.route
+    let default_outbound = sb
+        .route
         .as_ref()
         .and_then(|r| r.final_outbound.clone())
         .unwrap_or_else(|| "direct".into());
@@ -588,8 +623,14 @@ mod tests {
         let config = parse_singbox_json(json).unwrap();
         assert_eq!(config.outbounds.len(), 2);
         assert_eq!(config.outbounds[0].protocol, "vless");
-        assert_eq!(config.outbounds[0].settings.uuid.as_deref(), Some("test-uuid"));
-        assert_eq!(config.outbounds[0].settings.sni.as_deref(), Some("example.com"));
+        assert_eq!(
+            config.outbounds[0].settings.uuid.as_deref(),
+            Some("test-uuid")
+        );
+        assert_eq!(
+            config.outbounds[0].settings.sni.as_deref(),
+            Some("example.com")
+        );
     }
 
     #[test]
@@ -672,10 +713,20 @@ mod tests {
             }]
         }"#;
         let config = parse_singbox_json(json).unwrap();
-        let wg = config.outbounds.iter().find(|o| o.tag == "wg-node").unwrap();
+        let wg = config
+            .outbounds
+            .iter()
+            .find(|o| o.tag == "wg-node")
+            .unwrap();
         assert_eq!(wg.protocol, "wireguard");
-        assert_eq!(wg.settings.private_key.as_deref(), Some("yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk="));
-        assert_eq!(wg.settings.peer_public_key.as_deref(), Some("bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="));
+        assert_eq!(
+            wg.settings.private_key.as_deref(),
+            Some("yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=")
+        );
+        assert_eq!(
+            wg.settings.peer_public_key.as_deref(),
+            Some("bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=")
+        );
         assert_eq!(wg.settings.preshared_key.as_deref(), Some("psk123"));
         assert_eq!(wg.settings.local_address.as_deref(), Some("172.16.0.2/32"));
         assert_eq!(wg.settings.mtu, Some(1280));
@@ -702,7 +753,11 @@ mod tests {
             }]
         }"#;
         let config = parse_singbox_json(json).unwrap();
-        let vmess = config.outbounds.iter().find(|o| o.tag == "vmess-ws").unwrap();
+        let vmess = config
+            .outbounds
+            .iter()
+            .find(|o| o.tag == "vmess-ws")
+            .unwrap();
         assert_eq!(vmess.protocol, "vmess");
         let transport = vmess.settings.transport.as_ref().unwrap();
         assert_eq!(transport.transport_type, "ws");
@@ -726,11 +781,26 @@ mod tests {
             }
         }"#;
         let config = parse_singbox_json(json).unwrap();
-        let domain_rule = config.router.rules.iter().find(|r| r.rule_type == "domain-full").unwrap();
+        let domain_rule = config
+            .router
+            .rules
+            .iter()
+            .find(|r| r.rule_type == "domain-full")
+            .unwrap();
         assert_eq!(domain_rule.values, vec!["example.com", "test.com"]);
-        let proc_rule = config.router.rules.iter().find(|r| r.rule_type == "process-name").unwrap();
+        let proc_rule = config
+            .router
+            .rules
+            .iter()
+            .find(|r| r.rule_type == "process-name")
+            .unwrap();
         assert_eq!(proc_rule.values, vec!["chrome.exe", "firefox.exe"]);
-        let set_rule = config.router.rules.iter().find(|r| r.rule_type == "rule-set").unwrap();
+        let set_rule = config
+            .router
+            .rules
+            .iter()
+            .find(|r| r.rule_type == "rule-set")
+            .unwrap();
         assert_eq!(set_rule.values, vec!["geosite-cn"]);
     }
 }

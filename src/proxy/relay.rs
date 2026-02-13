@@ -68,7 +68,8 @@ impl BufferPool {
                 return buf;
             }
         }
-        self.misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.misses
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         vec![0u8; alloc_size]
     }
 
@@ -353,10 +354,7 @@ where
     pool.put(buf_a);
     pool.put(buf_b);
 
-    debug!(
-        "relay finished: upload {}B, download {}B",
-        upload, download
-    );
+    debug!("relay finished: upload {}B, download {}B", upload, download);
     Ok((upload, download))
 }
 
@@ -419,7 +417,9 @@ mod splice {
 
     /// Close a file descriptor.
     fn close_fd(fd: RawFd) {
-        unsafe { libc::close(fd); }
+        unsafe {
+            libc::close(fd);
+        }
     }
 
     /// Splice data from `src_fd` into `pipe_write`, then from `pipe_read` into `dst_fd`.
@@ -521,34 +521,29 @@ mod splice {
             }
         });
 
-        let download_handle = tokio::task::spawn_blocking(move || {
-            loop {
-                if cancel.is_cancelled() {
-                    break;
-                }
-                match splice_one_direction(remote_fd, r2c_read, r2c_write, client_fd) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        download_clone.fetch_add(n as u64, Ordering::Relaxed);
-                        if let Some(ref s) = stats_down {
-                            s.download.fetch_add(n as u64, Ordering::Relaxed);
-                        }
+        let download_handle = tokio::task::spawn_blocking(move || loop {
+            if cancel.is_cancelled() {
+                break;
+            }
+            match splice_one_direction(remote_fd, r2c_read, r2c_write, client_fd) {
+                Ok(0) => break,
+                Ok(n) => {
+                    download_clone.fetch_add(n as u64, Ordering::Relaxed);
+                    if let Some(ref s) = stats_down {
+                        s.download.fetch_add(n as u64, Ordering::Relaxed);
                     }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        std::thread::yield_now();
-                    }
-                    Err(_) => break,
                 }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::yield_now();
+                }
+                Err(_) => break,
             }
         });
 
         // Wait for both directions with idle timeout
-        let result = tokio::time::timeout(
-            idle_timeout,
-            async {
-                let _ = tokio::join!(upload_handle, download_handle);
-            },
-        )
+        let result = tokio::time::timeout(idle_timeout, async {
+            let _ = tokio::join!(upload_handle, download_handle);
+        })
         .await;
 
         // Clean up pipes
@@ -563,7 +558,11 @@ mod splice {
 
         let up = upload.load(Ordering::Relaxed);
         let down = download.load(Ordering::Relaxed);
-        debug!(upload = up, download = down, "splice relay finished (zero-copy)");
+        debug!(
+            upload = up,
+            download = down,
+            "splice relay finished (zero-copy)"
+        );
         Ok((up, down))
     }
 }
@@ -638,9 +637,9 @@ mod uring_relay {
                 .user_data(1);
 
                 unsafe {
-                    ring.submission().push(&splice_in).map_err(|_| {
-                        anyhow::anyhow!("io_uring submission queue full")
-                    })?;
+                    ring.submission()
+                        .push(&splice_in)
+                        .map_err(|_| anyhow::anyhow!("io_uring submission queue full"))?;
                 }
 
                 ring.submit_and_wait(1)?;
@@ -676,9 +675,9 @@ mod uring_relay {
                 .user_data(2);
 
                 unsafe {
-                    ring.submission().push(&splice_out).map_err(|_| {
-                        anyhow::anyhow!("io_uring submission queue full")
-                    })?;
+                    ring.submission()
+                        .push(&splice_out)
+                        .map_err(|_| anyhow::anyhow!("io_uring submission queue full"))?;
                 }
 
                 ring.submit_and_wait(1)?;
@@ -729,19 +728,10 @@ mod uring_relay {
             done.store(true, Ordering::Relaxed);
         });
 
-        let upload_handle = uring_splice_direction(
-            client_fd,
-            remote_fd,
-            stats_up.clone(),
-            done_up,
-        );
+        let upload_handle = uring_splice_direction(client_fd, remote_fd, stats_up.clone(), done_up);
 
-        let download_handle = uring_splice_direction(
-            remote_fd,
-            client_fd,
-            stats_down.clone(),
-            done_down,
-        );
+        let download_handle =
+            uring_splice_direction(remote_fd, client_fd, stats_down.clone(), done_down);
 
         let result = tokio::time::timeout(idle_timeout, async {
             tokio::join!(upload_handle, download_handle)
@@ -758,7 +748,11 @@ mod uring_relay {
                     s.download.fetch_add(down, Ordering::Relaxed);
                 }
 
-                debug!(upload = up, download = down, "io_uring relay finished (zero-copy)");
+                debug!(
+                    upload = up,
+                    download = down,
+                    "io_uring relay finished (zero-copy)"
+                );
                 Ok((up, down))
             }
             Err(_) => {
@@ -778,16 +772,20 @@ pub async fn relay_proxy_streams(
     remote: ProxyStream,
     opts: RelayOptions,
 ) -> Result<(u64, u64)> {
-
     // Try zero-copy path on Linux when both sides are raw TcpStream
     #[cfg(target_os = "linux")]
     {
         use std::os::unix::io::AsRawFd;
         let client_is_tcp = client.as_any().is::<tokio::net::TcpStream>();
         let remote_is_tcp = remote.as_any().is::<tokio::net::TcpStream>();
-        debug!(client_tcp = client_is_tcp, remote_tcp = remote_is_tcp, "zero-copy path check");
+        debug!(
+            client_tcp = client_is_tcp,
+            remote_tcp = remote_is_tcp,
+            "zero-copy path check"
+        );
 
-        if client_is_tcp && remote_is_tcp
+        if client_is_tcp
+            && remote_is_tcp
             && opts.upload_limiter.is_none()
             && opts.download_limiter.is_none()
         {
@@ -843,7 +841,8 @@ pub async fn relay_proxy_streams(
         tokio::io::copy_bidirectional(&mut client, &mut remote)
             .await
             .map_err(anyhow::Error::from)
-    }).await;
+    })
+    .await;
 
     match result {
         Ok(Ok((up, down))) => {
@@ -859,7 +858,6 @@ pub async fn relay_proxy_streams(
             Err(e)
         }
         Err(_) => {
-
             debug!("relay idle timeout ({:?}), closing", opts.idle_timeout);
             Ok((0, 0))
         }
@@ -979,9 +977,10 @@ mod tests {
         let inbound_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let inbound_addr = inbound_listener.local_addr().unwrap();
 
-        let client_task = tokio::spawn(async move {
-            tokio::net::TcpStream::connect(inbound_addr).await.unwrap()
-        });
+        let client_task =
+            tokio::spawn(
+                async move { tokio::net::TcpStream::connect(inbound_addr).await.unwrap() },
+            );
 
         let (server_side, _) = inbound_listener.accept().await.unwrap();
         let mut client_side = client_task.await.unwrap();

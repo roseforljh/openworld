@@ -26,8 +26,9 @@ impl VlessInbound {
         let mut clients = Vec::new();
 
         if let Some(uuid_str) = config.settings.uuid.as_ref() {
-            let uuid = uuid_str.parse::<uuid::Uuid>()
-                .map_err(|e| anyhow::anyhow!("vless inbound '{}' invalid uuid: {}", config.tag, e))?;
+            let uuid = uuid_str.parse::<uuid::Uuid>().map_err(|e| {
+                anyhow::anyhow!("vless inbound '{}' invalid uuid: {}", config.tag, e)
+            })?;
             clients.push(VlessClient {
                 uuid,
                 flow: config.settings.flow.clone(),
@@ -36,8 +37,14 @@ impl VlessInbound {
 
         if let Some(client_list) = config.settings.clients.as_ref() {
             for (idx, c) in client_list.iter().enumerate() {
-                let uuid = c.uuid.parse::<uuid::Uuid>()
-                    .map_err(|e| anyhow::anyhow!("vless inbound '{}' client #{} invalid uuid: {}", config.tag, idx, e))?;
+                let uuid = c.uuid.parse::<uuid::Uuid>().map_err(|e| {
+                    anyhow::anyhow!(
+                        "vless inbound '{}' client #{} invalid uuid: {}",
+                        config.tag,
+                        idx,
+                        e
+                    )
+                })?;
                 clients.push(VlessClient {
                     uuid,
                     flow: c.flow.clone(),
@@ -46,7 +53,10 @@ impl VlessInbound {
         }
 
         if clients.is_empty() {
-            anyhow::bail!("vless inbound '{}' requires 'settings.uuid' or non-empty 'settings.clients'", config.tag);
+            anyhow::bail!(
+                "vless inbound '{}' requires 'settings.uuid' or non-empty 'settings.clients'",
+                config.tag
+            );
         }
 
         let mut client_map = HashMap::new();
@@ -80,7 +90,9 @@ impl InboundHandler for VlessInbound {
         let mut uuid_bytes = [0u8; 16];
         stream.read_exact(&mut uuid_bytes).await?;
 
-        let client_idx = self.client_map.get(&uuid_bytes)
+        let client_idx = self
+            .client_map
+            .get(&uuid_bytes)
             .ok_or_else(|| anyhow::anyhow!("vless inbound '{}' unknown client UUID", self.tag))?;
         let _client = &self.clients[*client_idx];
 
@@ -149,7 +161,7 @@ impl InboundHandler for VlessInbound {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::types::{InboundSettings, VlessClientConfig, SniffingConfig};
+    use crate::config::types::{InboundSettings, SniffingConfig, VlessClientConfig};
 
     fn make_config(uuid: &str) -> InboundConfig {
         InboundConfig {
@@ -225,7 +237,9 @@ mod tests {
     async fn vless_inbound_handle_tcp_ipv4() {
         let cfg = make_config("550e8400-e29b-41d4-a716-446655440000");
         let inbound = VlessInbound::new(&cfg).unwrap();
-        let uuid = "550e8400-e29b-41d4-a716-446655440000".parse::<uuid::Uuid>().unwrap();
+        let uuid = "550e8400-e29b-41d4-a716-446655440000"
+            .parse::<uuid::Uuid>()
+            .unwrap();
 
         let (client, server) = tokio::io::duplex(4096);
 
@@ -248,7 +262,10 @@ mod tests {
         let result = inbound.handle(server_stream, source).await.unwrap();
 
         assert_eq!(result.session.network, Network::Tcp);
-        assert_eq!(result.session.target, Address::Ip("1.2.3.4:443".parse().unwrap()));
+        assert_eq!(
+            result.session.target,
+            Address::Ip("1.2.3.4:443".parse().unwrap())
+        );
         assert!(result.udp_transport.is_none());
     }
 
@@ -281,7 +298,9 @@ mod tests {
     async fn vless_inbound_handle_domain() {
         let cfg = make_config("550e8400-e29b-41d4-a716-446655440000");
         let inbound = VlessInbound::new(&cfg).unwrap();
-        let uuid = "550e8400-e29b-41d4-a716-446655440000".parse::<uuid::Uuid>().unwrap();
+        let uuid = "550e8400-e29b-41d4-a716-446655440000"
+            .parse::<uuid::Uuid>()
+            .unwrap();
 
         let (client, server) = tokio::io::duplex(4096);
 
@@ -303,6 +322,9 @@ mod tests {
         let source: SocketAddr = "127.0.0.1:12345".parse().unwrap();
         let result = inbound.handle(server_stream, source).await.unwrap();
 
-        assert_eq!(result.session.target, Address::Domain("example.com".to_string(), 443));
+        assert_eq!(
+            result.session.target,
+            Address::Domain("example.com".to_string(), 443)
+        );
     }
 }

@@ -46,7 +46,8 @@ impl TrojanOutbound {
         if !tls_config.enabled && settings.security.as_deref() == Some("tls") {
             tls_config.enabled = true;
         }
-        let ech_enabled = tls_config.ech_config.is_some() || tls_config.ech_auto || tls_config.ech_grease;
+        let ech_enabled =
+            tls_config.ech_config.is_some() || tls_config.ech_auto || tls_config.ech_grease;
         if ech_enabled && !tls_config.enabled {
             tls_config.enabled = true;
             debug!("Trojan ECH is configured; force-enabling TLS transport");
@@ -64,14 +65,15 @@ impl TrojanOutbound {
         }
 
         let transport_config = settings.effective_transport();
-        let transport: Arc<dyn StreamTransport> = crate::proxy::transport::build_transport_with_dialer(
-            address,
-            port,
-            &transport_config,
-            &tls_config,
-            settings.dialer.clone(),
-        )?
-        .into();
+        let transport: Arc<dyn StreamTransport> =
+            crate::proxy::transport::build_transport_with_dialer(
+                address,
+                port,
+                &transport_config,
+                &tls_config,
+                settings.dialer.clone(),
+            )?
+            .into();
 
         let server_addr = Address::Domain(address.clone(), port);
         let mux = settings.mux.clone().map(|mux_config| {

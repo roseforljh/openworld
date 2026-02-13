@@ -19,11 +19,11 @@ use tracing::debug;
 ///
 /// 维持指定发送速率，根据丢包率自适应调整实际发送 window。
 pub struct BrutalController {
-    target_bps: u64,        // 用户指定的目标发送速率 (bytes/sec)
-    mss: u64,               // Maximum Segment Size
-    window: u64,            // 当前拥塞窗口 (bytes)
-    acked_bytes: u64,       // 已确认字节数
-    lost_bytes: u64,        // 丢失字节数
+    target_bps: u64,  // 用户指定的目标发送速率 (bytes/sec)
+    mss: u64,         // Maximum Segment Size
+    window: u64,      // 当前拥塞窗口 (bytes)
+    acked_bytes: u64, // 已确认字节数
+    lost_bytes: u64,  // 丢失字节数
     rtt: std::time::Duration,
     last_update: Instant,
 }
@@ -168,7 +168,11 @@ impl BrutalControllerFactory {
 }
 
 impl quinn::congestion::ControllerFactory for BrutalControllerFactory {
-    fn build(self: Arc<Self>, _now: Instant, current_mtu: u16) -> Box<dyn quinn::congestion::Controller> {
+    fn build(
+        self: Arc<Self>,
+        _now: Instant,
+        current_mtu: u16,
+    ) -> Box<dyn quinn::congestion::Controller> {
         Box::new(BrutalController::new(self.send_bps, current_mtu as u64))
     }
 }
@@ -193,7 +197,11 @@ mod tests {
         let ctrl = BrutalController::new(1, 1200); // 1 B/s — very low
         let window = ctrl.window();
         // Should be at least 10 * MSS = 12000
-        assert!(window >= 12000, "window should be at least 10*MSS, got {}", window);
+        assert!(
+            window >= 12000,
+            "window should be at least 10*MSS, got {}",
+            window
+        );
     }
 
     #[test]
@@ -242,7 +250,14 @@ mod tests {
         let w1 = BrutalController::calculate_window(1_000_000, 1200, Duration::from_millis(50));
         let w2 = BrutalController::calculate_window(1_000_000, 1200, Duration::from_millis(200));
         // Higher RTT should produce larger window
-        assert!(w2 > w1, "window should scale with RTT: {}ms={}, {}ms={}", 50, w1, 200, w2);
+        assert!(
+            w2 > w1,
+            "window should scale with RTT: {}ms={}, {}ms={}",
+            50,
+            w1,
+            200,
+            w2
+        );
     }
 
     #[test]

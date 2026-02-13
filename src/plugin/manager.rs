@@ -2,7 +2,6 @@
 //!
 //! 负责加载、管理、执行插件脚本，支持热重载。
 
-
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -53,6 +52,12 @@ pub struct PluginManager {
     plugins: Arc<RwLock<Vec<LoadedPlugin>>>,
 }
 
+impl Default for PluginManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PluginManager {
     pub fn new() -> Self {
         Self {
@@ -95,8 +100,7 @@ impl PluginManager {
         let source = std::fs::read_to_string(&path)
             .map_err(|e| format!("failed to read {}: {}", config.path, e))?;
 
-        let script = ScriptEngine::compile(&config.name, &source)
-            .map_err(|e| e.to_string())?;
+        let script = ScriptEngine::compile(&config.name, &source).map_err(|e| e.to_string())?;
 
         let meta = PluginMeta {
             name: config.name.clone(),
@@ -284,22 +288,14 @@ mod tests {
         let mgr = PluginManager::new();
 
         // 低优先级插件
-        mgr.load_inline(
-            "low",
-            r#"when domain suffix "example.com" => direct"#,
-            10,
-        )
-        .await
-        .unwrap();
+        mgr.load_inline("low", r#"when domain suffix "example.com" => direct"#, 10)
+            .await
+            .unwrap();
 
         // 高优先级插件（先执行）
-        mgr.load_inline(
-            "high",
-            r#"when domain suffix "example.com" => proxy"#,
-            1,
-        )
-        .await
-        .unwrap();
+        mgr.load_inline("high", r#"when domain suffix "example.com" => proxy"#, 1)
+            .await
+            .unwrap();
 
         let decision = mgr.route(&test_ctx("example.com")).await;
         // 高优先级插件先执行

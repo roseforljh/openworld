@@ -1,8 +1,14 @@
+#![allow(
+    clippy::field_reassign_with_default,
+    clippy::redundant_field_names,
+    clippy::needless_return,
+    clippy::useless_format,
+    unused_variables
+)]
 /// End-to-end proxy usability tests.
 ///
 /// Tests the full chain: client → SOCKS5 inbound → dispatcher → direct outbound → target.
 /// Validates that OpenWorld can actually proxy real TCP connections.
-
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -61,7 +67,7 @@ outbounds:
     );
 
     // Parse config directly from YAML string
-    let config: openworld::config::types::Config =
+    let _config: openworld::config::types::Config =
         serde_yml::from_str(&yaml_config).expect("config parse failed");
 
     // We need to pick a free port for inbound
@@ -387,7 +393,7 @@ outbounds:
 
 #[tokio::test]
 async fn relay_throughput_sanity() {
-    use openworld::proxy::relay::{relay, RelayStats, RelayOptions, relay_with_options};
+    use openworld::proxy::relay::{relay_with_options, RelayOptions, RelayStats};
 
     // Create a large chunk of data for throughput testing
     let data_size = 1024 * 1024; // 1 MiB

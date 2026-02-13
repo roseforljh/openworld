@@ -9,10 +9,10 @@ use tracing::debug;
 
 use crate::common::{Address, ProxyStream};
 use crate::config::types::{OutboundConfig, OutboundSettings};
+use crate::proxy::group::health::HealthChecker;
 use crate::proxy::outbound::trojan::protocol as trojan_protocol;
 use crate::proxy::outbound::vless::{protocol as vless_protocol, vision as vless_vision, XRV};
 use crate::proxy::{OutboundHandler, Session};
-use crate::proxy::group::health::HealthChecker;
 
 /// A proxy chain that routes traffic through a series of outbound proxies.
 /// The chain connects through each proxy in order: A -> B -> C -> target.
@@ -162,7 +162,9 @@ impl ProxyChain {
                 Self::http_connect_over_stream(stream, &session.target, &outbound.settings).await
             }
             "tor" => Self::socks5_connect_over_stream(stream, &session.target).await,
-            "vless" => Self::vless_connect_over_stream(stream, &session.target, &outbound.settings).await,
+            "vless" => {
+                Self::vless_connect_over_stream(stream, &session.target, &outbound.settings).await
+            }
             "trojan" => {
                 Self::trojan_connect_over_stream(stream, &session.target, &outbound.settings).await
             }
@@ -184,11 +186,15 @@ impl ProxyChain {
             Address::Ip(addr) => addr.to_string(),
         };
 
-        let mut request = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", target_str, target_str);
+        let mut request = format!(
+            "CONNECT {} HTTP/1.1\r\nHost: {}\r\n",
+            target_str, target_str
+        );
 
         if let (Some(user), Some(pass)) = (&settings.uuid, &settings.password) {
             use base64::Engine;
-            let cred = base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", user, pass));
+            let cred =
+                base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", user, pass));
             request.push_str(&format!("Proxy-Authorization: Basic {}\r\n", cred));
         }
 
@@ -218,7 +224,9 @@ impl ProxyChain {
             .split_whitespace()
             .nth(1)
             .and_then(|s| s.parse::<u16>().ok())
-            .ok_or_else(|| anyhow::anyhow!("http CONNECT failed: invalid response '{}'", status_line))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("http CONNECT failed: invalid response '{}'", status_line)
+            })?;
 
         if status_code != 200 {
             anyhow::bail!("http CONNECT failed: {}", status_line);
@@ -227,7 +235,10 @@ impl ProxyChain {
         Ok(stream)
     }
 
-    async fn socks5_connect_over_stream(mut stream: ProxyStream, target: &Address) -> Result<ProxyStream> {
+    async fn socks5_connect_over_stream(
+        mut stream: ProxyStream,
+        target: &Address,
+    ) -> Result<ProxyStream> {
         stream.write_all(&[0x05, 0x01, 0x00]).await?;
 
         let mut auth_resp = [0u8; 2];
@@ -322,7 +333,9 @@ impl ProxyChain {
             alpn_holder.as_deref(),
         )?;
 
-        let sni = tls_config.sni.ok_or_else(|| anyhow::anyhow!("TLS SNI is required"))?;
+        let sni = tls_config
+            .sni
+            .ok_or_else(|| anyhow::anyhow!("TLS SNI is required"))?;
         let server_name = rustls::pki_types::ServerName::try_from(sni)?;
         let connector = tokio_rustls::TlsConnector::from(Arc::new(client_config));
         let tls_stream = connector.connect(server_name, stream).await?;
@@ -526,12 +539,15 @@ mod tests {
                     use tokio::io::{AsyncReadExt, AsyncWriteExt};
                     let mut buf = [0u8; 1024];
                     let _ = stream.read(&mut buf).await;
-                    let _ = stream.write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n").await;
+                    let _ = stream
+                        .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+                        .await;
                 }
             }
         });
 
-        let direct = Arc::new(DirectOutbound::new("direct".to_string())) as Arc<dyn OutboundHandler>;
+        let direct =
+            Arc::new(DirectOutbound::new("direct".to_string())) as Arc<dyn OutboundHandler>;
         let chain = ProxyChain::new("chain".to_string(), vec![direct]).unwrap();
         let url = format!("http://127.0.0.1:{}/generate_204", addr.port());
         let result = chain.health_check(&url, 5000).await;
@@ -545,7 +561,8 @@ mod tests {
 
     #[tokio::test]
     async fn proxy_chain_health_check_hop_fails() {
-        let direct = Arc::new(DirectOutbound::new("direct".to_string())) as Arc<dyn OutboundHandler>;
+        let direct =
+            Arc::new(DirectOutbound::new("direct".to_string())) as Arc<dyn OutboundHandler>;
         let chain = ProxyChain::new("chain".to_string(), vec![direct]).unwrap();
         // Use an unreachable URL with short timeout to trigger failure
         let result = chain.health_check("http://192.0.2.1:1/fail", 100).await;
@@ -561,7 +578,8 @@ mod tests {
         use crate::proxy::Network;
         use std::net::SocketAddr;
 
-        let direct = Arc::new(DirectOutbound::new("direct".to_string())) as Arc<dyn OutboundHandler>;
+        let direct =
+            Arc::new(DirectOutbound::new("direct".to_string())) as Arc<dyn OutboundHandler>;
         let chain = ProxyChain::new("chain".to_string(), vec![direct]).unwrap();
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

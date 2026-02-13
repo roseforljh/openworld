@@ -22,7 +22,6 @@
 ///     down-mbps: 200
 ///     allow-insecure: false
 /// ```
-
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
@@ -58,15 +57,18 @@ const HYSTERIA_V1_STATUS_OK: u8 = 0x00;
 impl HysteriaV1Outbound {
     pub fn new(config: &OutboundConfig) -> Result<Self> {
         let settings = &config.settings;
-        let address = settings.address.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("hysteria v1: address is required")
-        })?;
-        let port = settings.port.ok_or_else(|| {
-            anyhow::anyhow!("hysteria v1: port is required")
-        })?;
+        let address = settings
+            .address
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("hysteria v1: address is required"))?;
+        let port = settings
+            .port
+            .ok_or_else(|| anyhow::anyhow!("hysteria v1: port is required"))?;
 
         // v1 可以使用 password 或 auth_str
-        let auth_str = settings.password.clone()
+        let auth_str = settings
+            .password
+            .clone()
             .or_else(|| settings.uuid.clone())
             .unwrap_or_default();
 
@@ -241,7 +243,8 @@ impl tokio_rustls::rustls::client::danger::ServerCertVerifier for SkipServerVeri
         _server_name: &tokio_rustls::rustls::pki_types::ServerName<'_>,
         _ocsp_response: &[u8],
         _now: tokio_rustls::rustls::pki_types::UnixTime,
-    ) -> Result<tokio_rustls::rustls::client::danger::ServerCertVerified, tokio_rustls::rustls::Error> {
+    ) -> Result<tokio_rustls::rustls::client::danger::ServerCertVerified, tokio_rustls::rustls::Error>
+    {
         Ok(tokio_rustls::rustls::client::danger::ServerCertVerified::assertion())
     }
 
@@ -250,7 +253,10 @@ impl tokio_rustls::rustls::client::danger::ServerCertVerifier for SkipServerVeri
         _message: &[u8],
         _cert: &tokio_rustls::rustls::pki_types::CertificateDer<'_>,
         _dss: &tokio_rustls::rustls::DigitallySignedStruct,
-    ) -> Result<tokio_rustls::rustls::client::danger::HandshakeSignatureValid, tokio_rustls::rustls::Error> {
+    ) -> Result<
+        tokio_rustls::rustls::client::danger::HandshakeSignatureValid,
+        tokio_rustls::rustls::Error,
+    > {
         Ok(tokio_rustls::rustls::client::danger::HandshakeSignatureValid::assertion())
     }
 
@@ -259,7 +265,10 @@ impl tokio_rustls::rustls::client::danger::ServerCertVerifier for SkipServerVeri
         _message: &[u8],
         _cert: &tokio_rustls::rustls::pki_types::CertificateDer<'_>,
         _dss: &tokio_rustls::rustls::DigitallySignedStruct,
-    ) -> Result<tokio_rustls::rustls::client::danger::HandshakeSignatureValid, tokio_rustls::rustls::Error> {
+    ) -> Result<
+        tokio_rustls::rustls::client::danger::HandshakeSignatureValid,
+        tokio_rustls::rustls::Error,
+    > {
         Ok(tokio_rustls::rustls::client::danger::HandshakeSignatureValid::assertion())
     }
 
@@ -378,7 +387,7 @@ mod tests {
         let req = HysteriaV1Outbound::encode_tcp_request(&addr);
         assert_eq!(req[0], HYSTERIA_V1_CMD_TCP);
         assert_eq!(req[1], 0x03); // domain type
-        assert_eq!(req[2], 11);   // domain length "example.com"
+        assert_eq!(req[2], 11); // domain length "example.com"
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use anyhow::Result;
@@ -53,11 +53,12 @@ pub struct ShadowsocksInbound {
 
 impl ShadowsocksInbound {
     pub fn new(config: &InboundConfig) -> Result<Self> {
-        let method = config
-            .settings
-            .method
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("shadowsocks inbound '{}' missing 'settings.method'", config.tag))?;
+        let method = config.settings.method.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "shadowsocks inbound '{}' missing 'settings.method'",
+                config.tag
+            )
+        })?;
 
         let cipher_kind = CipherKind::parse(method)?;
 
@@ -72,10 +73,7 @@ impl ShadowsocksInbound {
 
         if let Some(raw_users) = config.settings.users.as_ref() {
             for (idx, raw_user) in raw_users.iter().enumerate() {
-                let user_method = raw_user
-                    .method
-                    .as_deref()
-                    .unwrap_or(method);
+                let user_method = raw_user.method.as_deref().unwrap_or(method);
                 let user_cipher_kind = CipherKind::parse(user_method)?;
                 if user_cipher_kind != cipher_kind {
                     anyhow::bail!(
@@ -138,11 +136,14 @@ impl ShadowsocksInbound {
     /// 列出所有用户及流量
     pub async fn list_users(&self) -> Vec<SsmUserInfo> {
         let users = self.users.read().await;
-        users.iter().map(|u| SsmUserInfo {
-            name: u.name.clone(),
-            traffic_up: u.traffic_up.load(Ordering::Relaxed),
-            traffic_down: u.traffic_down.load(Ordering::Relaxed),
-        }).collect()
+        users
+            .iter()
+            .map(|u| SsmUserInfo {
+                name: u.name.clone(),
+                traffic_up: u.traffic_up.load(Ordering::Relaxed),
+                traffic_down: u.traffic_down.load(Ordering::Relaxed),
+            })
+            .collect()
     }
 
     /// 重置指定用户流量
@@ -161,7 +162,6 @@ impl ShadowsocksInbound {
     pub async fn user_count(&self) -> usize {
         self.users.read().await.len()
     }
-
 }
 
 fn derive_master_key(cipher_kind: CipherKind, password: &str) -> Result<Vec<u8>> {
@@ -197,7 +197,8 @@ impl InboundHandler for ShadowsocksInbound {
         {
             let users = self.users.read().await;
             for user in users.iter() {
-                let mut decoder = match derive_subkey(&user.key, &salt, self.cipher_kind.key_len()) {
+                let mut decoder = match derive_subkey(&user.key, &salt, self.cipher_kind.key_len())
+                {
                     Ok(subkey) => AeadCipher::new(self.cipher_kind, subkey),
                     Err(_) => continue,
                 };
@@ -216,8 +217,9 @@ impl InboundHandler for ShadowsocksInbound {
             }
         } // release read lock
 
-        let (master_key, payload_len) =
-            selected.ok_or_else(|| anyhow::anyhow!("shadowsocks inbound '{}' authentication failed", self.tag))?;
+        let (master_key, payload_len) = selected.ok_or_else(|| {
+            anyhow::anyhow!("shadowsocks inbound '{}' authentication failed", self.tag)
+        })?;
 
         let mut payload_frame = vec![0u8; payload_len + tag_len];
         stream.read_exact(&mut payload_frame).await?;
@@ -291,8 +293,14 @@ impl InboundHandler for ShadowsocksInbound {
 }
 
 enum ReadState {
-    Length { len_buf: Vec<u8>, len_read: usize },
-    Payload { payload_buf: Vec<u8>, payload_read: usize },
+    Length {
+        len_buf: Vec<u8>,
+        len_read: usize,
+    },
+    Payload {
+        payload_buf: Vec<u8>,
+        payload_read: usize,
+    },
 }
 
 enum WriteState {
@@ -316,7 +324,12 @@ struct ShadowsocksAeadStream {
 }
 
 impl ShadowsocksAeadStream {
-    fn new(inner: ProxyStream, cipher_kind: CipherKind, encoder: AeadCipher, decoder: AeadCipher) -> Self {
+    fn new(
+        inner: ProxyStream,
+        cipher_kind: CipherKind,
+        encoder: AeadCipher,
+        decoder: AeadCipher,
+    ) -> Self {
         let tag_len = cipher_kind.tag_len();
         Self {
             inner,
@@ -471,7 +484,8 @@ impl AsyncWrite for ShadowsocksAeadStream {
                         .encrypt(chunk)
                         .map_err(|e| std::io::Error::other(e.to_string()))?;
 
-                    let mut data = Vec::with_capacity(encrypted_len.len() + encrypted_payload.len());
+                    let mut data =
+                        Vec::with_capacity(encrypted_len.len() + encrypted_payload.len());
                     data.extend_from_slice(&encrypted_len);
                     data.extend_from_slice(&encrypted_payload);
 

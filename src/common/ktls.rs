@@ -15,7 +15,6 @@
 /// - Linux 内核 4.17+ (接收端 kTLS)
 /// - `CONFIG_TLS=y` 编译选项开启
 /// - 支持的加密套件: AES-128-GCM, AES-256-GCM, CHACHA20-POLY1305
-
 use anyhow::Result;
 use tracing::debug;
 
@@ -110,13 +109,29 @@ fn enable_ktls_linux(
     }
 
     // 2. 设置 TX 密钥
-    set_ktls_key(fd, TLS_TX, tx_info, TLS_1_2_VERSION, TLS_1_3_VERSION,
-        TLS_CIPHER_AES_GCM_128, TLS_CIPHER_AES_GCM_256, TLS_CIPHER_CHACHA20_POLY1305)?;
+    set_ktls_key(
+        fd,
+        TLS_TX,
+        tx_info,
+        TLS_1_2_VERSION,
+        TLS_1_3_VERSION,
+        TLS_CIPHER_AES_GCM_128,
+        TLS_CIPHER_AES_GCM_256,
+        TLS_CIPHER_CHACHA20_POLY1305,
+    )?;
 
     // 3. 设置 RX 密钥 (可选)
     if let Some(rx) = rx_info {
-        set_ktls_key(fd, TLS_RX, rx, TLS_1_2_VERSION, TLS_1_3_VERSION,
-            TLS_CIPHER_AES_GCM_128, TLS_CIPHER_AES_GCM_256, TLS_CIPHER_CHACHA20_POLY1305)?;
+        set_ktls_key(
+            fd,
+            TLS_RX,
+            rx,
+            TLS_1_2_VERSION,
+            TLS_1_3_VERSION,
+            TLS_CIPHER_AES_GCM_128,
+            TLS_CIPHER_AES_GCM_256,
+            TLS_CIPHER_CHACHA20_POLY1305,
+        )?;
     }
 
     debug!(cipher = ?tx_info.cipher, "kTLS enabled successfully");
@@ -179,7 +194,11 @@ fn set_ktls_key(
 
     if ret != 0 {
         let err = std::io::Error::last_os_error();
-        anyhow::bail!("kTLS set {} key failed: {}", if direction == 1 { "TX" } else { "RX" }, err);
+        anyhow::bail!(
+            "kTLS set {} key failed: {}",
+            if direction == 1 { "TX" } else { "RX" },
+            err
+        );
     }
 
     Ok(())

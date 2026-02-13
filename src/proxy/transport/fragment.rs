@@ -93,11 +93,8 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for FragmentStream<S> {
         // 新的写入 — 生成分片
         self.handshake_writes += 1;
 
-        let fragments = Self::split_to_fragments(
-            buf,
-            self.config.min_length,
-            self.config.max_length,
-        );
+        let fragments =
+            Self::split_to_fragments(buf, self.config.min_length, self.config.max_length);
 
         let total_len = buf.len();
         debug!(
@@ -184,9 +181,17 @@ mod tests {
             let is_last = i == frags.len() - 1;
             // 最后一个分片可能因为剩余数据不足而小于 min_len
             if is_last {
-                assert!(f.len() >= 1 && f.len() <= 50, "last fragment size {} not in [1, 50]", f.len());
+                assert!(
+                    f.len() >= 1 && f.len() <= 50,
+                    "last fragment size {} not in [1, 50]",
+                    f.len()
+                );
             } else {
-                assert!(f.len() >= 10 && f.len() <= 50, "fragment size {} not in [10, 50]", f.len());
+                assert!(
+                    f.len() >= 10 && f.len() <= 50,
+                    "fragment size {} not in [10, 50]",
+                    f.len()
+                );
             }
         }
     }

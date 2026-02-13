@@ -81,9 +81,7 @@ pub fn build_proxy_groups(
                 config.interval,
             )),
             "load-balance" => {
-                let strategy = loadbalance::LbStrategy::from_str_opt(
-                    config.strategy.as_deref(),
-                );
+                let strategy = loadbalance::LbStrategy::from_str_opt(config.strategy.as_deref());
                 Arc::new(loadbalance::LoadBalanceGroup::new(
                     config.name.clone(),
                     proxies,

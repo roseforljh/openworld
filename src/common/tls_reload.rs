@@ -232,9 +232,7 @@ fn load_private_key_from_pem(data: &[u8]) -> Result<PrivateKeyDer<'static>> {
 
 /// 获取文件修改时间
 fn get_mtime(path: &Path) -> Option<SystemTime> {
-    std::fs::metadata(path)
-        .ok()
-        .and_then(|m| m.modified().ok())
+    std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }
 
 #[cfg(test)]

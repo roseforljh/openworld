@@ -8,7 +8,6 @@
 /// 2. Starts a "server" App with protocol inbound (VLESS/Trojan/SS/VMess) + direct outbound
 /// 3. Starts a "proxy" App with SOCKS5 inbound + protocol outbound pointing to the server
 /// 4. Connects via SOCKS5, sends data, verifies echo through the encrypted tunnel
-
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -92,7 +91,10 @@ async fn socks5_connect_and_echo(
         .expect("echo read timeout")
         .expect("echo read error");
 
-    assert_eq!(&echo_buf, test_data, "echo data mismatch through proxy chain");
+    assert_eq!(
+        &echo_buf, test_data,
+        "echo data mismatch through proxy chain"
+    );
 }
 
 // ── Test 1: VLESS loopback ──
@@ -129,7 +131,9 @@ outbounds:
         .await
         .expect("server App::new failed");
     let server_cancel = server_app.cancel_token().clone();
-    let server_handle = tokio::spawn(async move { let _ = server_app.run().await; });
+    let server_handle = tokio::spawn(async move {
+        let _ = server_app.run().await;
+    });
 
     tokio::time::sleep(Duration::from_millis(300)).await;
 
@@ -161,7 +165,9 @@ outbounds:
         .await
         .expect("proxy App::new failed");
     let proxy_cancel = proxy_app.cancel_token().clone();
-    let proxy_handle = tokio::spawn(async move { let _ = proxy_app.run().await; });
+    let proxy_handle = tokio::spawn(async move {
+        let _ = proxy_app.run().await;
+    });
 
     tokio::time::sleep(Duration::from_millis(300)).await;
 
@@ -210,7 +216,9 @@ outbounds:
         .await
         .expect("server App::new failed");
     let server_cancel = server_app.cancel_token().clone();
-    let server_handle = tokio::spawn(async move { let _ = server_app.run().await; });
+    let server_handle = tokio::spawn(async move {
+        let _ = server_app.run().await;
+    });
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     // --- Proxy: SOCKS5 + Trojan outbound ---
@@ -242,7 +250,9 @@ outbounds:
         .await
         .expect("proxy App::new failed");
     let proxy_cancel = proxy_app.cancel_token().clone();
-    let proxy_handle = tokio::spawn(async move { let _ = proxy_app.run().await; });
+    let proxy_handle = tokio::spawn(async move {
+        let _ = proxy_app.run().await;
+    });
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     // --- Test ---
@@ -291,7 +301,9 @@ outbounds:
         .await
         .expect("server App::new failed");
     let server_cancel = server_app.cancel_token().clone();
-    let server_handle = tokio::spawn(async move { let _ = server_app.run().await; });
+    let server_handle = tokio::spawn(async move {
+        let _ = server_app.run().await;
+    });
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     // --- Proxy: SOCKS5 + SS outbound ---
@@ -323,7 +335,9 @@ outbounds:
         .await
         .expect("proxy App::new failed");
     let proxy_cancel = proxy_app.cancel_token().clone();
-    let proxy_handle = tokio::spawn(async move { let _ = proxy_app.run().await; });
+    let proxy_handle = tokio::spawn(async move {
+        let _ = proxy_app.run().await;
+    });
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     // --- Test ---
@@ -370,7 +384,9 @@ outbounds:
         .await
         .expect("server App::new failed");
     let server_cancel = server_app.cancel_token().clone();
-    let server_handle = tokio::spawn(async move { let _ = server_app.run().await; });
+    let server_handle = tokio::spawn(async move {
+        let _ = server_app.run().await;
+    });
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     // --- Proxy: SOCKS5 + VMess outbound (AEAD, alter_id=0) ---
@@ -402,7 +418,9 @@ outbounds:
         .await
         .expect("proxy App::new failed");
     let proxy_cancel = proxy_app.cancel_token().clone();
-    let proxy_handle = tokio::spawn(async move { let _ = proxy_app.run().await; });
+    let proxy_handle = tokio::spawn(async move {
+        let _ = proxy_app.run().await;
+    });
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     // --- Test ---
@@ -446,9 +464,13 @@ outbounds:
 
     let server_config: openworld::config::types::Config =
         serde_yml::from_str(&server_yaml).unwrap();
-    let server_app = openworld::app::App::new(server_config, None, None).await.unwrap();
+    let server_app = openworld::app::App::new(server_config, None, None)
+        .await
+        .unwrap();
     let server_cancel = server_app.cancel_token().clone();
-    let server_handle = tokio::spawn(async move { let _ = server_app.run().await; });
+    let server_handle = tokio::spawn(async move {
+        let _ = server_app.run().await;
+    });
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     let proxy_yaml = format!(
@@ -472,11 +494,14 @@ outbounds:
 "#
     );
 
-    let proxy_config: openworld::config::types::Config =
-        serde_yml::from_str(&proxy_yaml).unwrap();
-    let proxy_app = openworld::app::App::new(proxy_config, None, None).await.unwrap();
+    let proxy_config: openworld::config::types::Config = serde_yml::from_str(&proxy_yaml).unwrap();
+    let proxy_app = openworld::app::App::new(proxy_config, None, None)
+        .await
+        .unwrap();
     let proxy_cancel = proxy_app.cancel_token().clone();
-    let proxy_handle = tokio::spawn(async move { let _ = proxy_app.run().await; });
+    let proxy_handle = tokio::spawn(async move {
+        let _ = proxy_app.run().await;
+    });
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     let proxy_addr: SocketAddr = format!("127.0.0.1:{}", proxy_port).parse().unwrap();

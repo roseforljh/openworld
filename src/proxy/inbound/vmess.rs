@@ -8,11 +8,8 @@ use tracing::debug;
 
 use crate::common::{Address, ProxyStream};
 use crate::config::types::InboundConfig;
+use crate::proxy::outbound::vmess::protocol::{derive_response_key_iv, SecurityType};
 use crate::proxy::{InboundHandler, InboundResult, Network, Session};
-use crate::proxy::outbound::vmess::protocol::{
-    SecurityType,
-    derive_response_key_iv,
-};
 
 /// VMess 入站（服务端）
 ///
@@ -67,11 +64,11 @@ impl InboundHandler for VmessInbound {
     }
 
     async fn handle(&self, mut stream: ProxyStream, source: SocketAddr) -> Result<InboundResult> {
-        use aes_gcm::{Aes128Gcm, KeyInit, Nonce, aead::Aead};
         use crate::proxy::outbound::vmess::protocol::{
-            kdf, create_auth_id, fnv1a_hash, VmessChunkCipher,
+            create_auth_id, fnv1a_hash, kdf, VmessChunkCipher,
         };
         use crate::proxy::outbound::vmess::VmessAeadStream;
+        use aes_gcm::{aead::Aead, Aes128Gcm, KeyInit, Nonce};
 
         // ── Step 1: Read auth_id (16 bytes) ──
         let mut auth_id = [0u8; 16];
@@ -108,12 +105,20 @@ impl InboundHandler for VmessInbound {
         // Decrypt header length
         let length_key_material = kdf(
             &cmd_key,
-            &[b"VMess Header AEAD Key Length", &auth_id[..], &conn_nonce[..]],
+            &[
+                b"VMess Header AEAD Key Length",
+                &auth_id[..],
+                &conn_nonce[..],
+            ],
         );
         let length_key: [u8; 16] = length_key_material[..16].try_into().unwrap();
         let length_nonce_material = kdf(
             &cmd_key,
-            &[b"VMess Header AEAD Nonce Length", &auth_id[..], &conn_nonce[..]],
+            &[
+                b"VMess Header AEAD Nonce Length",
+                &auth_id[..],
+                &conn_nonce[..],
+            ],
         );
         let length_nonce: [u8; 12] = length_nonce_material[..12].try_into().unwrap();
 
@@ -250,7 +255,8 @@ impl InboundHandler for VmessInbound {
         // Server decoder: decrypts data from client using req_body_key/req_body_iv
         let decoder = VmessChunkCipher::new(security, &req_body_key, &req_body_iv);
 
-        let vmess_stream: ProxyStream = Box::new(VmessAeadStream::new(stream, encoder, decoder, security));
+        let vmess_stream: ProxyStream =
+            Box::new(VmessAeadStream::new(stream, encoder, decoder, security));
 
         let session = Session {
             target,

@@ -7,18 +7,17 @@
 /// 4. 发送 16 字节握手 payload（8 字节时间戳 + 8 字节 key hash）
 /// 5. 发送 1 字节 downlink mode
 /// 6. 发送目标地址
-
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use sha2::{Sha256, Digest};
-use tokio::io::{AsyncWriteExt};
+use sha2::{Digest, Sha256};
+use tokio::io::AsyncWriteExt;
 
-use crate::common::ProxyStream;
 use super::conn::SudokuStream;
 use super::crypto::AeadStream;
-use super::table::Table;
 use super::httpmask;
+use super::table::Table;
+use crate::common::ProxyStream;
 
 /// 握手配置
 pub struct SudokuConfig {

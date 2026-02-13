@@ -268,9 +268,7 @@ fn range_to_cidr_v4(from: &[u8; 4], to: &[u8; 4]) -> Option<IpNet> {
     };
     let prefix = 32 - host_bits as u8;
 
-    format!("{}/{}", from_ip, prefix)
-        .parse::<IpNet>()
-        .ok()
+    format!("{}/{}", from_ip, prefix).parse::<IpNet>().ok()
 }
 
 /// 将 IPv6 range 转换为最近的 CIDR
@@ -293,9 +291,7 @@ fn range_to_cidr_v6(from: &[u8; 16], to: &[u8; 16]) -> Option<IpNet> {
     };
     let prefix = 128 - host_bits as u8;
 
-    format!("{}/{}", from_ip, prefix)
-        .parse::<IpNet>()
-        .ok()
+    format!("{}/{}", from_ip, prefix).parse::<IpNet>().ok()
 }
 
 /// 跳过未知规则项
@@ -435,8 +431,14 @@ mod tests {
         let srs = build_test_srs(&rules_data);
         let result = parse_srs(&srs).unwrap();
         assert_eq!(result.domain_rules.len(), 2);
-        assert_eq!(result.domain_rules[0], DomainRule::Keyword("google".to_string()));
-        assert_eq!(result.domain_rules[1], DomainRule::Keyword("facebook".to_string()));
+        assert_eq!(
+            result.domain_rules[0],
+            DomainRule::Keyword("google".to_string())
+        );
+        assert_eq!(
+            result.domain_rules[1],
+            DomainRule::Keyword("facebook".to_string())
+        );
     }
 
     #[test]

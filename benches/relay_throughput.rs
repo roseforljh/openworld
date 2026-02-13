@@ -2,7 +2,9 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughpu
 use std::time::Duration;
 use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt};
 
-use openworld::proxy::relay::{global_buffer_pool, relay, relay_with_options, RelayOptions, RelayStats};
+use openworld::proxy::relay::{
+    global_buffer_pool, relay, relay_with_options, RelayOptions, RelayStats,
+};
 
 // ─── Buffer Pool Benchmarks ────────────────────────────────────────────────
 
@@ -63,9 +65,7 @@ fn bench_relay_throughput(c: &mut Criterion) {
                     let (server_b, mut client_b) = duplex(size * 2);
 
                     let data = vec![0xABu8; size];
-                    let relay_handle = tokio::spawn(async move {
-                        relay(server_a, server_b).await
-                    });
+                    let relay_handle = tokio::spawn(async move { relay(server_a, server_b).await });
 
                     client_a.write_all(&data).await.unwrap();
                     drop(client_a); // Signal EOF
@@ -103,9 +103,8 @@ fn bench_relay_with_stats(c: &mut Criterion) {
                     ..Default::default()
                 };
 
-                let relay_handle = tokio::spawn(async move {
-                    relay_with_options(server_a, server_b, opts).await
-                });
+                let relay_handle =
+                    tokio::spawn(async move { relay_with_options(server_a, server_b, opts).await });
 
                 let data = vec![0xCDu8; size];
                 client_a.write_all(&data).await.unwrap();
@@ -154,7 +153,10 @@ fn bench_buffer_pool_contention(c: &mut Criterion) {
 
     // Also test pool stats after contention
     let (hits, misses) = pool.stats();
-    println!("Pool stats after contention bench: hits={}, misses={}", hits, misses);
+    println!(
+        "Pool stats after contention bench: hits={}, misses={}",
+        hits, misses
+    );
 }
 
 criterion_group!(

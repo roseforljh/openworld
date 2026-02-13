@@ -498,10 +498,18 @@ pub struct TlsFragmentConfig {
     pub max_delay_ms: u64,
 }
 
-fn default_fragment_min() -> usize { 10 }
-fn default_fragment_max() -> usize { 100 }
-fn default_fragment_delay_min() -> u64 { 10 }
-fn default_fragment_delay_max() -> u64 { 50 }
+fn default_fragment_min() -> usize {
+    10
+}
+fn default_fragment_max() -> usize {
+    100
+}
+fn default_fragment_delay_min() -> u64 {
+    10
+}
+fn default_fragment_delay_max() -> u64 {
+    50
+}
 
 /// API 配置（Clash 兼容）
 #[derive(Debug, Deserialize, Clone)]
@@ -543,10 +551,18 @@ pub struct DerpConfig {
     pub region_name: String,
 }
 
-fn default_derp_enabled() -> bool { true }
-fn default_derp_port() -> u16 { 3340 }
-fn default_derp_region_id() -> u16 { 900 }
-fn default_derp_region_name() -> String { "OpenWorld-DERP".to_string() }
+fn default_derp_enabled() -> bool {
+    true
+}
+fn default_derp_port() -> u16 {
+    3340
+}
+fn default_derp_region_id() -> u16 {
+    900
+}
+fn default_derp_region_name() -> String {
+    "OpenWorld-DERP".to_string()
+}
 
 /// DNS 配置
 #[derive(Debug, Deserialize, Clone)]
@@ -756,7 +772,9 @@ impl Default for RuleConfig {
     }
 }
 
-fn default_rule_action() -> String { "route".to_string() }
+fn default_rule_action() -> String {
+    "route".to_string()
+}
 
 /// 规则提供者配置（Clash 兼容）
 #[derive(Debug, Deserialize, Clone)]
@@ -868,7 +886,7 @@ mod tests {
             rule_type: "domain-suffix".to_string(),
             values: vec!["example.com".to_string()],
             outbound: "nonexistent".to_string(),
-        ..Default::default()
+            ..Default::default()
         });
         assert!(config.validate().is_err());
     }
@@ -880,7 +898,7 @@ mod tests {
             rule_type: "domain-suffix".to_string(),
             values: vec!["example.com".to_string()],
             outbound: "direct".to_string(),
-        ..Default::default()
+            ..Default::default()
         });
         assert!(config.validate().is_ok());
     }
@@ -996,7 +1014,7 @@ router:
             rule_type: "ip-asn".to_string(),
             values: vec!["13335".to_string()],
             outbound: "direct".to_string(),
-        ..Default::default()
+            ..Default::default()
         });
         assert!(config.validate().is_err());
     }
@@ -1008,7 +1026,7 @@ router:
             rule_type: "uid".to_string(),
             values: vec!["1000".to_string()],
             outbound: "direct".to_string(),
-        ..Default::default()
+            ..Default::default()
         });
         assert!(config.validate().is_err());
     }

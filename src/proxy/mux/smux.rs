@@ -12,10 +12,10 @@ use tokio::sync::mpsc;
 const SMUX_VERSION: u8 = 1;
 
 /// smux frame commands
-const CMD_SYN: u8 = 0;   // stream open
-const CMD_FIN: u8 = 1;   // stream close
-const CMD_PSH: u8 = 2;   // data push
-const CMD_NOP: u8 = 3;   // nop / keepalive
+const CMD_SYN: u8 = 0; // stream open
+const CMD_FIN: u8 = 1; // stream close
+const CMD_PSH: u8 = 2; // data push
+const CMD_NOP: u8 = 3; // nop / keepalive
 
 /// smux frame header: version(1) + cmd(1) + length(2) + stream_id(4) = 8 bytes
 const SMUX_HEADER_LEN: usize = 8;
@@ -65,19 +65,39 @@ impl SmuxFrame {
     }
 
     pub fn syn(stream_id: u32) -> Self {
-        SmuxFrame { version: SMUX_VERSION, cmd: CMD_SYN, stream_id, payload: Vec::new() }
+        SmuxFrame {
+            version: SMUX_VERSION,
+            cmd: CMD_SYN,
+            stream_id,
+            payload: Vec::new(),
+        }
     }
 
     pub fn fin(stream_id: u32) -> Self {
-        SmuxFrame { version: SMUX_VERSION, cmd: CMD_FIN, stream_id, payload: Vec::new() }
+        SmuxFrame {
+            version: SMUX_VERSION,
+            cmd: CMD_FIN,
+            stream_id,
+            payload: Vec::new(),
+        }
     }
 
     pub fn psh(stream_id: u32, data: Vec<u8>) -> Self {
-        SmuxFrame { version: SMUX_VERSION, cmd: CMD_PSH, stream_id, payload: data }
+        SmuxFrame {
+            version: SMUX_VERSION,
+            cmd: CMD_PSH,
+            stream_id,
+            payload: data,
+        }
     }
 
     pub fn nop() -> Self {
-        SmuxFrame { version: SMUX_VERSION, cmd: CMD_NOP, stream_id: 0, payload: Vec::new() }
+        SmuxFrame {
+            version: SMUX_VERSION,
+            cmd: CMD_NOP,
+            stream_id: 0,
+            payload: Vec::new(),
+        }
     }
 }
 
@@ -144,9 +164,10 @@ impl AsyncWrite for SmuxStream {
         match self.write_tx.try_send(frame) {
             Ok(()) => Poll::Ready(Ok(len)),
             Err(mpsc::error::TrySendError::Full(_)) => Poll::Pending,
-            Err(mpsc::error::TrySendError::Closed(_)) => {
-                Poll::Ready(Err(io::Error::new(io::ErrorKind::BrokenPipe, "smux closed")))
-            }
+            Err(mpsc::error::TrySendError::Closed(_)) => Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "smux closed",
+            ))),
         }
     }
 
@@ -164,7 +185,8 @@ impl AsyncWrite for SmuxStream {
 pub struct SmuxSession {
     next_id: AtomicU32,
     frame_tx: mpsc::Sender<SmuxFrame>,
-    streams: std::sync::Arc<tokio::sync::Mutex<std::collections::HashMap<u32, mpsc::Sender<Vec<u8>>>>>,
+    streams:
+        std::sync::Arc<tokio::sync::Mutex<std::collections::HashMap<u32, mpsc::Sender<Vec<u8>>>>>,
 }
 
 impl SmuxSession {
@@ -180,7 +202,9 @@ impl SmuxSession {
         let stream_id = self.next_id.fetch_add(2, Ordering::Relaxed);
         let (read_tx, read_rx) = mpsc::channel(64);
         self.streams.lock().await.insert(stream_id, read_tx);
-        self.frame_tx.send(SmuxFrame::syn(stream_id)).await
+        self.frame_tx
+            .send(SmuxFrame::syn(stream_id))
+            .await
             .map_err(|_| anyhow::anyhow!("smux session closed"))?;
         Ok(SmuxStream {
             stream_id,

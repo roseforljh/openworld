@@ -10,11 +10,11 @@ use std::os::raw::c_char;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use crate::app::proxy_provider::ProxyProviderManager;
 use crate::app::tracker::ConnectionTracker;
 use crate::app::App;
-use crate::config::Config;
 use crate::config::profile::ProfileManager;
-use crate::app::proxy_provider::ProxyProviderManager;
+use crate::config::Config;
 
 /// 全局内核实例
 static INSTANCE: OnceLock<Mutex<Option<OpenWorldInstance>>> = OnceLock::new();
@@ -23,8 +23,8 @@ static INSTANCE: OnceLock<Mutex<Option<OpenWorldInstance>>> = OnceLock::new();
 struct DelayRecord {
     outbound_tag: String,
     url: String,
-    delay_ms: i32,       // -1 = 超时/失败
-    timestamp: u64,      // Unix 秒
+    delay_ms: i32,  // -1 = 超时/失败
+    timestamp: u64, // Unix 秒
 }
 
 static DELAY_HISTORY: OnceLock<Mutex<Vec<DelayRecord>>> = OnceLock::new();
@@ -141,10 +141,7 @@ pub unsafe extern "C" fn openworld_start(config_json: *const c_char) -> i32 {
     // 在 runtime 中构建 App 并运行
     let tracker = Arc::new(ConnectionTracker::new());
     let outbound_manager = match runtime.block_on(async {
-        crate::app::outbound_manager::OutboundManager::new(
-            &config.outbounds,
-            &config.proxy_groups,
-        )
+        crate::app::outbound_manager::OutboundManager::new(&config.outbounds, &config.proxy_groups)
     }) {
         Ok(om) => Arc::new(om),
         Err(_) => return -4,
@@ -210,7 +207,11 @@ pub extern "C" fn openworld_is_running() -> i32 {
         Ok(g) => g,
         Err(_) => return 0,
     };
-    if guard.is_some() { 1 } else { 0 }
+    if guard.is_some() {
+        1
+    } else {
+        0
+    }
 }
 
 /// 获取版本号
@@ -245,7 +246,11 @@ pub extern "C" fn openworld_resume() -> i32 {
 #[no_mangle]
 pub extern "C" fn openworld_is_paused() -> i32 {
     with_instance!(|inst: &OpenWorldInstance| {
-        if inst.paused.load(Ordering::Acquire) { 1 } else { 0 }
+        if inst.paused.load(Ordering::Acquire) {
+            1
+        } else {
+            0
+        }
     })
 }
 
@@ -284,7 +289,11 @@ pub unsafe extern "C" fn openworld_select_outbound(tag: *const c_char) -> i32 {
                 }
                 false
             });
-            if result { 0 } else { -3 }
+            if result {
+                0
+            } else {
+                -3
+            }
         }
         None => -1,
     }
@@ -353,7 +362,11 @@ pub extern "C" fn openworld_has_selector() -> i32 {
                     .map(|m| m.group_type == "selector")
                     .unwrap_or(false)
             });
-            if has { 1 } else { 0 }
+            if has {
+                1
+            } else {
+                0
+            }
         }
         None => 0,
     }
@@ -464,9 +477,7 @@ pub extern "C" fn openworld_close_all_tracked_connections() -> i32 {
     match guard.as_ref() {
         Some(inst) => {
             let tracker = inst.tracker.clone();
-            let count = inst.runtime.block_on(async {
-                tracker.close_all().await
-            });
+            let count = inst.runtime.block_on(async { tracker.close_all().await });
             count as i32
         }
         None => -1,
@@ -484,9 +495,9 @@ pub extern "C" fn openworld_close_idle_connections(seconds: i64) -> i32 {
         Some(inst) => {
             let duration = std::time::Duration::from_secs(seconds.max(0) as u64);
             let tracker = inst.tracker.clone();
-            let count = inst.runtime.block_on(async {
-                tracker.close_idle(duration).await
-            });
+            let count = inst
+                .runtime
+                .block_on(async { tracker.close_idle(duration).await });
             count as i32
         }
         None => -1,
@@ -567,9 +578,9 @@ pub unsafe extern "C" fn openworld_url_test(
     match guard.as_ref() {
         Some(inst) => {
             let om = inst.outbound_manager.clone();
-            let result = inst.runtime.block_on(async {
-                om.test_delay(&tag, &test_url, timeout_ms as u64).await
-            });
+            let result = inst
+                .runtime
+                .block_on(async { om.test_delay(&tag, &test_url, timeout_ms as u64).await });
             let delay = match result {
                 Some(ms) => ms as i32,
                 None => -1,
@@ -680,9 +691,9 @@ pub extern "C" fn openworld_get_proxy_groups() -> *mut c_char {
             for (name, _handler) in om.list() {
                 if let Some(meta) = om.group_meta(name) {
                     let name_clone = name.clone();
-                    let selected = inst.runtime.block_on(async {
-                        om.group_selected(&name_clone).await
-                    });
+                    let selected = inst
+                        .runtime
+                        .block_on(async { om.group_selected(&name_clone).await });
                     groups.push(serde_json::json!({
                         "name": name,
                         "type": meta.group_type,
@@ -726,10 +737,14 @@ pub unsafe extern "C" fn openworld_set_group_selected(
 
     match guard.as_ref() {
         Some(inst) => {
-            let result = inst.runtime.block_on(async {
-                inst.outbound_manager.select_proxy(&group, &proxy).await
-            });
-            if result { 0 } else { -3 }
+            let result = inst
+                .runtime
+                .block_on(async { inst.outbound_manager.select_proxy(&group, &proxy).await });
+            if result {
+                0
+            } else {
+                -3
+            }
         }
         None => -1,
     }
@@ -769,15 +784,18 @@ pub unsafe extern "C" fn openworld_test_group_delay(
                 None => return to_c_string("[]"),
             };
 
-            let results: Vec<serde_json::Value> = proxy_names.iter().map(|name| {
-                let delay = inst.runtime.block_on(async {
-                    om.test_delay(name, &url, timeout_ms as u64).await
-                });
-                serde_json::json!({
-                    "name": name,
-                    "delay": delay.map(|d| d as i64).unwrap_or(-1),
+            let results: Vec<serde_json::Value> = proxy_names
+                .iter()
+                .map(|name| {
+                    let delay = inst
+                        .runtime
+                        .block_on(async { om.test_delay(name, &url, timeout_ms as u64).await });
+                    serde_json::json!({
+                        "name": name,
+                        "delay": delay.map(|d| d as i64).unwrap_or(-1),
+                    })
                 })
-            }).collect();
+                .collect();
 
             match serde_json::to_string(&results) {
                 Ok(json) => to_c_string(&json),
@@ -805,17 +823,20 @@ pub extern "C" fn openworld_get_active_connections() -> *mut c_char {
     match guard.as_ref() {
         Some(inst) => {
             let connections = inst.runtime.block_on(async { inst.tracker.list().await });
-            let json_list: Vec<serde_json::Value> = connections.iter().map(|c| {
-                serde_json::json!({
-                    "id": c.id,
-                    "destination": c.target,
-                    "outbound": c.outbound_tag,
-                    "network": c.network,
-                    "start_time": c.start_time.elapsed().as_secs(),
-                    "upload": c.upload,
-                    "download": c.download,
+            let json_list: Vec<serde_json::Value> = connections
+                .iter()
+                .map(|c| {
+                    serde_json::json!({
+                        "id": c.id,
+                        "destination": c.target,
+                        "outbound": c.outbound_tag,
+                        "network": c.network,
+                        "start_time": c.start_time.elapsed().as_secs(),
+                        "upload": c.upload,
+                        "download": c.download,
+                    })
                 })
-            }).collect();
+                .collect();
 
             match serde_json::to_string(&json_list) {
                 Ok(json) => to_c_string(&json),
@@ -836,7 +857,14 @@ pub extern "C" fn openworld_close_connection_by_id(id: u64) -> i32 {
 
     match guard.as_ref() {
         Some(inst) => {
-            if inst.runtime.block_on(async { inst.tracker.close(id).await }) { 0 } else { -3 }
+            if inst
+                .runtime
+                .block_on(async { inst.tracker.close(id).await })
+            {
+                0
+            } else {
+                -3
+            }
         }
         None => -1,
     }
@@ -955,7 +983,8 @@ pub unsafe extern "C" fn openworld_import_subscription(sub_url: *const c_char) -
                         serde_json::json!({
                             "count": nodes.len(),
                             "nodes": names,
-                        }).to_string()
+                        })
+                        .to_string()
                     }
                     Err(e) => serde_json::json!({"error": e.to_string()}).to_string(),
                 }
@@ -1004,7 +1033,11 @@ pub unsafe extern "C" fn openworld_set_clash_mode(mode: *const c_char) -> i32 {
         Some(s) => s,
         None => return -3,
     };
-    if crate::app::clash_mode::set_mode_str(mode_str) { 0 } else { -3 }
+    if crate::app::clash_mode::set_mode_str(mode_str) {
+        0
+    } else {
+        -3
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1233,7 +1266,8 @@ pub extern "C" fn openworld_set_config_callback(cb: OnConfigReloaded) {
 }
 
 /// 流量速率回调类型
-pub type OnTrafficRate = extern "C" fn(up_rate: u64, down_rate: u64, total_up: u64, total_down: u64);
+pub type OnTrafficRate =
+    extern "C" fn(up_rate: u64, down_rate: u64, total_up: u64, total_down: u64);
 
 static TRAFFIC_RATE_CALLBACK: OnceLock<Mutex<Option<OnTrafficRate>>> = OnceLock::new();
 
@@ -1267,7 +1301,9 @@ fn last_snapshot_lock() -> &'static Mutex<(u64, u64, std::time::Instant)> {
 pub extern "C" fn openworld_poll_traffic_rate() -> *mut c_char {
     let guard = match instance_lock().lock() {
         Ok(g) => g,
-        Err(_) => return to_c_string("{\"up_rate\":0,\"down_rate\":0,\"total_up\":0,\"total_down\":0}"),
+        Err(_) => {
+            return to_c_string("{\"up_rate\":0,\"down_rate\":0,\"total_up\":0,\"total_down\":0}")
+        }
     };
 
     match guard.as_ref() {
@@ -1278,7 +1314,8 @@ pub extern "C" fn openworld_poll_traffic_rate() -> *mut c_char {
             let (up_rate, down_rate) = if let Ok(mut last) = last_snapshot_lock().lock() {
                 let elapsed = now.duration_since(last.2).as_secs_f64().max(0.001);
                 let up_rate = ((snapshot.total_up.saturating_sub(last.0)) as f64 / elapsed) as u64;
-                let down_rate = ((snapshot.total_down.saturating_sub(last.1)) as f64 / elapsed) as u64;
+                let down_rate =
+                    ((snapshot.total_down.saturating_sub(last.1)) as f64 / elapsed) as u64;
                 *last = (snapshot.total_up, snapshot.total_down, now);
                 (up_rate, down_rate)
             } else {
@@ -1310,7 +1347,9 @@ pub extern "C" fn openworld_poll_traffic_rate() -> *mut c_char {
 /// `msg` 必须是合法的 C 字符串
 #[no_mangle]
 pub unsafe extern "C" fn openworld_emit_log(level: i32, msg: *const c_char) {
-    if msg.is_null() { return; }
+    if msg.is_null() {
+        return;
+    }
     if let Ok(s) = CStr::from_ptr(msg).to_str() {
         if let Ok(guard) = callbacks_lock().lock() {
             guard.notify_log(level, s);
@@ -1441,7 +1480,11 @@ pub unsafe extern "C" fn openworld_profile_delete(name: *const c_char) -> i32 {
     };
     with_instance!(|inst: &OpenWorldInstance| {
         let mut pm = inst.profile_manager.lock().unwrap();
-        if pm.delete(&profile_name) { 0 } else { -3 }
+        if pm.delete(&profile_name) {
+            0
+        } else {
+            -3
+        }
     })
 }
 
@@ -1502,7 +1545,11 @@ pub extern "C" fn openworld_notify_memory_low() -> i32 {
 /// 查询是否计量连接
 #[no_mangle]
 pub extern "C" fn openworld_is_network_metered() -> i32 {
-    if crate::app::platform::is_metered() { 1 } else { 0 }
+    if crate::app::platform::is_metered() {
+        1
+    } else {
+        0
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1567,12 +1614,17 @@ pub unsafe extern "C" fn openworld_provider_get_nodes(name: *const c_char) -> *m
             let json = inst.runtime.block_on(async {
                 match pm.get_nodes(&provider_name).await {
                     Some(nodes) => {
-                        let arr: Vec<_> = nodes.iter().map(|n| serde_json::json!({
-                            "name": n.name,
-                            "protocol": n.protocol,
-                            "address": n.address,
-                            "port": n.port,
-                        })).collect();
+                        let arr: Vec<_> = nodes
+                            .iter()
+                            .map(|n| {
+                                serde_json::json!({
+                                    "name": n.name,
+                                    "protocol": n.protocol,
+                                    "address": n.address,
+                                    "port": n.port,
+                                })
+                            })
+                            .collect();
                         serde_json::to_string(&arr).unwrap_or_else(|_| "[]".to_string())
                     }
                     None => "[]".to_string(),
@@ -1612,7 +1664,8 @@ pub unsafe extern "C" fn openworld_provider_add_http(
                     interval: std::time::Duration::from_secs(interval_secs.max(60) as u64),
                     path: None,
                 },
-            ).await;
+            )
+            .await;
         });
         0
     })
@@ -1632,9 +1685,9 @@ pub unsafe extern "C" fn openworld_provider_update(name: *const c_char) -> i32 {
     };
     with_instance!(|inst: &OpenWorldInstance| {
         let pm = inst.provider_manager.clone();
-        let result = inst.runtime.block_on(async {
-            pm.update_http_provider(&provider_name).await
-        });
+        let result = inst
+            .runtime
+            .block_on(async { pm.update_http_provider(&provider_name).await });
         match result {
             Ok(count) => count as i32,
             Err(_) => -4,
@@ -1658,7 +1711,11 @@ pub unsafe extern "C" fn openworld_provider_remove(name: *const c_char) -> i32 {
             let providers = pm.list_providers().await;
             providers.contains(&provider_name)
         });
-        if had { 0 } else { -3 }
+        if had {
+            0
+        } else {
+            -3
+        }
     })
 }
 
@@ -1703,7 +1760,10 @@ pub unsafe extern "C" fn openworld_get_delay_history(tag_filter: *const c_char) 
 #[no_mangle]
 pub extern "C" fn openworld_clear_delay_history() -> i32 {
     match delay_history_lock().lock() {
-        Ok(mut h) => { h.clear(); 0 }
+        Ok(mut h) => {
+            h.clear();
+            0
+        }
         Err(_) => -4,
     }
 }
@@ -1719,13 +1779,12 @@ pub unsafe extern "C" fn openworld_get_last_delay(tag: *const c_char) -> i32 {
         None => return -3,
     };
     match delay_history_lock().lock() {
-        Ok(h) => {
-            h.iter()
-                .rev()
-                .find(|r| r.outbound_tag == outbound_tag)
-                .map(|r| r.delay_ms)
-                .unwrap_or(-1)
-        }
+        Ok(h) => h
+            .iter()
+            .rev()
+            .find(|r| r.outbound_tag == outbound_tag)
+            .map(|r| r.delay_ms)
+            .unwrap_or(-1),
         Err(_) => -4,
     }
 }
@@ -1850,9 +1909,9 @@ pub extern "C" fn openworld_gc() -> i32 {
     match guard.as_ref() {
         Some(inst) => {
             let tracker = inst.tracker.clone();
-            let closed = inst.runtime.block_on(async {
-                tracker.close_idle(std::time::Duration::from_secs(30)).await
-            });
+            let closed = inst
+                .runtime
+                .block_on(async { tracker.close_idle(std::time::Duration::from_secs(30)).await });
             // 清理过旧的延迟历史（保留最近 200 条）
             if let Ok(mut history) = delay_history_lock().lock() {
                 let hlen = history.len();
@@ -1910,10 +1969,26 @@ pub unsafe extern "C" fn openworld_geo_update(
     geosite_path: *const c_char,
     geosite_url: *const c_char,
 ) -> i32 {
-    let ip_path = if geoip_path.is_null() { None } else { from_c_str(geoip_path).map(|s| s.to_string()) };
-    let ip_url = if geoip_url.is_null() { None } else { from_c_str(geoip_url).map(|s| s.to_string()) };
-    let site_path = if geosite_path.is_null() { None } else { from_c_str(geosite_path).map(|s| s.to_string()) };
-    let site_url = if geosite_url.is_null() { None } else { from_c_str(geosite_url).map(|s| s.to_string()) };
+    let ip_path = if geoip_path.is_null() {
+        None
+    } else {
+        from_c_str(geoip_path).map(|s| s.to_string())
+    };
+    let ip_url = if geoip_url.is_null() {
+        None
+    } else {
+        from_c_str(geoip_url).map(|s| s.to_string())
+    };
+    let site_path = if geosite_path.is_null() {
+        None
+    } else {
+        from_c_str(geosite_path).map(|s| s.to_string())
+    };
+    let site_url = if geosite_url.is_null() {
+        None
+    } else {
+        from_c_str(geosite_url).map(|s| s.to_string())
+    };
 
     let guard = match instance_lock().lock() {
         Ok(g) => g,
@@ -1930,9 +2005,9 @@ pub unsafe extern "C" fn openworld_geo_update(
                 auto_update: false,
             };
             let updater = crate::router::geo_update::GeoUpdater::new(config);
-            let result = inst.runtime.block_on(async {
-                updater.check_and_update().await
-            });
+            let result = inst
+                .runtime
+                .block_on(async { updater.check_and_update().await });
             match result {
                 Ok(()) => 0,
                 Err(_) => -4,
@@ -2024,7 +2099,8 @@ pub extern "C" fn openworld_wakelock_set(acquire: i32) -> i32 {
     };
     match guard.as_ref() {
         Some(inst) => {
-            inst.wakelock_held.store(acquire != 0, std::sync::atomic::Ordering::Relaxed);
+            inst.wakelock_held
+                .store(acquire != 0, std::sync::atomic::Ordering::Relaxed);
             0
         }
         None => -1,
@@ -2040,7 +2116,14 @@ pub extern "C" fn openworld_wakelock_held() -> i32 {
     };
     match guard.as_ref() {
         Some(inst) => {
-            if inst.wakelock_held.load(std::sync::atomic::Ordering::Relaxed) { 1 } else { 0 }
+            if inst
+                .wakelock_held
+                .load(std::sync::atomic::Ordering::Relaxed)
+            {
+                1
+            } else {
+                0
+            }
         }
         None => -1,
     }

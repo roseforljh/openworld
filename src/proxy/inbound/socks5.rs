@@ -21,7 +21,11 @@ pub struct Socks5Inbound {
 
 impl Socks5Inbound {
     pub fn new(tag: String, listen: String) -> Self {
-        Self { tag, listen, auth_users: Vec::new() }
+        Self {
+            tag,
+            listen,
+            auth_users: Vec::new(),
+        }
     }
 
     pub fn with_auth(mut self, users: Vec<(String, String)>) -> Self {
@@ -76,7 +80,10 @@ impl InboundHandler for Socks5Inbound {
             stream.read_exact(&mut password).await?;
             let password = String::from_utf8_lossy(&password).to_string();
 
-            let authenticated = self.auth_users.iter().any(|(u, p)| u == &username && p == &password);
+            let authenticated = self
+                .auth_users
+                .iter()
+                .any(|(u, p)| u == &username && p == &password);
 
             if !authenticated {
                 // 认证失败

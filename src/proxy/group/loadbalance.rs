@@ -58,18 +58,15 @@ impl LoadBalanceGroup {
             return 0;
         }
         match self.strategy {
-            LbStrategy::RoundRobin => {
-                self.counter.fetch_add(1, Ordering::Relaxed) % len
-            }
+            LbStrategy::RoundRobin => self.counter.fetch_add(1, Ordering::Relaxed) % len,
             LbStrategy::Random => {
                 // Simple fast random using counter + time-based seed
-                let seed = self.counter.fetch_add(1, Ordering::Relaxed)
-                    .wrapping_add(
-                        std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .subsec_nanos() as usize,
-                    );
+                let seed = self.counter.fetch_add(1, Ordering::Relaxed).wrapping_add(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .subsec_nanos() as usize,
+                );
                 seed % len
             }
             LbStrategy::ConsistentHash => {
@@ -171,16 +168,29 @@ mod tests {
             }
         }
         // At least 60% should remain stable (theoretical: ~83%)
-        assert!(same > 600, "too much disruption: {} stayed same out of 1000", same);
+        assert!(
+            same > 600,
+            "too much disruption: {} stayed same out of 1000",
+            same
+        );
     }
 
     #[test]
     fn strategy_from_str() {
         assert_eq!(LbStrategy::from_str_opt(None), LbStrategy::RoundRobin);
-        assert_eq!(LbStrategy::from_str_opt(Some("round-robin")), LbStrategy::RoundRobin);
+        assert_eq!(
+            LbStrategy::from_str_opt(Some("round-robin")),
+            LbStrategy::RoundRobin
+        );
         assert_eq!(LbStrategy::from_str_opt(Some("random")), LbStrategy::Random);
-        assert_eq!(LbStrategy::from_str_opt(Some("consistent-hash")), LbStrategy::ConsistentHash);
-        assert_eq!(LbStrategy::from_str_opt(Some("consistent-hashing")), LbStrategy::ConsistentHash);
+        assert_eq!(
+            LbStrategy::from_str_opt(Some("consistent-hash")),
+            LbStrategy::ConsistentHash
+        );
+        assert_eq!(
+            LbStrategy::from_str_opt(Some("consistent-hashing")),
+            LbStrategy::ConsistentHash
+        );
         assert_eq!(LbStrategy::from_str_opt(Some("sticky")), LbStrategy::Sticky);
     }
 }

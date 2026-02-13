@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use crypto_box::{
     aead::{Aead, AeadCore, OsRng},
-    PublicKey, SecretKey, SalsaBox,
+    PublicKey, SalsaBox, SecretKey,
 };
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::sync::{mpsc, RwLock};
@@ -75,7 +75,10 @@ impl DerpServer {
     pub fn with_key(secret_key_bytes: [u8; 32]) -> Self {
         let secret_key = SecretKey::from(secret_key_bytes);
         let public_key = secret_key.public_key();
-        info!("DERP 服务端已创建（已有密钥），公钥: {:?}", public_key.as_bytes());
+        info!(
+            "DERP 服务端已创建（已有密钥），公钥: {:?}",
+            public_key.as_bytes()
+        );
         Self {
             secret_key,
             public_key,
@@ -133,7 +136,11 @@ impl DerpServer {
             Ok(plaintext) => {
                 match serde_json::from_slice::<ClientInfoJson>(&plaintext) {
                     Ok(info) => {
-                        debug!("客户端 {:?} 已认证，版本: {}", &client_pub_bytes[..4], info.version);
+                        debug!(
+                            "客户端 {:?} 已认证，版本: {}",
+                            &client_pub_bytes[..4],
+                            info.version
+                        );
                         info
                     }
                     Err(e) => {
@@ -154,12 +161,14 @@ impl DerpServer {
         let server_info_json = serde_json::to_vec(&server_info).unwrap();
 
         let si_nonce = SalsaBox::generate_nonce(&mut OsRng);
-        let sealed = salsa_box.encrypt(&si_nonce, server_info_json.as_ref())
+        let sealed = salsa_box
+            .encrypt(&si_nonce, server_info_json.as_ref())
             .expect("加密 ServerInfo 失败");
         let nonce_bytes: [u8; NONCE_LEN] = si_nonce.into();
         let server_info_payload = build_server_info(&nonce_bytes, &sealed);
 
-        if let Err(e) = write_frame(&mut stream, FrameType::ServerInfo, &server_info_payload).await {
+        if let Err(e) = write_frame(&mut stream, FrameType::ServerInfo, &server_info_payload).await
+        {
             warn!("发送 ServerInfo 失败: {}", e);
             return;
         }
@@ -168,8 +177,10 @@ impl DerpServer {
             return;
         }
 
-        info!("DERP 客户端已连接：{:02x}{:02x}{:02x}{:02x}...",
-            client_pub_bytes[0], client_pub_bytes[1], client_pub_bytes[2], client_pub_bytes[3]);
+        info!(
+            "DERP 客户端已连接：{:02x}{:02x}{:02x}{:02x}...",
+            client_pub_bytes[0], client_pub_bytes[1], client_pub_bytes[2], client_pub_bytes[3]
+        );
 
         // ===== 4. 注册客户端 + 进入稳态 =====
         let (tx, rx) = mpsc::channel::<ClientMsg>(256);
@@ -180,10 +191,13 @@ impl DerpServer {
             if let Some(old) = clients.remove(&client_pub_bytes) {
                 let _ = old.tx.send(ClientMsg::Shutdown).await;
             }
-            clients.insert(client_pub_bytes, ConnectedClient {
-                tx: tx.clone(),
-                preferred: false,
-            });
+            clients.insert(
+                client_pub_bytes,
+                ConnectedClient {
+                    tx: tx.clone(),
+                    preferred: false,
+                },
+            );
         }
 
         // 通知其他客户端此 peer 上线
@@ -200,8 +214,10 @@ impl DerpServer {
         // 通知其他客户端此 peer 离开
         self.broadcast_peer_gone(&client_pub_bytes).await;
 
-        info!("DERP 客户端已断开：{:02x}{:02x}{:02x}{:02x}...",
-            client_pub_bytes[0], client_pub_bytes[1], client_pub_bytes[2], client_pub_bytes[3]);
+        info!(
+            "DERP 客户端已断开：{:02x}{:02x}{:02x}{:02x}...",
+            client_pub_bytes[0], client_pub_bytes[1], client_pub_bytes[2], client_pub_bytes[3]
+        );
     }
 
     /// 稳态事件循环：同时处理客户端读写和内部消息
@@ -210,8 +226,7 @@ impl DerpServer {
         stream: &mut S,
         client_key: [u8; KEY_LEN],
         mut rx: mpsc::Receiver<ClientMsg>,
-    )
-    where
+    ) where
         S: AsyncRead + AsyncWrite + Unpin + Send,
     {
         let mut keepalive_timer = interval(Duration::from_secs(KEEP_ALIVE_SECS));
@@ -322,7 +337,10 @@ impl DerpServer {
                 data: data.to_vec(),
             };
             if dst_client.tx.try_send(msg).is_err() {
-                debug!("目标客户端 {:02x}{:02x}... 缓冲区已满", dst_key[0], dst_key[1]);
+                debug!(
+                    "目标客户端 {:02x}{:02x}... 缓冲区已满",
+                    dst_key[0], dst_key[1]
+                );
             }
         } else {
             // 目标不在线 — 回复 PeerGone

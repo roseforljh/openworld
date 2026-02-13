@@ -5,14 +5,14 @@ use std::ffi::c_void;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 use std::process::Command;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
-use std::sync::Mutex;
-#[cfg(any(target_os = "linux", target_os = "windows"))]
 use std::sync::atomic::{AtomicU16, Ordering};
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+use std::sync::Mutex;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 #[cfg(any(target_os = "linux", target_os = "windows"))]
-use tokio::time::{Duration, sleep};
+use tokio::time::{sleep, Duration};
 
 /// TUN 设备平台抽象 trait
 ///
@@ -141,14 +141,15 @@ fn parse_ipv4_packet(data: &[u8]) -> Result<ParsedPacket> {
     let src_ip = IpAddr::V4(Ipv4Addr::new(data[12], data[13], data[14], data[15]));
     let dst_ip = IpAddr::V4(Ipv4Addr::new(data[16], data[17], data[18], data[19]));
 
-    let (src_port, dst_port) = if data.len() >= ihl + 4 && matches!(protocol, IpProtocol::Tcp | IpProtocol::Udp) {
-        (
-            u16::from_be_bytes([data[ihl], data[ihl + 1]]),
-            u16::from_be_bytes([data[ihl + 2], data[ihl + 3]]),
-        )
-    } else {
-        (0, 0)
-    };
+    let (src_port, dst_port) =
+        if data.len() >= ihl + 4 && matches!(protocol, IpProtocol::Tcp | IpProtocol::Udp) {
+            (
+                u16::from_be_bytes([data[ihl], data[ihl + 1]]),
+                u16::from_be_bytes([data[ihl + 2], data[ihl + 3]]),
+            )
+        } else {
+            (0, 0)
+        };
 
     Ok(ParsedPacket {
         version: 4,
@@ -180,14 +181,15 @@ fn parse_ipv6_packet(data: &[u8]) -> Result<ParsedPacket> {
     let dst_ip = IpAddr::V6(dst_bytes.into());
 
     let l4_offset = 40;
-    let (src_port, dst_port) = if data.len() >= l4_offset + 4 && matches!(protocol, IpProtocol::Tcp | IpProtocol::Udp) {
-        (
-            u16::from_be_bytes([data[l4_offset], data[l4_offset + 1]]),
-            u16::from_be_bytes([data[l4_offset + 2], data[l4_offset + 3]]),
-        )
-    } else {
-        (0, 0)
-    };
+    let (src_port, dst_port) =
+        if data.len() >= l4_offset + 4 && matches!(protocol, IpProtocol::Tcp | IpProtocol::Udp) {
+            (
+                u16::from_be_bytes([data[l4_offset], data[l4_offset + 1]]),
+                u16::from_be_bytes([data[l4_offset + 2], data[l4_offset + 3]]),
+            )
+        } else {
+            (0, 0)
+        };
 
     Ok(ParsedPacket {
         version: 6,
@@ -257,21 +259,27 @@ impl TcpReassembler {
     }
 
     pub fn track_syn(&mut self, key: TcpFlowKey, seq: u32) {
-        self.connections.insert(key, TcpFlowState {
-            state: TcpState::SynSent,
-            seq,
-            ack: 0,
-            data_buf: Vec::new(),
-        });
+        self.connections.insert(
+            key,
+            TcpFlowState {
+                state: TcpState::SynSent,
+                seq,
+                ack: 0,
+                data_buf: Vec::new(),
+            },
+        );
     }
 
     pub fn track_synack(&mut self, key: TcpFlowKey, seq: u32, ack: u32) {
-        self.connections.insert(key, TcpFlowState {
-            state: TcpState::Established,
-            seq,
-            ack,
-            data_buf: Vec::new(),
-        });
+        self.connections.insert(
+            key,
+            TcpFlowState {
+                state: TcpState::Established,
+                seq,
+                ack,
+                data_buf: Vec::new(),
+            },
+        );
     }
 
     pub fn push_data(&mut self, key: &TcpFlowKey, data: &[u8]) -> bool {
@@ -379,14 +387,17 @@ impl UdpSessionManager {
             if self.sessions.len() >= self.max_sessions {
                 self.evict_idle();
             }
-            self.sessions.insert(key, UdpSessionState {
-                created_at: now,
-                last_active: now,
-                packets_sent: 1,
-                packets_recv: 0,
-                bytes_sent: payload_len as u64,
-                bytes_recv: 0,
-            });
+            self.sessions.insert(
+                key,
+                UdpSessionState {
+                    created_at: now,
+                    last_active: now,
+                    packets_sent: 1,
+                    packets_recv: 0,
+                    bytes_sent: payload_len as u64,
+                    bytes_recv: 0,
+                },
+            );
             true
         }
     }
@@ -424,7 +435,8 @@ impl UdpSessionManager {
         let timeout = std::time::Duration::from_secs(self.idle_timeout_secs);
         let now = std::time::Instant::now();
         let before = self.sessions.len();
-        self.sessions.retain(|_, state| now.duration_since(state.last_active) < timeout);
+        self.sessions
+            .retain(|_, state| now.duration_since(state.last_active) < timeout);
         before - self.sessions.len()
     }
 
@@ -554,7 +566,8 @@ impl IpFragmentReassembler {
         let timeout = std::time::Duration::from_secs(self.timeout_secs);
         let now = std::time::Instant::now();
         let before = self.fragments.len();
-        self.fragments.retain(|_, group| now.duration_since(group.created_at) < timeout);
+        self.fragments
+            .retain(|_, group| now.duration_since(group.created_at) < timeout);
         before - self.fragments.len()
     }
 
@@ -727,8 +740,14 @@ impl SystemProxy {
         {
             for service in &["Wi-Fi", "Ethernet"] {
                 cmds.push(format!("networksetup -setwebproxystate {} off", service));
-                cmds.push(format!("networksetup -setsecurewebproxystate {} off", service));
-                cmds.push(format!("networksetup -setsocksfirewallproxystate {} off", service));
+                cmds.push(format!(
+                    "networksetup -setsecurewebproxystate {} off",
+                    service
+                ));
+                cmds.push(format!(
+                    "networksetup -setsocksfirewallproxystate {} off",
+                    service
+                ));
             }
         }
 
@@ -786,10 +805,7 @@ impl SystemProxy {
                 key, enable
             ))?;
         } else {
-            run_platform_shell_command(&format!(
-                r#"reg delete "{}" /v ProxyEnable /f"#,
-                key
-            ))?;
+            run_platform_shell_command(&format!(r#"reg delete "{}" /v ProxyEnable /f"#, key))?;
         }
 
         if let Some(ref server) = state.proxy_server {
@@ -798,10 +814,7 @@ impl SystemProxy {
                 key, server
             ))?;
         } else {
-            run_platform_shell_command(&format!(
-                r#"reg delete "{}" /v ProxyServer /f"#,
-                key
-            ))?;
+            run_platform_shell_command(&format!(r#"reg delete "{}" /v ProxyServer /f"#, key))?;
         }
 
         if let Some(ref override_list) = state.proxy_override {
@@ -810,10 +823,7 @@ impl SystemProxy {
                 key, override_list
             ))?;
         } else {
-            run_platform_shell_command(&format!(
-                r#"reg delete "{}" /v ProxyOverride /f"#,
-                key
-            ))?;
+            run_platform_shell_command(&format!(r#"reg delete "{}" /v ProxyOverride /f"#, key))?;
         }
 
         Ok(())
@@ -840,19 +850,17 @@ fn query_windows_internet_settings(name: &str) -> Option<String> {
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout
-        .lines()
-        .find_map(|line| {
-            let trimmed = line.trim();
-            if !trimmed.starts_with(name) {
-                return None;
-            }
-            let parts: Vec<&str> = trimmed.split_whitespace().collect();
-            if parts.len() < 3 {
-                return None;
-            }
-            Some(parts[2..].join(" "))
-        })
+    stdout.lines().find_map(|line| {
+        let trimmed = line.trim();
+        if !trimmed.starts_with(name) {
+            return None;
+        }
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        if parts.len() < 3 {
+            return None;
+        }
+        Some(parts[2..].join(" "))
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1023,11 +1031,14 @@ impl TransparentProxyManager {
     #[cfg(target_os = "linux")]
     fn generate_iptables_cleanup_commands(&self) -> Vec<String> {
         vec![
-            "iptables -t nat -D PREROUTING -p tcp -j OPENWORLD_REDIRECT 2>/dev/null || true".to_string(),
+            "iptables -t nat -D PREROUTING -p tcp -j OPENWORLD_REDIRECT 2>/dev/null || true"
+                .to_string(),
             "iptables -t nat -F OPENWORLD_REDIRECT 2>/dev/null || true".to_string(),
             "iptables -t nat -X OPENWORLD_REDIRECT 2>/dev/null || true".to_string(),
-            "iptables -t mangle -D PREROUTING -p tcp -j OPENWORLD_TPROXY 2>/dev/null || true".to_string(),
-            "iptables -t mangle -D PREROUTING -p udp -j OPENWORLD_TPROXY 2>/dev/null || true".to_string(),
+            "iptables -t mangle -D PREROUTING -p tcp -j OPENWORLD_TPROXY 2>/dev/null || true"
+                .to_string(),
+            "iptables -t mangle -D PREROUTING -p udp -j OPENWORLD_TPROXY 2>/dev/null || true"
+                .to_string(),
             "iptables -t mangle -F OPENWORLD_TPROXY 2>/dev/null || true".to_string(),
             "iptables -t mangle -X OPENWORLD_TPROXY 2>/dev/null || true".to_string(),
             format!(
@@ -1372,11 +1383,8 @@ impl WintunDevice {
                 .context("failed to resolve WintunReceivePacket")?
         };
         let release_receive_packet = unsafe {
-            load_proc::<WintunReleaseReceivePacketFn>(
-                module,
-                b"WintunReleaseReceivePacket\0",
-            )
-            .context("failed to resolve WintunReleaseReceivePacket")?
+            load_proc::<WintunReleaseReceivePacketFn>(module, b"WintunReleaseReceivePacket\0")
+                .context("failed to resolve WintunReleaseReceivePacket")?
         };
 
         Ok(WintunApi {
@@ -1500,7 +1508,8 @@ impl TunDevice for WintunDevice {
                     .ok_or_else(|| anyhow::anyhow!("wintun runtime is not initialized"))?;
 
                 let mut packet_len = 0u32;
-                let packet_ptr = unsafe { (runtime.api.receive_packet)(runtime.session, &mut packet_len) };
+                let packet_ptr =
+                    unsafe { (runtime.api.receive_packet)(runtime.session, &mut packet_len) };
                 if packet_ptr.is_null() {
                     let err = std::io::Error::last_os_error();
                     if err.raw_os_error() == Some(ERROR_NO_MORE_ITEMS) {
@@ -1556,8 +1565,9 @@ impl TunDevice for WintunDevice {
                 let runtime = runtime_guard
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("wintun runtime is not initialized"))?;
-                let packet_ptr =
-                    unsafe { (runtime.api.allocate_send_packet)(runtime.session, buf.len() as u32) };
+                let packet_ptr = unsafe {
+                    (runtime.api.allocate_send_packet)(runtime.session, buf.len() as u32)
+                };
 
                 if packet_ptr.is_null() {
                     let err = std::io::Error::last_os_error();
@@ -1656,15 +1666,13 @@ type WintunStartSessionFn =
 type WintunEndSessionFn = unsafe extern "system" fn(WintunSessionHandle);
 
 #[cfg(target_os = "windows")]
-type WintunAllocateSendPacketFn =
-    unsafe extern "system" fn(WintunSessionHandle, u32) -> *mut u8;
+type WintunAllocateSendPacketFn = unsafe extern "system" fn(WintunSessionHandle, u32) -> *mut u8;
 
 #[cfg(target_os = "windows")]
 type WintunSendPacketFn = unsafe extern "system" fn(WintunSessionHandle, *const u8);
 
 #[cfg(target_os = "windows")]
-type WintunReceivePacketFn =
-    unsafe extern "system" fn(WintunSessionHandle, *mut u32) -> *mut u8;
+type WintunReceivePacketFn = unsafe extern "system" fn(WintunSessionHandle, *mut u32) -> *mut u8;
 
 #[cfg(target_os = "windows")]
 type WintunReleaseReceivePacketFn = unsafe extern "system" fn(WintunSessionHandle, *const u8);
@@ -1862,7 +1870,10 @@ impl LinuxTunDevice {
     pub fn ip_config_commands(&self, address: &str, netmask_prefix: u8) -> Vec<String> {
         vec![
             format!("ip link set {} up", self.name),
-            format!("ip addr add {}/{} dev {}", address, netmask_prefix, self.name),
+            format!(
+                "ip addr add {}/{} dev {}",
+                address, netmask_prefix, self.name
+            ),
             format!("ip link set {} mtu {}", self.name, self.mtu()),
         ]
     }
@@ -2261,7 +2272,6 @@ impl TunDevice for AndroidFdTunDevice {
     }
 }
 
-
 /// 路由表操作抽象
 pub struct RouteManager {
     original_routes: Vec<RouteEntry>,
@@ -2299,7 +2309,10 @@ impl RouteManager {
         let mut cmds = Vec::new();
         #[cfg(target_os = "windows")]
         {
-            cmds.push(format!("route add 0.0.0.0 mask 0.0.0.0 198.18.0.1 metric 1 if {}", tun_name));
+            cmds.push(format!(
+                "route add 0.0.0.0 mask 0.0.0.0 198.18.0.1 metric 1 if {}",
+                tun_name
+            ));
         }
         #[cfg(target_os = "linux")]
         {
@@ -2309,16 +2322,28 @@ impl RouteManager {
         #[cfg(target_os = "macos")]
         {
             cmds.push(format!("route add -net 0.0.0.0/1 -interface {}", tun_name));
-            cmds.push(format!("route add -net 128.0.0.0/1 -interface {}", tun_name));
+            cmds.push(format!(
+                "route add -net 128.0.0.0/1 -interface {}",
+                tun_name
+            ));
         }
         // 添加排除路由
         for route in &self.original_routes {
             #[cfg(target_os = "windows")]
-            cmds.push(format!("route add {} mask 255.255.255.255 {}", route.destination, route.gateway));
+            cmds.push(format!(
+                "route add {} mask 255.255.255.255 {}",
+                route.destination, route.gateway
+            ));
             #[cfg(target_os = "linux")]
-            cmds.push(format!("ip route add {} via {} dev {}", route.destination, route.gateway, route.interface));
+            cmds.push(format!(
+                "ip route add {} via {} dev {}",
+                route.destination, route.gateway, route.interface
+            ));
             #[cfg(target_os = "macos")]
-            cmds.push(format!("route add -host {} {}", route.destination, route.gateway));
+            cmds.push(format!(
+                "route add -host {} {}",
+                route.destination, route.gateway
+            ));
         }
         cmds
     }
@@ -2332,7 +2357,8 @@ mod tests {
     fn build_ipv4_tcp(src: [u8; 4], dst: [u8; 4], src_port: u16, dst_port: u16) -> Vec<u8> {
         let mut pkt = vec![0u8; 40];
         pkt[0] = 0x45; // version=4, IHL=5
-        pkt[2] = 0; pkt[3] = 40; // total length = 40
+        pkt[2] = 0;
+        pkt[3] = 40; // total length = 40
         pkt[9] = 6; // TCP
         pkt[12..16].copy_from_slice(&src);
         pkt[16..20].copy_from_slice(&dst);
@@ -2344,7 +2370,8 @@ mod tests {
     fn build_ipv6_udp(src: [u8; 16], dst: [u8; 16], src_port: u16, dst_port: u16) -> Vec<u8> {
         let mut pkt = vec![0u8; 48];
         pkt[0] = 0x60; // version=6
-        pkt[4] = 0; pkt[5] = 8; // payload length = 8
+        pkt[4] = 0;
+        pkt[5] = 8; // payload length = 8
         pkt[6] = 17; // UDP
         pkt[8..24].copy_from_slice(&src);
         pkt[24..40].copy_from_slice(&dst);
@@ -2648,7 +2675,8 @@ mod tests {
         };
 
         // First fragment: offset=0, MF=1, 8 bytes
-        let result = reassembler.add_fragment(key.clone(), 0, vec![1, 2, 3, 4, 5, 6, 7, 8], true, 17);
+        let result =
+            reassembler.add_fragment(key.clone(), 0, vec![1, 2, 3, 4, 5, 6, 7, 8], true, 17);
         assert!(result.is_none());
 
         // Second fragment: offset=1 (=8 bytes), MF=0, 4 bytes
@@ -2668,11 +2696,18 @@ mod tests {
         };
 
         // Second fragment first: offset=1, MF=0
-        let result = reassembler.add_fragment(key.clone(), 1, vec![9, 10, 11, 12, 13, 14, 15, 16], false, 6);
+        let result = reassembler.add_fragment(
+            key.clone(),
+            1,
+            vec![9, 10, 11, 12, 13, 14, 15, 16],
+            false,
+            6,
+        );
         assert!(result.is_none());
 
         // First fragment: offset=0, MF=1
-        let result = reassembler.add_fragment(key.clone(), 0, vec![1, 2, 3, 4, 5, 6, 7, 8], true, 6);
+        let result =
+            reassembler.add_fragment(key.clone(), 0, vec![1, 2, 3, 4, 5, 6, 7, 8], true, 6);
         assert!(result.is_some());
         let data = result.unwrap();
         assert_eq!(data.len(), 16);
@@ -2690,7 +2725,8 @@ mod tests {
         };
 
         // Only one fragment with MF=1, missing the last
-        let result = reassembler.add_fragment(key.clone(), 0, vec![1, 2, 3, 4, 5, 6, 7, 8], true, 17);
+        let result =
+            reassembler.add_fragment(key.clone(), 0, vec![1, 2, 3, 4, 5, 6, 7, 8], true, 17);
         assert!(result.is_none());
         assert_eq!(reassembler.group_count(), 1);
     }
@@ -2746,8 +2782,7 @@ mod tests {
 
     #[test]
     fn system_proxy_with_socks() {
-        let proxy = SystemProxy::new("127.0.0.1".to_string(), 7890)
-            .with_socks_port(7891);
+        let proxy = SystemProxy::new("127.0.0.1".to_string(), 7890).with_socks_port(7891);
         assert_eq!(proxy.socks_port(), Some(7891));
     }
 
@@ -2848,8 +2883,7 @@ mod tests {
 
     #[test]
     fn dns_hijack_with_upstream() {
-        let hijack = DnsHijack::new(true)
-            .with_upstream(vec!["1.1.1.1".to_string()]);
+        let hijack = DnsHijack::new(true).with_upstream(vec!["1.1.1.1".to_string()]);
         assert_eq!(hijack.upstream_servers(), &["1.1.1.1"]);
     }
 
@@ -2946,7 +2980,8 @@ mod tests {
         let dst = [0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2];
         let mut pkt = vec![0u8; 48];
         pkt[0] = 0x60;
-        pkt[4] = 0; pkt[5] = 8;
+        pkt[4] = 0;
+        pkt[5] = 8;
         pkt[6] = 58; // ICMPv6
         pkt[8..24].copy_from_slice(&src);
         pkt[24..40].copy_from_slice(&dst);
@@ -2978,7 +3013,8 @@ mod tests {
     #[test]
     fn wintun_device_adapter_params() {
         let config = TunConfig::default();
-        let device = WintunDevice::new(&config).unwrap()
+        let device = WintunDevice::new(&config)
+            .unwrap()
             .with_guid("test-guid".to_string())
             .with_ring_capacity(0x200000);
         let params = device.adapter_params();
@@ -3015,7 +3051,10 @@ mod tests {
         let device = LinuxTunDevice::new(&config).unwrap();
         let params = device.ioctl_params();
         assert_eq!(params.name, config.name);
-        assert_eq!(params.flags, LinuxTunFlags::IFF_TUN | LinuxTunFlags::IFF_NO_PI);
+        assert_eq!(
+            params.flags,
+            LinuxTunFlags::IFF_TUN | LinuxTunFlags::IFF_NO_PI
+        );
         assert_eq!(params.mtu, 1500);
     }
 

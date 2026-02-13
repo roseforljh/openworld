@@ -86,12 +86,18 @@ pub struct Dialer {
 
 impl Dialer {
     pub fn new(config: DialerConfig) -> Self {
-        Self { config, resolver: None }
+        Self {
+            config,
+            resolver: None,
+        }
     }
 
     /// Create a dialer with a custom domain resolver.
     pub fn with_resolver(config: DialerConfig, resolver: Arc<dyn DnsResolver>) -> Self {
-        Self { config, resolver: Some(resolver) }
+        Self {
+            config,
+            resolver: Some(resolver),
+        }
     }
 
     /// Create a dialer with default settings.
@@ -106,11 +112,9 @@ impl Dialer {
     pub async fn connect(&self, addr: SocketAddr) -> Result<TcpStream> {
         let timeout = self.config.connect_timeout();
 
-        let stream = tokio::time::timeout(timeout, async {
-            self.connect_inner(addr).await
-        })
-        .await
-        .map_err(|_| anyhow::anyhow!("connect timeout after {:?} to {}", timeout, addr))??;
+        let stream = tokio::time::timeout(timeout, async { self.connect_inner(addr).await })
+            .await
+            .map_err(|_| anyhow::anyhow!("connect timeout after {:?} to {}", timeout, addr))??;
 
         // Apply post-connect options
         self.apply_post_connect(&stream)?;
@@ -136,7 +140,8 @@ impl Dialer {
                 port,
                 timeout_ms,
                 self.resolver.as_deref(),
-            ).await?;
+            )
+            .await?;
             self.apply_post_connect(&stream)?;
             Ok(stream)
         } else {
@@ -150,7 +155,9 @@ impl Dialer {
     async fn resolve_host(&self, host: &str, port: u16) -> Result<SocketAddr> {
         if let Some(resolver) = &self.resolver {
             let ips = resolver.resolve(host).await?;
-            let ip = ips.into_iter().next()
+            let ip = ips
+                .into_iter()
+                .next()
                 .ok_or_else(|| anyhow::anyhow!("DNS resolution failed for {}", host))?;
             Ok(SocketAddr::new(ip, port))
         } else {
@@ -158,8 +165,11 @@ impl Dialer {
             let addrs = tokio::task::spawn_blocking(move || {
                 use std::net::ToSocketAddrs;
                 addr_str.to_socket_addrs()
-            }).await??;
-            addrs.into_iter().next()
+            })
+            .await??;
+            addrs
+                .into_iter()
+                .next()
                 .ok_or_else(|| anyhow::anyhow!("DNS resolution failed for {}:{}", host, port))
         }
     }
@@ -252,8 +262,8 @@ impl Dialer {
         if let Some(interval) = self.config.tcp_keep_alive_secs {
             if interval > 0 {
                 let sock_ref = socket2::SockRef::from(stream);
-                let keepalive = socket2::TcpKeepalive::new()
-                    .with_time(Duration::from_secs(interval));
+                let keepalive =
+                    socket2::TcpKeepalive::new().with_time(Duration::from_secs(interval));
                 sock_ref.set_tcp_keepalive(&keepalive)?;
             }
         }

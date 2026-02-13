@@ -294,25 +294,24 @@ impl TuicConnectionManager {
         // 设置拥塞控制算法
         match self.congestion {
             CongestionControl::Bbr => {
-                transport_config.congestion_controller_factory(
-                    Arc::new(quinn::congestion::BbrConfig::default()),
-                );
+                transport_config.congestion_controller_factory(Arc::new(
+                    quinn::congestion::BbrConfig::default(),
+                ));
             }
             CongestionControl::NewReno => {
-                transport_config.congestion_controller_factory(
-                    Arc::new(quinn::congestion::NewRenoConfig::default()),
-                );
+                transport_config.congestion_controller_factory(Arc::new(
+                    quinn::congestion::NewRenoConfig::default(),
+                ));
             }
             CongestionControl::Cubic => {
-                transport_config.congestion_controller_factory(
-                    Arc::new(quinn::congestion::CubicConfig::default()),
-                );
+                transport_config.congestion_controller_factory(Arc::new(
+                    quinn::congestion::CubicConfig::default(),
+                ));
             }
         }
         client_config.transport_config(Arc::new(transport_config));
 
-        let mut endpoint =
-            quinn::Endpoint::client("0.0.0.0:0".parse::<std::net::SocketAddr>()?)?;
+        let mut endpoint = quinn::Endpoint::client("0.0.0.0:0".parse::<std::net::SocketAddr>()?)?;
         endpoint.set_default_client_config(client_config);
 
         let addr_str = format!("{}:{}", self.server_addr, self.server_port);
@@ -366,8 +365,8 @@ fn compute_tuic_token(uuid: &[u8; 16], password: &str) -> Vec<u8> {
     use hmac::{Hmac, Mac};
     use sha2::Sha256;
     type HmacSha256 = Hmac<Sha256>;
-    let mut mac = HmacSha256::new_from_slice(password.as_bytes())
-        .expect("HMAC can take key of any size");
+    let mut mac =
+        HmacSha256::new_from_slice(password.as_bytes()).expect("HMAC can take key of any size");
     mac.update(uuid);
     mac.finalize().into_bytes().to_vec()
 }
@@ -485,8 +484,7 @@ struct TuicUdpTransport {
 impl UdpTransport for TuicUdpTransport {
     async fn send(&self, packet: UdpPacket) -> Result<()> {
         let frame = PacketFrame::new_single(self.assoc_id, &packet.addr, &packet.data);
-        self.connection
-            .send_datagram(Bytes::from(frame.encode()))?;
+        self.connection.send_datagram(Bytes::from(frame.encode()))?;
         Ok(())
     }
 
@@ -529,13 +527,13 @@ impl UdpTransport for TuicUdpTransport {
                         continue;
                     }
                     let ip = std::net::Ipv4Addr::new(
-                        datagram[8], datagram[9], datagram[10], datagram[11],
+                        datagram[8],
+                        datagram[9],
+                        datagram[10],
+                        datagram[11],
                     );
                     let port = u16::from_be_bytes([datagram[12], datagram[13]]);
-                    (
-                        Address::Ip(std::net::SocketAddr::new(ip.into(), port)),
-                        14,
-                    )
+                    (Address::Ip(std::net::SocketAddr::new(ip.into(), port)), 14)
                 }
                 0x02 => {
                     if datagram.len() < 26 {
@@ -545,10 +543,7 @@ impl UdpTransport for TuicUdpTransport {
                     octets.copy_from_slice(&datagram[8..24]);
                     let ip = std::net::Ipv6Addr::from(octets);
                     let port = u16::from_be_bytes([datagram[24], datagram[25]]);
-                    (
-                        Address::Ip(std::net::SocketAddr::new(ip.into(), port)),
-                        26,
-                    )
+                    (Address::Ip(std::net::SocketAddr::new(ip.into(), port)), 26)
                 }
                 _ => continue,
             };
@@ -570,7 +565,10 @@ mod tests {
 
     #[test]
     fn tuic_command_from_byte() {
-        assert_eq!(TuicCommand::from_byte(0x00), Some(TuicCommand::Authenticate));
+        assert_eq!(
+            TuicCommand::from_byte(0x00),
+            Some(TuicCommand::Authenticate)
+        );
         assert_eq!(TuicCommand::from_byte(0x01), Some(TuicCommand::Connect));
         assert_eq!(TuicCommand::from_byte(0x02), Some(TuicCommand::Packet));
         assert_eq!(TuicCommand::from_byte(0x03), Some(TuicCommand::Dissociate));
@@ -644,10 +642,22 @@ mod tests {
     fn congestion_control_from_str() {
         assert_eq!(CongestionControl::from_str("bbr"), CongestionControl::Bbr);
         assert_eq!(CongestionControl::from_str("BBR"), CongestionControl::Bbr);
-        assert_eq!(CongestionControl::from_str("new_reno"), CongestionControl::NewReno);
-        assert_eq!(CongestionControl::from_str("newreno"), CongestionControl::NewReno);
-        assert_eq!(CongestionControl::from_str("cubic"), CongestionControl::Cubic);
-        assert_eq!(CongestionControl::from_str("unknown"), CongestionControl::Cubic);
+        assert_eq!(
+            CongestionControl::from_str("new_reno"),
+            CongestionControl::NewReno
+        );
+        assert_eq!(
+            CongestionControl::from_str("newreno"),
+            CongestionControl::NewReno
+        );
+        assert_eq!(
+            CongestionControl::from_str("cubic"),
+            CongestionControl::Cubic
+        );
+        assert_eq!(
+            CongestionControl::from_str("unknown"),
+            CongestionControl::Cubic
+        );
     }
 
     #[test]

@@ -64,9 +64,7 @@ pub enum Hy2RequestType {
 }
 
 /// 从 QUIC 双向流中解析 Hysteria2 TCP 请求头
-pub async fn parse_tcp_request(
-    recv: &mut quinn::RecvStream,
-) -> Result<Hy2InboundRequest> {
+pub async fn parse_tcp_request(recv: &mut quinn::RecvStream) -> Result<Hy2InboundRequest> {
     use crate::proxy::outbound::hysteria2::protocol::decode_varint_from_buf;
 
     // 读取足够的数据：request_id(varint) + addr_len(varint) + addr + padding_len(varint) + padding

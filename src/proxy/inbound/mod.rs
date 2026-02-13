@@ -1,6 +1,7 @@
 pub mod dns_hijack;
 pub mod http;
 pub mod hysteria2;
+pub mod icmp;
 pub mod mixed;
 pub mod shadowsocks;
 pub mod socks5;
@@ -11,5 +12,4 @@ pub mod tun_device;
 pub mod tun_stack;
 pub mod vless;
 pub mod vmess;
-pub mod icmp;
 pub mod wireguard_endpoint;

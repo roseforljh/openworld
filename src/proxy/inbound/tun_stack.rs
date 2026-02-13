@@ -478,14 +478,9 @@ impl TunStack {
 
         {
             let st = state.lock().await;
-            if let Ok(syn_ack) = build_tcp_packet_ipv4(
-                dst,
-                src,
-                st.server_seq_next,
-                st.client_seq_next,
-                0x12,
-                &[],
-            ) {
+            if let Ok(syn_ack) =
+                build_tcp_packet_ipv4(dst, src, st.server_seq_next, st.client_seq_next, 0x12, &[])
+            {
                 let _ = device.write_packet(&syn_ack).await;
             }
         }
@@ -560,7 +555,8 @@ impl TunStack {
             }
             // Cleanup
             this.tcp_connections.lock().await.remove(&conn_key);
-            this.active_tcp.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            this.active_tcp
+                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         });
 
         debug!(
@@ -681,7 +677,8 @@ fn build_udp_reply_packet(src: SocketAddr, dst: SocketAddr, payload: &[u8]) -> R
 
             packet[20..22].copy_from_slice(&src.port().to_be_bytes());
             packet[22..24].copy_from_slice(&dst.port().to_be_bytes());
-            packet[24..26].copy_from_slice(&((udp_header_len + payload.len()) as u16).to_be_bytes());
+            packet[24..26]
+                .copy_from_slice(&((udp_header_len + payload.len()) as u16).to_be_bytes());
             packet[26..28].copy_from_slice(&0u16.to_be_bytes());
             packet[28..].copy_from_slice(payload);
 
@@ -835,8 +832,22 @@ mod tests {
         assert!(packet.len() >= 28 + payload.len());
         assert_eq!(packet[0] >> 4, 4);
         assert_eq!(packet[9], 17);
-        assert_eq!(&packet[12..16], &src.ip().to_string().parse::<std::net::Ipv4Addr>().unwrap().octets());
-        assert_eq!(&packet[16..20], &dst.ip().to_string().parse::<std::net::Ipv4Addr>().unwrap().octets());
+        assert_eq!(
+            &packet[12..16],
+            &src.ip()
+                .to_string()
+                .parse::<std::net::Ipv4Addr>()
+                .unwrap()
+                .octets()
+        );
+        assert_eq!(
+            &packet[16..20],
+            &dst.ip()
+                .to_string()
+                .parse::<std::net::Ipv4Addr>()
+                .unwrap()
+                .octets()
+        );
         assert_eq!(u16::from_be_bytes([packet[20], packet[21]]), 53);
         assert_eq!(u16::from_be_bytes([packet[22], packet[23]]), 53000);
         assert_eq!(&packet[28..], payload);
@@ -861,8 +872,14 @@ mod tests {
         assert_eq!(packet[9], 6);
         assert_eq!(u16::from_be_bytes([packet[20], packet[21]]), 443);
         assert_eq!(u16::from_be_bytes([packet[22], packet[23]]), 50000);
-        assert_eq!(u32::from_be_bytes([packet[24], packet[25], packet[26], packet[27]]), 100);
-        assert_eq!(u32::from_be_bytes([packet[28], packet[29], packet[30], packet[31]]), 200);
+        assert_eq!(
+            u32::from_be_bytes([packet[24], packet[25], packet[26], packet[27]]),
+            100
+        );
+        assert_eq!(
+            u32::from_be_bytes([packet[28], packet[29], packet[30], packet[31]]),
+            200
+        );
         assert_eq!(packet[33], 0x18);
         assert_eq!(&packet[40..], payload);
     }

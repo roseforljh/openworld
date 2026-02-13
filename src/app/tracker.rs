@@ -115,9 +115,7 @@ impl ConnectionTracker {
 
         // 更新 per-outbound 连接计数
         if let Ok(mut ot) = self.outbound_traffic.lock() {
-            ot.entry(outbound_tag.to_string())
-                .or_default()
-                .connections += 1;
+            ot.entry(outbound_tag.to_string()).or_default().connections += 1;
         }
 
         let tracked = TrackedConnection {
@@ -182,10 +180,7 @@ impl ConnectionTracker {
 
     /// 同步获取活跃连接数（FFI 使用）
     pub fn active_count_sync(&self) -> usize {
-        self.connections
-            .try_read()
-            .map(|c| c.len())
-            .unwrap_or(0)
+        self.connections.try_read().map(|c| c.len()).unwrap_or(0)
     }
 
     /// 关闭指定连接（从跟踪中移除）

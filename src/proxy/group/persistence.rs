@@ -68,11 +68,14 @@ impl GroupPersistence {
 
     /// 更新某个组的选中节点
     pub fn set_selected(&mut self, group: &str, selected: &str) {
-        let entry = self.state.entry(group.to_string()).or_insert_with(|| GroupState {
-            selected: selected.to_string(),
-            best_latency_ms: None,
-            last_check_epoch: None,
-        });
+        let entry = self
+            .state
+            .entry(group.to_string())
+            .or_insert_with(|| GroupState {
+                selected: selected.to_string(),
+                best_latency_ms: None,
+                last_check_epoch: None,
+            });
         entry.selected = selected.to_string();
     }
 

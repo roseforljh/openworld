@@ -54,7 +54,12 @@ fn tracker_route_stats_from_track() {
         };
 
         let _guard = tracker
-            .track(&session, "direct", "domain-suffix(example.com)", Some("domain-suffix(example.com)"))
+            .track(
+                &session,
+                "direct",
+                "domain-suffix(example.com)",
+                Some("domain-suffix(example.com)"),
+            )
             .await;
 
         let stats = tracker.route_stats();

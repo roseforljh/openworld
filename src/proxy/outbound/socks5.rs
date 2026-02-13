@@ -9,7 +9,9 @@ use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
 use tracing::debug;
 
-use crate::common::{Address, BoxUdpTransport, Dialer, DialerConfig, ProxyStream, UdpPacket, UdpTransport};
+use crate::common::{
+    Address, BoxUdpTransport, Dialer, DialerConfig, ProxyStream, UdpPacket, UdpTransport,
+};
 use crate::config::types::OutboundConfig;
 use crate::proxy::{OutboundHandler, Session};
 
@@ -31,12 +33,13 @@ pub struct Socks5Outbound {
 impl Socks5Outbound {
     pub fn new(config: &OutboundConfig) -> Result<Self> {
         let settings = &config.settings;
-        let address = settings.address.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("socks5 outbound '{}' missing 'address'", config.tag)
-        })?;
-        let port = settings.port.ok_or_else(|| {
-            anyhow::anyhow!("socks5 outbound '{}' missing 'port'", config.tag)
-        })?;
+        let address = settings
+            .address
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("socks5 outbound '{}' missing 'address'", config.tag))?;
+        let port = settings
+            .port
+            .ok_or_else(|| anyhow::anyhow!("socks5 outbound '{}' missing 'port'", config.tag))?;
 
         let username = settings.username.clone().or_else(|| settings.uuid.clone());
         let password = settings.password.clone();
@@ -83,7 +86,10 @@ impl Socks5Outbound {
         stream.read_exact(&mut resp).await?;
 
         if resp[0] != 0x05 {
-            anyhow::bail!("socks5: server returned unsupported version: 0x{:02x}", resp[0]);
+            anyhow::bail!(
+                "socks5: server returned unsupported version: 0x{:02x}",
+                resp[0]
+            );
         }
 
         match resp[1] {
@@ -108,7 +114,10 @@ impl Socks5Outbound {
                 stream.read_exact(&mut auth_resp).await?;
 
                 if auth_resp[1] != 0x00 {
-                    anyhow::bail!("socks5: authentication failed (status: 0x{:02x})", auth_resp[1]);
+                    anyhow::bail!(
+                        "socks5: authentication failed (status: 0x{:02x})",
+                        auth_resp[1]
+                    );
                 }
                 debug!("socks5: authentication successful");
             }
@@ -132,7 +141,7 @@ impl Socks5Outbound {
     ) -> Result<Address> {
         let mut req = BytesMut::with_capacity(64);
         req.put_u8(0x05); // VER
-        req.put_u8(cmd);  // CMD
+        req.put_u8(cmd); // CMD
         req.put_u8(0x00); // RSV
 
         // 编码目标地址 [ATYP][ADDR][PORT]
@@ -159,7 +168,11 @@ impl Socks5Outbound {
                 0x08 => "address type not supported",
                 _ => "unknown error",
             };
-            anyhow::bail!("socks5: request failed: {} (0x{:02x})", reason, resp_head[1]);
+            anyhow::bail!(
+                "socks5: request failed: {} (0x{:02x})",
+                reason,
+                resp_head[1]
+            );
         }
 
         // 读取 BND.ADDR
@@ -216,13 +229,17 @@ impl OutboundHandler for Socks5Outbound {
         debug!(target = %session.target, server = %self.server_addr, port = self.server_port, "socks5 CONNECT");
 
         let dialer = self.dialer();
-        let mut stream = dialer.connect_host(&self.server_addr, self.server_port).await?;
+        let mut stream = dialer
+            .connect_host(&self.server_addr, self.server_port)
+            .await?;
 
         // 握手 + 认证
         self.handshake(&mut stream).await?;
 
         // 发送 CONNECT 命令
-        let _bind = self.send_request(&mut stream, 0x01, &session.target).await?;
+        let _bind = self
+            .send_request(&mut stream, 0x01, &session.target)
+            .await?;
 
         debug!(target = %session.target, "socks5 CONNECT tunnel established");
         Ok(Box::new(stream))
@@ -232,21 +249,27 @@ impl OutboundHandler for Socks5Outbound {
         debug!(target = %session.target, server = %self.server_addr, port = self.server_port, "socks5 UDP ASSOCIATE");
 
         let dialer = self.dialer();
-        let mut tcp_stream = dialer.connect_host(&self.server_addr, self.server_port).await?;
+        let mut tcp_stream = dialer
+            .connect_host(&self.server_addr, self.server_port)
+            .await?;
 
         // 握手 + 认证
         self.handshake(&mut tcp_stream).await?;
 
         // 发送 UDP ASSOCIATE 命令（目标为 0.0.0.0:0 表示任意地址）
         let placeholder = Address::Ip(SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0));
-        let bind_addr = self.send_request(&mut tcp_stream, 0x03, &placeholder).await?;
+        let bind_addr = self
+            .send_request(&mut tcp_stream, 0x03, &placeholder)
+            .await?;
 
         // 解析服务器绑定的 UDP 中继地址
         let relay_addr: SocketAddr = match &bind_addr {
             Address::Ip(addr) => {
                 // 如果服务器返回 0.0.0.0，使用 TCP 连接的服务器地址
                 if addr.ip().is_unspecified() {
-                    let ip: IpAddr = self.server_addr.parse()
+                    let ip: IpAddr = self
+                        .server_addr
+                        .parse()
                         .unwrap_or(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
                     SocketAddr::new(ip, addr.port())
                 } else {
@@ -258,15 +281,20 @@ impl OutboundHandler for Socks5Outbound {
                 let addrs: Vec<SocketAddr> = tokio::net::lookup_host(format!("{}:{}", host, port))
                     .await?
                     .collect();
-                *addrs.first()
-                    .ok_or_else(|| anyhow::anyhow!("socks5: cannot resolve UDP relay address: {}", host))?
+                *addrs.first().ok_or_else(|| {
+                    anyhow::anyhow!("socks5: cannot resolve UDP relay address: {}", host)
+                })?
             }
         };
 
         debug!(relay = %relay_addr, "socks5 UDP relay address");
 
         // 绑定本地 UDP socket
-        let local_bind = if relay_addr.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" };
+        let local_bind = if relay_addr.is_ipv4() {
+            "0.0.0.0:0"
+        } else {
+            "[::]:0"
+        };
         let udp_socket = UdpSocket::bind(local_bind).await?;
 
         let transport = Socks5UdpOutTransport {
@@ -492,7 +520,7 @@ mod tests {
             sock.read_exact(&mut buf).await.unwrap();
             assert_eq!(buf[0], 0x05);
             assert_eq!(buf[1], 0x02); // NMETHODS=2
-            // methods: 0x00 和 0x02
+                                      // methods: 0x00 和 0x02
 
             // 选择 USERNAME/PASSWORD
             sock.write_all(&[0x05, 0x02]).await.unwrap();

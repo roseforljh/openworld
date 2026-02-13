@@ -110,10 +110,13 @@ async fn dns_split_resolver_routing() {
     let default_dns = Arc::new(MockDns("8.8.8.8".parse().unwrap()));
 
     let split = openworld::dns::resolver::SplitResolver::new(
-        vec![(vec![
-            openworld::dns::resolver::DnsDomainRule::Suffix("cn".to_string()),
-            openworld::dns::resolver::DnsDomainRule::Suffix("baidu.com".to_string()),
-        ], cn_dns)],
+        vec![(
+            vec![
+                openworld::dns::resolver::DnsDomainRule::Suffix("cn".to_string()),
+                openworld::dns::resolver::DnsDomainRule::Suffix("baidu.com".to_string()),
+            ],
+            cn_dns,
+        )],
         default_dns,
     );
 

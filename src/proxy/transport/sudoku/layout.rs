@@ -52,7 +52,11 @@ pub fn new_ascii_layout() -> ByteLayout {
 fn ascii_encode_hint(val: u8, pos: u8) -> u8 {
     let b = 0x40 | ((val & 0x03) << 4) | (pos & 0x0F);
     // 避免 DEL (0x7F)，映射为 '\n'
-    if b == 0x7F { b'\n' } else { b }
+    if b == 0x7F {
+        b'\n'
+    } else {
+        b
+    }
 }
 
 /// 低熵布局：输出字节的 Hamming weight ≤ 3
@@ -85,7 +89,10 @@ fn entropy_encode_hint(val: u8, pos: u8) -> u8 {
 pub fn new_custom_layout(pattern: &str) -> Result<ByteLayout, String> {
     let cleaned: String = pattern.trim().to_lowercase().replace(' ', "");
     if cleaned.len() != 8 {
-        return Err(format!("自定义 table 必须为 8 字符，实际 {}", cleaned.len()));
+        return Err(format!(
+            "自定义 table 必须为 8 字符，实际 {}",
+            cleaned.len()
+        ));
     }
 
     let mut x_bits: Vec<u8> = Vec::new();
@@ -139,12 +146,24 @@ pub fn new_custom_layout(pattern: &str) -> Result<ByteLayout, String> {
     for val in 0..4u8 {
         for pos in 0..16u8 {
             let mut out = x_mask; // 所有 x 位置 1
-            if (val & 0x02) != 0 { out |= 1 << p0; }
-            if (val & 0x01) != 0 { out |= 1 << p1; }
-            if (pos >> 3) & 1 == 1 { out |= 1 << v0; }
-            if (pos >> 2) & 1 == 1 { out |= 1 << v1; }
-            if (pos >> 1) & 1 == 1 { out |= 1 << v2; }
-            if pos & 1 == 1 { out |= 1 << v3; }
+            if (val & 0x02) != 0 {
+                out |= 1 << p0;
+            }
+            if (val & 0x01) != 0 {
+                out |= 1 << p1;
+            }
+            if (pos >> 3) & 1 == 1 {
+                out |= 1 << v0;
+            }
+            if (pos >> 2) & 1 == 1 {
+                out |= 1 << v1;
+            }
+            if (pos >> 1) & 1 == 1 {
+                out |= 1 << v2;
+            }
+            if pos & 1 == 1 {
+                out |= 1 << v3;
+            }
             let key = ((val as u16) << 4) | (pos as u16);
             CUSTOM_ENCODE_TABLE.lock().unwrap().insert(key, out);
         }
@@ -171,24 +190,41 @@ pub fn new_custom_layout(pattern: &str) -> Result<ByteLayout, String> {
 }
 
 fn custom_encode_bits(
-    x_bits: &[u8], p_bits: &[u8], v_bits: &[u8],
-    x_mask: u8, val: u8, pos: u8, drop_x: Option<usize>,
+    x_bits: &[u8],
+    p_bits: &[u8],
+    v_bits: &[u8],
+    x_mask: u8,
+    val: u8,
+    pos: u8,
+    drop_x: Option<usize>,
 ) -> u8 {
     let mut out = x_mask;
     if let Some(drop) = drop_x {
         out &= !(1 << x_bits[drop]);
     }
-    if (val & 0x02) != 0 { out |= 1 << p_bits[0]; }
-    if (val & 0x01) != 0 { out |= 1 << p_bits[1]; }
-    if (pos >> 3) & 1 == 1 { out |= 1 << v_bits[0]; }
-    if (pos >> 2) & 1 == 1 { out |= 1 << v_bits[1]; }
-    if (pos >> 1) & 1 == 1 { out |= 1 << v_bits[2]; }
-    if pos & 1 == 1 { out |= 1 << v_bits[3]; }
+    if (val & 0x02) != 0 {
+        out |= 1 << p_bits[0];
+    }
+    if (val & 0x01) != 0 {
+        out |= 1 << p_bits[1];
+    }
+    if (pos >> 3) & 1 == 1 {
+        out |= 1 << v_bits[0];
+    }
+    if (pos >> 2) & 1 == 1 {
+        out |= 1 << v_bits[1];
+    }
+    if (pos >> 1) & 1 == 1 {
+        out |= 1 << v_bits[2];
+    }
+    if pos & 1 == 1 {
+        out |= 1 << v_bits[3];
+    }
     out
 }
 
-use std::sync::Mutex;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 static CUSTOM_ENCODE_TABLE: std::sync::LazyLock<Mutex<HashMap<u16, u8>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -233,12 +269,20 @@ mod tests {
         for val in 0..4u8 {
             for pos in 0..16u8 {
                 let b = layout.encode_hint(val, pos);
-                assert!(layout.is_hint(b), "({}, {}) → 0x{:02X} 应该被识别为提示", val, pos, b);
+                assert!(
+                    layout.is_hint(b),
+                    "({}, {}) → 0x{:02X} 应该被识别为提示",
+                    val,
+                    pos,
+                    b
+                );
                 // 应该是可打印字符或 \n
                 assert!(
                     (b >= 0x20 && b <= 0x7E) || b == b'\n',
                     "({}, {}) → 0x{:02X} 不是可打印字符",
-                    val, pos, b
+                    val,
+                    pos,
+                    b
                 );
             }
         }
@@ -250,12 +294,21 @@ mod tests {
         for val in 0..4u8 {
             for pos in 0..16u8 {
                 let b = layout.encode_hint(val, pos);
-                assert!(layout.is_hint(b), "({}, {}) → 0x{:02X} 应该被识别为提示", val, pos, b);
+                assert!(
+                    layout.is_hint(b),
+                    "({}, {}) → 0x{:02X} 应该被识别为提示",
+                    val,
+                    pos,
+                    b
+                );
                 // entropy 布局的约束：bit 7 和 bit 4 都为 0
                 assert_eq!(
-                    b & 0x90, 0x00,
+                    b & 0x90,
+                    0x00,
                     "({}, {}) → 0x{:02X} 不满足 entropy 位模式 (b & 0x90) == 0",
-                    val, pos, b
+                    val,
+                    pos,
+                    b
                 );
             }
         }
@@ -268,7 +321,8 @@ mod tests {
                 assert!(
                     !layout.is_hint(pad),
                     "{}: padding 0x{:02X} 被错误识别为提示",
-                    layout.name, pad
+                    layout.name,
+                    pad
                 );
             }
         }

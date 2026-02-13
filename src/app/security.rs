@@ -79,7 +79,13 @@ pub fn audit_config(config: &Config) -> SecurityReport {
             if let Some(ref method) = ob.settings.method {
                 let weak = matches!(
                     method.as_str(),
-                    "rc4" | "rc4-md5" | "aes-128-cfb" | "aes-256-cfb" | "chacha20" | "table" | "none"
+                    "rc4"
+                        | "rc4-md5"
+                        | "aes-128-cfb"
+                        | "aes-256-cfb"
+                        | "chacha20"
+                        | "table"
+                        | "none"
                 );
                 if weak {
                     warnings.push(SecurityWarning {
@@ -127,7 +133,9 @@ pub fn validate_and_warn(config: &Config) -> Result<()> {
     if report.blocked {
         anyhow::bail!(
             "security audit blocked startup: {}",
-            report.warnings.iter()
+            report
+                .warnings
+                .iter()
                 .filter(|w| w.severity == Severity::Block)
                 .map(|w| w.message.as_str())
                 .collect::<Vec<_>>()
@@ -206,7 +214,10 @@ mod tests {
         });
         let report = audit_config(&config);
         assert!(report.blocked);
-        assert!(report.warnings.iter().any(|w| w.code == "SEC_API_NO_SECRET"));
+        assert!(report
+            .warnings
+            .iter()
+            .any(|w| w.code == "SEC_API_NO_SECRET"));
     }
 
     #[test]
@@ -220,7 +231,10 @@ mod tests {
         });
         let report = audit_config(&config);
         assert!(!report.blocked);
-        assert!(report.warnings.iter().any(|w| w.code == "SEC_API_LOCAL_NO_SECRET"));
+        assert!(report
+            .warnings
+            .iter()
+            .any(|w| w.code == "SEC_API_LOCAL_NO_SECRET"));
     }
 
     #[test]

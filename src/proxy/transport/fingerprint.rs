@@ -247,10 +247,7 @@ mod tests {
             FingerprintType::Android
         );
         assert_eq!(FingerprintType::from_str("random"), FingerprintType::Random);
-        assert_eq!(
-            FingerprintType::from_str("unknown"),
-            FingerprintType::None
-        );
+        assert_eq!(FingerprintType::from_str("unknown"), FingerprintType::None);
     }
 
     #[test]
@@ -275,8 +272,7 @@ mod tests {
 
     #[test]
     fn test_build_fingerprinted_config_chrome() {
-        let config =
-            build_fingerprinted_tls_config(FingerprintType::Chrome, false, None).unwrap();
+        let config = build_fingerprinted_tls_config(FingerprintType::Chrome, false, None).unwrap();
         assert_eq!(config.alpn_protocols.len(), 2);
         assert_eq!(config.alpn_protocols[0], b"h2");
         assert_eq!(config.alpn_protocols[1], b"http/1.1");
@@ -284,8 +280,7 @@ mod tests {
 
     #[test]
     fn test_build_fingerprinted_config_firefox() {
-        let config =
-            build_fingerprinted_tls_config(FingerprintType::Firefox, false, None).unwrap();
+        let config = build_fingerprinted_tls_config(FingerprintType::Firefox, false, None).unwrap();
         assert_eq!(config.alpn_protocols.len(), 2);
     }
 
@@ -298,20 +293,15 @@ mod tests {
 
     #[test]
     fn test_build_fingerprinted_config_with_alpn_override() {
-        let config = build_fingerprinted_tls_config(
-            FingerprintType::Chrome,
-            false,
-            Some(&["h2"]),
-        )
-        .unwrap();
+        let config =
+            build_fingerprinted_tls_config(FingerprintType::Chrome, false, Some(&["h2"])).unwrap();
         assert_eq!(config.alpn_protocols.len(), 1);
         assert_eq!(config.alpn_protocols[0], b"h2");
     }
 
     #[test]
     fn test_build_fingerprinted_config_insecure() {
-        let config =
-            build_fingerprinted_tls_config(FingerprintType::Safari, true, None).unwrap();
+        let config = build_fingerprinted_tls_config(FingerprintType::Safari, true, None).unwrap();
         assert_eq!(config.alpn_protocols.len(), 2);
     }
 
@@ -330,8 +320,7 @@ mod tests {
     #[test]
     fn test_build_fingerprinted_config_random() {
         // Random should succeed and produce a valid config
-        let config =
-            build_fingerprinted_tls_config(FingerprintType::Random, false, None).unwrap();
+        let config = build_fingerprinted_tls_config(FingerprintType::Random, false, None).unwrap();
         assert_eq!(config.alpn_protocols.len(), 2);
     }
 

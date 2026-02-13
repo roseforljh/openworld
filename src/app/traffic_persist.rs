@@ -61,10 +61,7 @@ impl TrafficPersistence {
         stats.total_download += download;
         stats.total_connections += 1;
 
-        let entry = stats
-            .per_proxy
-            .entry(proxy_tag.to_string())
-            .or_default();
+        let entry = stats.per_proxy.entry(proxy_tag.to_string()).or_default();
         entry.upload += upload;
         entry.download += download;
         entry.connections += 1;
@@ -78,10 +75,7 @@ impl TrafficPersistence {
             stats.total_download += download;
             stats.total_connections += 1;
 
-            let entry = stats
-                .per_proxy
-                .entry(proxy_tag.to_string())
-                .or_default();
+            let entry = stats.per_proxy.entry(proxy_tag.to_string()).or_default();
             entry.upload += upload;
             entry.download += download;
             entry.connections += 1;
@@ -96,15 +90,13 @@ impl TrafficPersistence {
             .unwrap_or_default()
             .as_secs();
 
-        let json = serde_json::to_string_pretty(&stats)
-            .map_err(|e| format!("serialize failed: {}", e))?;
+        let json =
+            serde_json::to_string_pretty(&stats).map_err(|e| format!("serialize failed: {}", e))?;
 
         // 原子写入：先写临时文件再重命名
         let tmp_path = self.path.with_extension("tmp");
-        std::fs::write(&tmp_path, &json)
-            .map_err(|e| format!("write tmp failed: {}", e))?;
-        std::fs::rename(&tmp_path, &self.path)
-            .map_err(|e| format!("rename failed: {}", e))?;
+        std::fs::write(&tmp_path, &json).map_err(|e| format!("write tmp failed: {}", e))?;
+        std::fs::rename(&tmp_path, &self.path).map_err(|e| format!("rename failed: {}", e))?;
 
         tracing::debug!(bytes = json.len(), "traffic stats saved");
         Ok(())
@@ -235,11 +227,8 @@ mod tests {
         let _ = std::fs::remove_file(&tmp);
 
         let p = TrafficPersistence::new(tmp.clone());
-        p.record_batch(&[
-            ("a", 100, 200),
-            ("b", 300, 400),
-            ("a", 50, 60),
-        ]).await;
+        p.record_batch(&[("a", 100, 200), ("b", 300, 400), ("a", 50, 60)])
+            .await;
 
         let snap = p.snapshot().await;
         assert_eq!(snap.total_upload, 450);

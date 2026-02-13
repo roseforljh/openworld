@@ -18,7 +18,12 @@ pub struct TorOutbound {
 impl TorOutbound {
     pub fn new(config: &OutboundConfig) -> Result<Self> {
         let socks_port = config.settings.socks_port.unwrap_or(9050);
-        let socks_host = config.settings.address.as_deref().unwrap_or("127.0.0.1").to_string();
+        let socks_host = config
+            .settings
+            .address
+            .as_deref()
+            .unwrap_or("127.0.0.1")
+            .to_string();
         let socks_addr = format!("{}:{}", socks_host, socks_port);
 
         debug!(tag = config.tag, addr = %socks_addr, "tor outbound created");
@@ -37,8 +42,17 @@ impl TorOutbound {
             Some(cfg) => Dialer::new(cfg.clone()),
             None => Dialer::default_dialer(),
         };
-        let stream = dialer.connect_host(&self.socks_host, self.socks_port).await
-            .map_err(|e| anyhow::anyhow!("failed to connect to tor socks5 at {}:{}: {}", self.socks_host, self.socks_port, e))?;
+        let stream = dialer
+            .connect_host(&self.socks_host, self.socks_port)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "failed to connect to tor socks5 at {}:{}: {}",
+                    self.socks_host,
+                    self.socks_port,
+                    e
+                )
+            })?;
 
         // SOCKS5 握手: 无认证
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -88,14 +102,20 @@ impl TorOutbound {
 
         // 跳过绑定地址
         match resp[3] {
-            0x01 => { let mut buf = [0u8; 6]; stream.read_exact(&mut buf).await?; }
+            0x01 => {
+                let mut buf = [0u8; 6];
+                stream.read_exact(&mut buf).await?;
+            }
             0x03 => {
                 let mut len = [0u8; 1];
                 stream.read_exact(&mut len).await?;
                 let mut buf = vec![0u8; len[0] as usize + 2];
                 stream.read_exact(&mut buf).await?;
             }
-            0x04 => { let mut buf = [0u8; 18]; stream.read_exact(&mut buf).await?; }
+            0x04 => {
+                let mut buf = [0u8; 18];
+                stream.read_exact(&mut buf).await?;
+            }
             _ => {}
         }
 

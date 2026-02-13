@@ -13,8 +13,8 @@ use crate::common::{Address, BoxUdpTransport, PrefixedStream, ProxyError};
 use crate::dns::fakeip::FakeIpPool;
 use crate::dns::DnsResolver;
 use crate::proxy::nat::{NatKey, NatTable};
-use crate::proxy::relay::{relay_proxy_streams, RelayOptions, RelayStats};
 use crate::proxy::outbound::direct::DirectOutbound;
+use crate::proxy::relay::{relay_proxy_streams, RelayOptions, RelayStats};
 use crate::proxy::{sniff, InboundResult, Network, Session};
 use crate::router::Router;
 
@@ -130,12 +130,12 @@ impl Dispatcher {
     /// Spawn DNS prefetch background task to refresh popular domains before cache expiry.
     pub async fn spawn_dns_prefetch(&self, cancel_token: CancellationToken) {
         let resolver = self.resolver.read().await.clone();
-        
+
         // Check if resolver is a CachedResolver with prefetch support
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(60));
             interval.tick().await;
-            
+
             loop {
                 tokio::select! {
                     _ = cancel_token.cancelled() => break,
@@ -185,8 +185,9 @@ impl Dispatcher {
         } = result;
 
         if session.network == Network::Udp {
-            let inbound_udp = udp_transport
-                .ok_or_else(|| ProxyError::Protocol("udp session missing inbound transport".to_string()))?;
+            let inbound_udp = udp_transport.ok_or_else(|| {
+                ProxyError::Protocol("udp session missing inbound transport".to_string())
+            })?;
             return self
                 .dispatch_udp(session, inbound_stream, inbound_udp)
                 .await;
@@ -237,36 +238,48 @@ impl Dispatcher {
 
         // Clash 模式覆盖路由
         let clash_mode = crate::app::clash_mode::get_mode();
-        let (outbound_tag, matched_rule): (&str, Option<std::borrow::Cow<'_, str>>) = match clash_mode {
-            crate::app::clash_mode::ClashMode::Global => {
-                let global_tag = outbound_manager.first_proxy_tag().unwrap_or("direct");
-                debug!(mode = "global", outbound = global_tag, "clash mode override");
-                (global_tag, Some(std::borrow::Cow::Borrowed("GLOBAL")))
-            }
-            crate::app::clash_mode::ClashMode::Direct => {
-                debug!(mode = "direct", "clash mode override");
-                ("direct", Some(std::borrow::Cow::Borrowed("DIRECT")))
-            }
-            crate::app::clash_mode::ClashMode::Rule => {
-                router.route_with_rule(&session)
-            }
-        };
+        let (outbound_tag, matched_rule): (&str, Option<std::borrow::Cow<'_, str>>) =
+            match clash_mode {
+                crate::app::clash_mode::ClashMode::Global => {
+                    let global_tag = outbound_manager.first_proxy_tag().unwrap_or("direct");
+                    debug!(
+                        mode = "global",
+                        outbound = global_tag,
+                        "clash mode override"
+                    );
+                    (global_tag, Some(std::borrow::Cow::Borrowed("GLOBAL")))
+                }
+                crate::app::clash_mode::ClashMode::Direct => {
+                    debug!(mode = "direct", "clash mode override");
+                    ("direct", Some(std::borrow::Cow::Borrowed("DIRECT")))
+                }
+                crate::app::clash_mode::ClashMode::Rule => router.route_with_rule(&session),
+            };
         let route_tag = matched_rule.as_deref().unwrap_or("MATCH").to_string();
 
         let outbound = match outbound_manager.get(outbound_tag) {
             Some(o) => o,
             None => {
                 self.tracker.record_error("OUTBOUND_NOT_FOUND");
-                error!(error_code = "OUTBOUND_NOT_FOUND", outbound_tag = outbound_tag, "outbound not found");
-                return Err(ProxyError::Config(
-                    format!("outbound '{}' not found", outbound_tag)
-                ).into());
+                error!(
+                    error_code = "OUTBOUND_NOT_FOUND",
+                    outbound_tag = outbound_tag,
+                    "outbound not found"
+                );
+                return Err(
+                    ProxyError::Config(format!("outbound '{}' not found", outbound_tag)).into(),
+                );
             }
         };
 
         let guard = self
             .tracker
-            .track(&session, outbound.tag(), &route_tag, matched_rule.as_deref())
+            .track(
+                &session,
+                outbound.tag(),
+                &route_tag,
+                matched_rule.as_deref(),
+            )
             .await;
         let circuit_breaker = self.circuit_breaker_for(outbound.tag()).await;
 
@@ -420,7 +433,10 @@ impl Dispatcher {
         mut tcp_control: crate::common::ProxyStream,
         inbound_udp: BoxUdpTransport,
     ) -> Result<()> {
-        info!(inbound = session.inbound_tag, "dispatching UDP session (Full Cone NAT)");
+        info!(
+            inbound = session.inbound_tag,
+            "dispatching UDP session (Full Cone NAT)"
+        );
 
         let inbound_udp = Arc::new(inbound_udp);
         let nat_table = self.nat_table.clone();

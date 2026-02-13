@@ -28,7 +28,9 @@ pub fn prepare_tls_config(
     //    - InsecureSkipVerify: SNI 通常不是端点域名，跳过 CA 验证
     //    - 公钥固定验证通过自定义 verifier 实现
     let peer_pub = peer_public_key_der.to_vec();
-    let verifier = Arc::new(PinnedKeyVerifier { peer_public_key: peer_pub });
+    let verifier = Arc::new(PinnedKeyVerifier {
+        peer_public_key: peer_pub,
+    });
 
     let mut config = rustls::ClientConfig::builder_with_provider(Arc::new(provider))
         .with_safe_default_protocol_versions()?
@@ -45,7 +47,10 @@ pub fn prepare_tls_config(
 /// 生成 ECDSA 自签名证书
 fn generate_self_signed_cert(
     private_key_pem: &str,
-) -> Result<(Vec<rustls::pki_types::CertificateDer<'static>>, rustls::pki_types::PrivateKeyDer<'static>)> {
+) -> Result<(
+    Vec<rustls::pki_types::CertificateDer<'static>>,
+    rustls::pki_types::PrivateKeyDer<'static>,
+)> {
     use rcgen::{CertificateParams, KeyPair};
 
     let key_pair = KeyPair::from_pem(private_key_pem)?;
@@ -93,12 +98,10 @@ impl rustls::client::danger::ServerCertVerifier for PinnedKeyVerifier {
             Ok(rustls::client::danger::ServerCertVerified::assertion())
         } else {
             Err(rustls::Error::InvalidCertificate(
-                rustls::CertificateError::Other(rustls::OtherError(Arc::new(
-                    std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        "Server public key does not match pinned key",
-                    ),
-                ))),
+                rustls::CertificateError::Other(rustls::OtherError(Arc::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Server public key does not match pinned key",
+                )))),
             ))
         }
     }

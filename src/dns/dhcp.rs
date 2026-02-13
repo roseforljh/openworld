@@ -7,7 +7,6 @@
 /// - macOS: `scutil --dns` 解析
 /// - Linux: 解析 `/etc/resolv.conf` 或 `systemd-resolve --status`
 /// - Android/iOS: 通过 FFI 设置
-
 use std::net::IpAddr;
 
 use anyhow::{bail, Result};
@@ -118,9 +117,7 @@ fn detect_dns_windows() -> Result<Vec<IpAddr>> {
 /// macOS: 使用 `scutil --dns`
 #[cfg(target_os = "macos")]
 fn detect_dns_macos() -> Result<Vec<IpAddr>> {
-    let output = std::process::Command::new("scutil")
-        .arg("--dns")
-        .output()?;
+    let output = std::process::Command::new("scutil").arg("--dns").output()?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut servers = Vec::new();
 
@@ -152,8 +149,7 @@ fn detect_dns_linux() -> Result<Vec<IpAddr>> {
     not(any(target_os = "windows", target_os = "macos"))
 ))]
 fn detect_dns_resolv_conf() -> Result<Vec<IpAddr>> {
-    let content = std::fs::read_to_string("/etc/resolv.conf")
-        .unwrap_or_default();
+    let content = std::fs::read_to_string("/etc/resolv.conf").unwrap_or_default();
     let mut servers = Vec::new();
 
     for line in content.lines() {

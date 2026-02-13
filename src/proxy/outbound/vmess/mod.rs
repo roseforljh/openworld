@@ -16,8 +16,8 @@ use crate::proxy::transport::StreamTransport;
 use crate::proxy::{OutboundHandler, Session};
 
 use protocol::{
-    SecurityType, VmessChunkCipher, CMD_TCP, MAX_VMESS_CHUNK, VMESS_AEAD_TAG_LEN,
-    derive_response_key_iv, parse_response_header,
+    derive_response_key_iv, parse_response_header, SecurityType, VmessChunkCipher, CMD_TCP,
+    MAX_VMESS_CHUNK, VMESS_AEAD_TAG_LEN,
 };
 
 pub struct VmessOutbound {
@@ -55,8 +55,14 @@ impl VmessOutbound {
         let tls_config = settings.effective_tls();
         let transport_config = settings.effective_transport();
         let transport: Arc<dyn StreamTransport> =
-            crate::proxy::transport::build_transport_with_dialer(address, port, &transport_config, &tls_config, settings.dialer.clone())?
-                .into();
+            crate::proxy::transport::build_transport_with_dialer(
+                address,
+                port,
+                &transport_config,
+                &tls_config,
+                settings.dialer.clone(),
+            )?
+            .into();
 
         let server_addr = Address::Domain(address.clone(), port);
         let mux = settings.mux.clone().map(|mux_config| {
@@ -136,7 +142,12 @@ impl OutboundHandler for VmessOutbound {
         let encoder = VmessChunkCipher::new(self.security, &req_body_key, &req_body_iv);
         let decoder = VmessChunkCipher::new(self.security, &resp_key, &resp_iv);
 
-        Ok(Box::new(VmessAeadStream::new(stream, encoder, decoder, self.security)))
+        Ok(Box::new(VmessAeadStream::new(
+            stream,
+            encoder,
+            decoder,
+            self.security,
+        )))
     }
 
     async fn connect_udp(&self, _session: &Session) -> Result<BoxUdpTransport> {
@@ -149,13 +160,23 @@ impl OutboundHandler for VmessOutbound {
 }
 
 enum VmessReadState {
-    Length { len_buf: [u8; 2], len_read: usize },
-    Payload { payload_buf: Vec<u8>, payload_read: usize },
+    Length {
+        len_buf: [u8; 2],
+        len_read: usize,
+    },
+    Payload {
+        payload_buf: Vec<u8>,
+        payload_read: usize,
+    },
 }
 
 enum VmessWriteState {
     Ready,
-    Writing { data: Vec<u8>, written: usize, original_len: usize },
+    Writing {
+        data: Vec<u8>,
+        written: usize,
+        original_len: usize,
+    },
 }
 
 pub struct VmessAeadStream {
@@ -184,7 +205,10 @@ impl VmessAeadStream {
             security,
             read_buf: Vec::new(),
             read_pos: 0,
-            read_state: VmessReadState::Length { len_buf: [0u8; 2], len_read: 0 },
+            read_state: VmessReadState::Length {
+                len_buf: [0u8; 2],
+                len_read: 0,
+            },
             write_state: VmessWriteState::Ready,
             eof: false,
         }
@@ -254,7 +278,10 @@ impl AsyncRead for VmessAeadStream {
                         payload_read: 0,
                     };
                 }
-                VmessReadState::Payload { payload_buf, payload_read } => {
+                VmessReadState::Payload {
+                    payload_buf,
+                    payload_read,
+                } => {
                     while *payload_read < payload_buf.len() {
                         let mut rb = ReadBuf::new(&mut payload_buf[*payload_read..]);
                         match Pin::new(&mut this.inner).poll_read(cx, &mut rb) {
@@ -273,11 +300,16 @@ impl AsyncRead for VmessAeadStream {
                         }
                     }
 
-                    let plaintext = this.decoder.decrypt_chunk(payload_buf)
+                    let plaintext = this
+                        .decoder
+                        .decrypt_chunk(payload_buf)
                         .map_err(|e| std::io::Error::other(e.to_string()))?;
                     this.read_buf = plaintext;
                     this.read_pos = 0;
-                    this.read_state = VmessReadState::Length { len_buf: [0u8; 2], len_read: 0 };
+                    this.read_state = VmessReadState::Length {
+                        len_buf: [0u8; 2],
+                        len_read: 0,
+                    };
                 }
             }
         }
@@ -303,7 +335,9 @@ impl AsyncWrite for VmessAeadStream {
                     let chunk_len = buf.len().min(max_plain);
                     let chunk = &buf[..chunk_len];
 
-                    let data = this.encoder.encrypt_chunk(chunk)
+                    let data = this
+                        .encoder
+                        .encrypt_chunk(chunk)
                         .map_err(|e| std::io::Error::other(e.to_string()))?;
 
                     this.write_state = VmessWriteState::Writing {
@@ -312,7 +346,11 @@ impl AsyncWrite for VmessAeadStream {
                         original_len: chunk_len,
                     };
                 }
-                VmessWriteState::Writing { data, written, original_len } => {
+                VmessWriteState::Writing {
+                    data,
+                    written,
+                    original_len,
+                } => {
                     while *written < data.len() {
                         match Pin::new(&mut this.inner).poll_write(cx, &data[*written..]) {
                             Poll::Ready(Ok(n)) => {
@@ -491,11 +529,17 @@ mod tests {
 
         let encoder = VmessChunkCipher::new(SecurityType::Aes128Gcm, &key, &iv);
         let decoder = VmessChunkCipher::new(SecurityType::Aes128Gcm, &resp_key, &resp_iv);
-        let mut writer_stream = VmessAeadStream::new(client_stream, encoder, decoder, SecurityType::Aes128Gcm);
+        let mut writer_stream =
+            VmessAeadStream::new(client_stream, encoder, decoder, SecurityType::Aes128Gcm);
 
         let server_enc = VmessChunkCipher::new(SecurityType::Aes128Gcm, &resp_key, &resp_iv);
         let server_dec = VmessChunkCipher::new(SecurityType::Aes128Gcm, &key, &iv);
-        let mut reader_stream = VmessAeadStream::new(server_stream, server_enc, server_dec, SecurityType::Aes128Gcm);
+        let mut reader_stream = VmessAeadStream::new(
+            server_stream,
+            server_enc,
+            server_dec,
+            SecurityType::Aes128Gcm,
+        );
 
         let test_data = b"hello vmess aead stream!";
         writer_stream.write_all(test_data).await.unwrap();

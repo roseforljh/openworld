@@ -81,11 +81,16 @@ impl Device for VirtualDevice {
     type RxToken<'a> = VirtualRxToken;
     type TxToken<'a> = VirtualTxToken<'a>;
 
-    fn receive(&mut self, _timestamp: SmolInstant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+    fn receive(
+        &mut self,
+        _timestamp: SmolInstant,
+    ) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         if let Some(data) = self.rx_queue.pop_front() {
             Some((
                 VirtualRxToken { data },
-                VirtualTxToken { tx_queue: &mut self.tx_queue },
+                VirtualTxToken {
+                    tx_queue: &mut self.tx_queue,
+                },
             ))
         } else {
             None
@@ -93,7 +98,9 @@ impl Device for VirtualDevice {
     }
 
     fn transmit(&mut self, _timestamp: SmolInstant) -> Option<Self::TxToken<'_>> {
-        Some(VirtualTxToken { tx_queue: &mut self.tx_queue })
+        Some(VirtualTxToken {
+            tx_queue: &mut self.tx_queue,
+        })
     }
 
     fn capabilities(&self) -> DeviceCapabilities {
@@ -130,23 +137,31 @@ impl StackState {
         let cidr = match local_addr {
             IpAddr::V4(v4) => {
                 let o = v4.octets();
-                IpCidr::new(IpAddress::Ipv4(smoltcp::wire::Ipv4Address::new(o[0], o[1], o[2], o[3])), 32)
+                IpCidr::new(
+                    IpAddress::Ipv4(smoltcp::wire::Ipv4Address::new(o[0], o[1], o[2], o[3])),
+                    32,
+                )
             }
-            IpAddr::V6(v6) => {
-                IpCidr::new(IpAddress::Ipv6(smoltcp::wire::Ipv6Address::from(v6.octets())), 128)
-            }
+            IpAddr::V6(v6) => IpCidr::new(
+                IpAddress::Ipv6(smoltcp::wire::Ipv6Address::from(v6.octets())),
+                128,
+            ),
         };
         iface.update_ip_addrs(|addrs| {
             addrs.push(cidr).ok();
         });
 
         // 设置默认网关（虚拟的，所有流量都走隧道）
-        iface.routes_mut().add_default_ipv4_route(
-            smoltcp::wire::Ipv4Address::new(0, 0, 0, 1)
-        ).ok();
-        iface.routes_mut().add_default_ipv6_route(
-            smoltcp::wire::Ipv6Address::from([0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
-        ).ok();
+        iface
+            .routes_mut()
+            .add_default_ipv4_route(smoltcp::wire::Ipv4Address::new(0, 0, 0, 1))
+            .ok();
+        iface
+            .routes_mut()
+            .add_default_ipv6_route(smoltcp::wire::Ipv6Address::from([
+                0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+            ]))
+            .ok();
 
         let sockets = SocketSet::new(vec![]);
 
@@ -172,7 +187,8 @@ impl StackState {
     /// 轮询网络栈（处理 TCP 重传、超时等）
     pub fn poll(&mut self) {
         let timestamp = SmolInstant::now();
-        self.iface.poll(timestamp, &mut self.device, &mut self.sockets);
+        self.iface
+            .poll(timestamp, &mut self.device, &mut self.sockets);
     }
 
     /// 创建 TCP 连接（返回 socket handle）
@@ -196,18 +212,14 @@ impl StackState {
                     let o = v4.octets();
                     IpAddress::Ipv4(smoltcp::wire::Ipv4Address::new(o[0], o[1], o[2], o[3]))
                 }
-                IpAddr::V6(v6) => {
-                    IpAddress::Ipv6(smoltcp::wire::Ipv6Address::from(v6.octets()))
-                }
+                IpAddr::V6(v6) => IpAddress::Ipv6(smoltcp::wire::Ipv6Address::from(v6.octets())),
             },
             remote.port(),
         );
         let socket = self.sockets.get_mut::<tcp::Socket>(handle);
-        socket.connect(
-            self.iface.context(),
-            remote_endpoint,
-            local_port,
-        ).map_err(|e| anyhow::anyhow!("TCP connect failed: {}", e))?;
+        socket
+            .connect(self.iface.context(), remote_endpoint, local_port)
+            .map_err(|e| anyhow::anyhow!("TCP connect failed: {}", e))?;
         Ok(())
     }
 
@@ -226,7 +238,8 @@ impl StackState {
     /// TCP 发送数据
     pub fn tcp_send(&mut self, handle: SocketHandle, data: &[u8]) -> Result<usize> {
         let socket = self.sockets.get_mut::<tcp::Socket>(handle);
-        let n = socket.send_slice(data)
+        let n = socket
+            .send_slice(data)
             .map_err(|e| anyhow::anyhow!("TCP send failed: {}", e))?;
         Ok(n)
     }
@@ -234,7 +247,8 @@ impl StackState {
     /// TCP 接收数据
     pub fn tcp_recv(&mut self, handle: SocketHandle, buf: &mut [u8]) -> Result<usize> {
         let socket = self.sockets.get_mut::<tcp::Socket>(handle);
-        let n = socket.recv_slice(buf)
+        let n = socket
+            .recv_slice(buf)
             .map_err(|e| anyhow::anyhow!("TCP recv failed: {}", e))?;
         Ok(n)
     }

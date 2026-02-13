@@ -25,7 +25,12 @@ pub struct TlsTransport {
 }
 
 impl TlsTransport {
-    pub fn new(server_addr: String, server_port: u16, config: &TlsConfig, dialer_config: Option<DialerConfig>) -> Result<Self> {
+    pub fn new(
+        server_addr: String,
+        server_port: u16,
+        config: &TlsConfig,
+        dialer_config: Option<DialerConfig>,
+    ) -> Result<Self> {
         let sni = config.sni.clone().unwrap_or_else(|| server_addr.clone());
 
         let static_tls_config = if config.ech_auto {
@@ -144,7 +149,13 @@ impl TlsTransport {
 #[async_trait]
 impl StreamTransport for TlsTransport {
     async fn connect(&self, _addr: &Address) -> Result<ProxyStream> {
-        let tcp = super::dial_tcp(&self.server_addr, self.server_port, &self.dialer_config, None).await?;
+        let tcp = super::dial_tcp(
+            &self.server_addr,
+            self.server_port,
+            &self.dialer_config,
+            None,
+        )
+        .await?;
 
         let tls_config = self.get_tls_config().await?;
         let connector = tokio_rustls::TlsConnector::from(tls_config);

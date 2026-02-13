@@ -503,9 +503,8 @@ const BINARY_VERSION: u8 = 1;
 
 /// 将 RuleSetData 序列化为二进制格式
 pub fn serialize_ruleset_binary(data: &RuleSetData) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(
-        4 + 1 + 4 + 4 + data.domain_rules.len() * 32 + data.ip_cidrs.len() * 20,
-    );
+    let mut buf =
+        Vec::with_capacity(4 + 1 + 4 + 4 + data.domain_rules.len() * 32 + data.ip_cidrs.len() * 20);
     buf.extend_from_slice(BINARY_MAGIC);
     buf.push(BINARY_VERSION);
     buf.extend_from_slice(&(data.domain_rules.len() as u32).to_le_bytes());
@@ -558,9 +557,11 @@ pub fn deserialize_ruleset_binary(data: &[u8]) -> Result<RuleSetData> {
     pos += 1;
 
     // Counts
-    let domain_count = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+    let domain_count =
+        u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
     pos += 4;
-    let cidr_count = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+    let cidr_count =
+        u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
     pos += 4;
 
     // Domain rules
@@ -606,10 +607,13 @@ pub fn deserialize_ruleset_binary(data: &[u8]) -> Result<RuleSetData> {
                 if pos + 4 > data.len() {
                     anyhow::bail!("binary rule-set truncated at IPv4 addr");
                 }
-                let addr = std::net::Ipv4Addr::new(data[pos], data[pos + 1], data[pos + 2], data[pos + 3]);
+                let addr =
+                    std::net::Ipv4Addr::new(data[pos], data[pos + 1], data[pos + 2], data[pos + 3]);
                 pos += 4;
-                IpNet::V4(ipnet::Ipv4Net::new(addr, prefix_len)
-                    .map_err(|e| anyhow::anyhow!("invalid IPv4 CIDR: {}", e))?)
+                IpNet::V4(
+                    ipnet::Ipv4Net::new(addr, prefix_len)
+                        .map_err(|e| anyhow::anyhow!("invalid IPv4 CIDR: {}", e))?,
+                )
             }
             6 => {
                 if pos + 16 > data.len() {
@@ -619,8 +623,10 @@ pub fn deserialize_ruleset_binary(data: &[u8]) -> Result<RuleSetData> {
                 octets.copy_from_slice(&data[pos..pos + 16]);
                 let addr = std::net::Ipv6Addr::from(octets);
                 pos += 16;
-                IpNet::V6(ipnet::Ipv6Net::new(addr, prefix_len)
-                    .map_err(|e| anyhow::anyhow!("invalid IPv6 CIDR: {}", e))?)
+                IpNet::V6(
+                    ipnet::Ipv6Net::new(addr, prefix_len)
+                        .map_err(|e| anyhow::anyhow!("invalid IPv6 CIDR: {}", e))?,
+                )
             }
             _ => anyhow::bail!("unknown CIDR family: {}", family),
         };
@@ -661,12 +667,8 @@ pub fn load_ruleset_with_binary_cache(text_path: &str, behavior: &str) -> Result
     let binary_path = format!("{}.bin", text_path);
 
     // 检查二进制缓存是否比文本文件新
-    let text_modified = fs::metadata(text_path)
-        .and_then(|m| m.modified())
-        .ok();
-    let bin_modified = fs::metadata(&binary_path)
-        .and_then(|m| m.modified())
-        .ok();
+    let text_modified = fs::metadata(text_path).and_then(|m| m.modified()).ok();
+    let bin_modified = fs::metadata(&binary_path).and_then(|m| m.modified()).ok();
 
     if let (Some(text_t), Some(bin_t)) = (text_modified, bin_modified) {
         if bin_t >= text_t {

@@ -134,8 +134,12 @@ impl AccessLogEntry {
     pub fn to_text(&self) -> String {
         let rule_part = self.rule.as_deref().unwrap_or("-");
         let protocol_part = self.protocol.as_deref().unwrap_or("-");
-        let error_part = self.error.as_deref().map(|e| format!(" error={}", e)).unwrap_or_default();
-        
+        let error_part = self
+            .error
+            .as_deref()
+            .map(|e| format!(" error={}", e))
+            .unwrap_or_default();
+
         format!(
             "[{}] conn={} src={} dst={} net={} in={} out={} rule={} up={} down={} dur={}ms status={} proto={}{}",
             self.timestamp,
@@ -159,7 +163,10 @@ impl AccessLogEntry {
     pub fn to_json(&self) -> String {
         match serde_json::to_string(self) {
             Ok(s) => s,
-            Err(_) => format!("{{\"error\":\"serialization failed\",\"conn_id\":{}}}", self.conn_id),
+            Err(_) => format!(
+                "{{\"error\":\"serialization failed\",\"conn_id\":{}}}",
+                self.conn_id
+            ),
         }
     }
 }
@@ -240,7 +247,7 @@ impl AccessLogger {
 
     async fn rotate_file(&self, path: &PathBuf) -> std::io::Result<()> {
         let mut file_guard = self.file.write().await;
-        
+
         // Close current file
         *file_guard = None;
 
@@ -277,28 +284,34 @@ impl AccessLogger {
 /// Get ISO 8601 timestamp
 fn chrono_like_timestamp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    
+
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
-    
+
     let secs = now.as_secs();
     let nanos = now.subsec_nanos();
-    
+
     // Convert to UTC datetime components
     let days = secs / 86400;
     let remaining = secs % 86400;
     let hours = remaining / 3600;
     let minutes = (remaining % 3600) / 60;
     let seconds = remaining % 60;
-    
+
     // Unix epoch (1970-01-01) to Gregorian
     // This is a simplified calculation
     let (year, month, day) = unix_days_to_date(days as i64 + 719163); // 719163 = days from 0000-01-01 to 1970-01-01
-    
+
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
-        year, month, day, hours, minutes, seconds, nanos / 1_000_000
+        year,
+        month,
+        day,
+        hours,
+        minutes,
+        seconds,
+        nanos / 1_000_000
     )
 }
 
@@ -307,10 +320,10 @@ fn unix_days_to_date(days: i64) -> (i32, u32, u32) {
     // Unix epoch is 1970-01-01
     // Days since Unix epoch
     // Use a simpler algorithm
-    
+
     // Number of days from 1970-01-01
     let mut remaining_days = days;
-    
+
     // Calculate year
     let mut year = 1970i32;
     loop {
@@ -321,14 +334,14 @@ fn unix_days_to_date(days: i64) -> (i32, u32, u32) {
         remaining_days -= days_in_year as i64;
         year += 1;
     }
-    
+
     // Calculate month and day
     let days_in_months = if is_leap_year(year) {
         [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     } else {
         [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     };
-    
+
     let mut month = 1u32;
     for &days_in_month in &days_in_months {
         if remaining_days < days_in_month as i64 {
@@ -337,9 +350,9 @@ fn unix_days_to_date(days: i64) -> (i32, u32, u32) {
         remaining_days -= days_in_month as i64;
         month += 1;
     }
-    
+
     let day = (remaining_days + 1) as u32; // Days are 1-indexed
-    
+
     (year, month, day)
 }
 
@@ -368,7 +381,7 @@ mod tests {
             None,
             Some("tls"),
         );
-        
+
         let text = entry.to_text();
         assert!(text.contains("conn=123"));
         assert!(text.contains("src=192.168.1.1:54321"));
@@ -395,7 +408,7 @@ mod tests {
             Some("connection refused"),
             None,
         );
-        
+
         let json = entry.to_json();
         assert!(json.contains("\"conn_id\":456"));
         assert!(json.contains("\"status\":\"FAIL\""));
@@ -417,7 +430,7 @@ mod tests {
         assert_eq!(y, 1970);
         assert_eq!(m, 1);
         assert_eq!(d, 1);
-        
+
         // 2024-01-01
         let days = (2024 - 1970) * 365 + 13; // 13 leap years
         let (y, m, d) = unix_days_to_date(days);
@@ -433,11 +446,23 @@ mod tests {
             ..Default::default()
         };
         let logger = AccessLogger::new(config);
-        
+
         let entry = AccessLogEntry::new(
-            1, None, "test", "tcp", "in", "out", None, 0, 0, Duration::ZERO, "OK", None, None,
+            1,
+            None,
+            "test",
+            "tcp",
+            "in",
+            "out",
+            None,
+            0,
+            0,
+            Duration::ZERO,
+            "OK",
+            None,
+            None,
         );
-        
+
         // Should not panic or write
         logger.log(&entry).await;
     }

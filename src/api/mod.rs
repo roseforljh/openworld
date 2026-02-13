@@ -46,7 +46,10 @@ pub fn start(
             get(handlers::get_proxy).put(handlers::select_proxy),
         )
         .route("/proxies/{name}/delay", get(handlers::test_proxy_delay))
-        .route("/proxies/{name}/healthcheck", get(handlers::healthcheck_proxy))
+        .route(
+            "/proxies/{name}/healthcheck",
+            get(handlers::healthcheck_proxy),
+        )
         .route(
             "/connections",
             get(handlers::get_connections).delete(handlers::close_all_connections),
@@ -66,9 +69,15 @@ pub fn start(
         .route("/dns/query", get(handlers::dns_query))
         .route("/dns/flush", post(handlers::flush_dns))
         .route("/logs", get(handlers::logs_ws))
-        .route("/configs", get(handlers::get_configs).patch(handlers::reload_config))
+        .route(
+            "/configs",
+            get(handlers::get_configs).patch(handlers::reload_config),
+        )
         // SSM API
-        .route("/ssm/users", get(handlers::ssm_list_users).post(handlers::ssm_add_user))
+        .route(
+            "/ssm/users",
+            get(handlers::ssm_list_users).post(handlers::ssm_add_user),
+        )
         .route("/ssm/users/{name}", delete(handlers::ssm_remove_user))
         .route("/ssm/users/{name}/reset", post(handlers::ssm_reset_traffic))
         .route("/ssm/stats", get(handlers::ssm_stats))
@@ -89,7 +98,10 @@ pub fn start(
             app = app.nest_service("/ui", ServeDir::new(ui_path));
             info!(path = ui_path.as_str(), "external UI mounted at /ui");
         } else {
-            tracing::warn!(path = ui_path.as_str(), "external-ui path is not a directory, skipping");
+            tracing::warn!(
+                path = ui_path.as_str(),
+                "external-ui path is not a directory, skipping"
+            );
         }
     }
 

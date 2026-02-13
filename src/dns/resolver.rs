@@ -209,7 +209,7 @@ fn parse_dns_address(address: &str) -> Result<(ResolverConfig, ResolverOpts)> {
         opts.num_concurrent_reqs = 4; // 允许单连接上多路并发请求
         opts.positive_min_ttl = Some(std::time::Duration::from_secs(60)); // 缓存至少 60s
         opts.positive_max_ttl = Some(std::time::Duration::from_secs(86400)); // 缓存最多 24h
-        opts.negative_min_ttl = Some(std::time::Duration::from_secs(30));  // NXDOMAIN 缓存 30s
+        opts.negative_min_ttl = Some(std::time::Duration::from_secs(30)); // NXDOMAIN 缓存 30s
         opts.negative_max_ttl = Some(std::time::Duration::from_secs(600)); // NXDOMAIN 最多 10min
         let config =
             ResolverConfig::from_parts(None, vec![], NameServerConfigGroup::from(vec![ns]));
@@ -224,10 +224,15 @@ fn parse_dns_address(address: &str) -> Result<(ResolverConfig, ResolverOpts)> {
             let host = h3_addr.split('/').next().unwrap_or(h3_addr);
             let host = host.split(':').next().unwrap_or(host);
             let (ip, tls_name) = match host {
-                "dns.google" | "dns.google.com" => ("8.8.8.8".parse().unwrap(), Some(host.to_string())),
+                "dns.google" | "dns.google.com" => {
+                    ("8.8.8.8".parse().unwrap(), Some(host.to_string()))
+                }
                 "cloudflare-dns.com" => ("1.1.1.1".parse().unwrap(), Some(host.to_string())),
                 "dns.alidns.com" => ("223.5.5.5".parse().unwrap(), Some(host.to_string())),
-                _ => anyhow::bail!("DoH3 host '{}' is not a known provider; use IP address instead", host),
+                _ => anyhow::bail!(
+                    "DoH3 host '{}' is not a known provider; use IP address instead",
+                    host
+                ),
             };
             (ip, 443, tls_name)
         };
@@ -335,7 +340,9 @@ impl DnsResolver for FakeIpResolver {
 }
 
 /// 根据配置构建 DNS 解析器
-pub fn build_resolver(config: &DnsConfig) -> Result<(Box<dyn DnsResolver>, Option<Arc<FakeIpPool>>)> {
+pub fn build_resolver(
+    config: &DnsConfig,
+) -> Result<(Box<dyn DnsResolver>, Option<Arc<FakeIpPool>>)> {
     let inner: Box<dyn DnsResolver> = match config.mode.as_str() {
         "race" => {
             // 竞速模式：所有 servers 并发查询，取最快结果
@@ -439,7 +446,9 @@ pub fn build_resolver(config: &DnsConfig) -> Result<(Box<dyn DnsResolver>, Optio
 }
 
 /// 从服务器列表构建解析器（split 模式或单服务器）
-fn build_nameserver_resolver(servers: &[crate::config::types::DnsServerConfig]) -> Result<Box<dyn DnsResolver>> {
+fn build_nameserver_resolver(
+    servers: &[crate::config::types::DnsServerConfig],
+) -> Result<Box<dyn DnsResolver>> {
     if servers.is_empty() {
         info!("no DNS servers configured, using system resolver");
         return Ok(Box::new(SystemResolver));
@@ -519,9 +528,9 @@ impl FallbackResolver {
         if self.filter_cidrs.is_empty() {
             return false;
         }
-        addrs.iter().any(|ip| {
-            self.filter_cidrs.iter().any(|net| net.contains(ip))
-        })
+        addrs
+            .iter()
+            .any(|ip| self.filter_cidrs.iter().any(|net| net.contains(ip)))
     }
 
     fn should_fallback_domain(&self, host: &str) -> bool {
@@ -688,10 +697,13 @@ mod tests {
         let default_resolver = Arc::new(MockResolver("8.8.8.8".parse().unwrap()));
 
         let split = SplitResolver::new(
-            vec![(vec![
-                DnsDomainRule::Suffix("cn".to_string()),
-                DnsDomainRule::Suffix("baidu.com".to_string()),
-            ], cn_resolver)],
+            vec![(
+                vec![
+                    DnsDomainRule::Suffix("cn".to_string()),
+                    DnsDomainRule::Suffix("baidu.com".to_string()),
+                ],
+                cn_resolver,
+            )],
             default_resolver,
         );
 
@@ -817,7 +829,11 @@ servers:
             }
         }
 
-        let pool = Arc::new(FakeIpPool::new("198.18.0.0/15", None, vec!["local".to_string()]));
+        let pool = Arc::new(FakeIpPool::new(
+            "198.18.0.0/15",
+            None,
+            vec!["local".to_string()],
+        ));
         let resolver = FakeIpResolver::new(Box::new(MockResolver), pool.clone());
 
         let addrs = resolver.resolve("router.local").await.unwrap();
@@ -930,7 +946,10 @@ servers:
         let ecs = ecs::parse_ecs_subnet("1.2.3.0/24").unwrap();
         let rdata = ecs::build_ecs_opt_rdata(&ecs);
         // option-code(2) + option-length(2) + family(2) + source(1) + scope(1) + addr(3) = 11
-        assert_eq!(u16::from_be_bytes([rdata[0], rdata[1]]), ecs::ECS_OPTION_CODE);
+        assert_eq!(
+            u16::from_be_bytes([rdata[0], rdata[1]]),
+            ecs::ECS_OPTION_CODE
+        );
         let option_len = u16::from_be_bytes([rdata[2], rdata[3]]);
         assert_eq!(option_len as usize, rdata.len() - 4);
     }

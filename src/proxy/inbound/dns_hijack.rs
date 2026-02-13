@@ -96,8 +96,8 @@ pub fn build_dns_response(query: &DnsQuery, addrs: &[IpAddr]) -> Vec<u8> {
     let matched: Vec<&IpAddr> = addrs
         .iter()
         .filter(|addr| match (query.qtype, addr) {
-            (1, IpAddr::V4(_)) => true,   // A 记录
-            (28, IpAddr::V6(_)) => true,   // AAAA 记录
+            (1, IpAddr::V4(_)) => true,  // A 记录
+            (28, IpAddr::V6(_)) => true, // AAAA 记录
             _ => false,
         })
         .collect();
@@ -108,10 +108,14 @@ pub fn build_dns_response(query: &DnsQuery, addrs: &[IpAddr]) -> Vec<u8> {
     let answer_size: usize = matched
         .iter()
         .map(|addr| {
-            2 + 2 + 2 + 4 + 2 + match addr {
-                IpAddr::V4(_) => 4,
-                IpAddr::V6(_) => 16,
-            }
+            2 + 2
+                + 2
+                + 4
+                + 2
+                + match addr {
+                    IpAddr::V4(_) => 4,
+                    IpAddr::V6(_) => 16,
+                }
         })
         .sum();
 
@@ -119,12 +123,12 @@ pub fn build_dns_response(query: &DnsQuery, addrs: &[IpAddr]) -> Vec<u8> {
     let mut resp = Vec::with_capacity(total_size);
 
     // Header (12 bytes)
-    resp.extend_from_slice(&query.id.to_be_bytes());     // Transaction ID
-    resp.extend_from_slice(&0x8180u16.to_be_bytes());     // Flags: QR=1, RD=1, RA=1
-    resp.extend_from_slice(&1u16.to_be_bytes());          // QDCOUNT = 1
-    resp.extend_from_slice(&ancount.to_be_bytes());       // ANCOUNT
-    resp.extend_from_slice(&0u16.to_be_bytes());          // NSCOUNT = 0
-    resp.extend_from_slice(&0u16.to_be_bytes());          // ARCOUNT = 0
+    resp.extend_from_slice(&query.id.to_be_bytes()); // Transaction ID
+    resp.extend_from_slice(&0x8180u16.to_be_bytes()); // Flags: QR=1, RD=1, RA=1
+    resp.extend_from_slice(&1u16.to_be_bytes()); // QDCOUNT = 1
+    resp.extend_from_slice(&ancount.to_be_bytes()); // ANCOUNT
+    resp.extend_from_slice(&0u16.to_be_bytes()); // NSCOUNT = 0
+    resp.extend_from_slice(&0u16.to_be_bytes()); // ARCOUNT = 0
 
     // Question section（原样复制）
     resp.extend_from_slice(&query.raw_question);
@@ -136,18 +140,18 @@ pub fn build_dns_response(query: &DnsQuery, addrs: &[IpAddr]) -> Vec<u8> {
 
         match addr {
             IpAddr::V4(v4) => {
-                resp.extend_from_slice(&1u16.to_be_bytes());     // TYPE = A
-                resp.extend_from_slice(&1u16.to_be_bytes());     // CLASS = IN
-                resp.extend_from_slice(&60u32.to_be_bytes());    // TTL = 60s
-                resp.extend_from_slice(&4u16.to_be_bytes());     // RDLENGTH = 4
-                resp.extend_from_slice(&v4.octets());            // RDATA
+                resp.extend_from_slice(&1u16.to_be_bytes()); // TYPE = A
+                resp.extend_from_slice(&1u16.to_be_bytes()); // CLASS = IN
+                resp.extend_from_slice(&60u32.to_be_bytes()); // TTL = 60s
+                resp.extend_from_slice(&4u16.to_be_bytes()); // RDLENGTH = 4
+                resp.extend_from_slice(&v4.octets()); // RDATA
             }
             IpAddr::V6(v6) => {
-                resp.extend_from_slice(&28u16.to_be_bytes());    // TYPE = AAAA
-                resp.extend_from_slice(&1u16.to_be_bytes());     // CLASS = IN
-                resp.extend_from_slice(&60u32.to_be_bytes());    // TTL = 60s
-                resp.extend_from_slice(&16u16.to_be_bytes());    // RDLENGTH = 16
-                resp.extend_from_slice(&v6.octets());            // RDATA
+                resp.extend_from_slice(&28u16.to_be_bytes()); // TYPE = AAAA
+                resp.extend_from_slice(&1u16.to_be_bytes()); // CLASS = IN
+                resp.extend_from_slice(&60u32.to_be_bytes()); // TTL = 60s
+                resp.extend_from_slice(&16u16.to_be_bytes()); // RDLENGTH = 16
+                resp.extend_from_slice(&v6.octets()); // RDATA
             }
         }
     }
@@ -185,14 +189,14 @@ pub fn build_ipv4_udp_packet(
     let mut pkt = vec![0u8; total_len];
 
     // IPv4 header (20 bytes)
-    pkt[0] = 0x45;                                                 // version=4, IHL=5
-    pkt[1] = 0x00;                                                 // DSCP/ECN
-    pkt[2..4].copy_from_slice(&(total_len as u16).to_be_bytes());  // Total Length
-    pkt[4..6].copy_from_slice(&0u16.to_be_bytes());                // Identification
-    pkt[6..8].copy_from_slice(&0x4000u16.to_be_bytes());           // Flags: Don't Fragment
-    pkt[8] = 64;                                                   // TTL
-    pkt[9] = 17;                                                   // Protocol: UDP
-    // pkt[10..12] = checksum, 先置零后计算
+    pkt[0] = 0x45; // version=4, IHL=5
+    pkt[1] = 0x00; // DSCP/ECN
+    pkt[2..4].copy_from_slice(&(total_len as u16).to_be_bytes()); // Total Length
+    pkt[4..6].copy_from_slice(&0u16.to_be_bytes()); // Identification
+    pkt[6..8].copy_from_slice(&0x4000u16.to_be_bytes()); // Flags: Don't Fragment
+    pkt[8] = 64; // TTL
+    pkt[9] = 17; // Protocol: UDP
+                 // pkt[10..12] = checksum, 先置零后计算
     pkt[12..16].copy_from_slice(&src_ip.octets());
     pkt[16..20].copy_from_slice(&dst_ip.octets());
 
@@ -226,11 +230,11 @@ pub fn build_ipv6_udp_packet(
     let mut pkt = vec![0u8; total_len];
 
     // IPv6 header (40 bytes)
-    pkt[0] = 0x60;                                                 // version=6
-    // pkt[1..4] = traffic class + flow label = 0
-    pkt[4..6].copy_from_slice(&(udp_len as u16).to_be_bytes());    // Payload Length
-    pkt[6] = 17;                                                   // Next Header: UDP
-    pkt[7] = 64;                                                   // Hop Limit
+    pkt[0] = 0x60; // version=6
+                   // pkt[1..4] = traffic class + flow label = 0
+    pkt[4..6].copy_from_slice(&(udp_len as u16).to_be_bytes()); // Payload Length
+    pkt[6] = 17; // Next Header: UDP
+    pkt[7] = 64; // Hop Limit
     pkt[8..24].copy_from_slice(&src_ip.octets());
     pkt[24..40].copy_from_slice(&dst_ip.octets());
 
@@ -298,22 +302,20 @@ pub async fn handle_dns_hijack(
     let ip_packet = match (parsed.src_ip, parsed.dst_ip) {
         (IpAddr::V4(client_ip), IpAddr::V4(dns_ip)) => {
             build_ipv4_udp_packet(
-                dns_ip,       // 响应包的 src = 原来的 dst（DNS 服务器）
-                client_ip,    // 响应包的 dst = 原来的 src（客户端）
-                parsed.dst_port,  // src_port = 53
-                parsed.src_port,  // dst_port = 客户端端口
+                dns_ip,          // 响应包的 src = 原来的 dst（DNS 服务器）
+                client_ip,       // 响应包的 dst = 原来的 src（客户端）
+                parsed.dst_port, // src_port = 53
+                parsed.src_port, // dst_port = 客户端端口
                 &dns_response,
             )
         }
-        (IpAddr::V6(client_ip), IpAddr::V6(dns_ip)) => {
-            build_ipv6_udp_packet(
-                dns_ip,
-                client_ip,
-                parsed.dst_port,
-                parsed.src_port,
-                &dns_response,
-            )
-        }
+        (IpAddr::V6(client_ip), IpAddr::V6(dns_ip)) => build_ipv6_udp_packet(
+            dns_ip,
+            client_ip,
+            parsed.dst_port,
+            parsed.src_port,
+            &dns_response,
+        ),
         _ => {
             debug!("DNS hijack: mismatched IP versions");
             return None;
@@ -332,12 +334,12 @@ mod tests {
         let mut data = Vec::new();
 
         // Header (12 bytes)
-        data.extend_from_slice(&id.to_be_bytes());      // Transaction ID
+        data.extend_from_slice(&id.to_be_bytes()); // Transaction ID
         data.extend_from_slice(&0x0100u16.to_be_bytes()); // Flags: RD=1
-        data.extend_from_slice(&1u16.to_be_bytes());      // QDCOUNT = 1
-        data.extend_from_slice(&0u16.to_be_bytes());      // ANCOUNT = 0
-        data.extend_from_slice(&0u16.to_be_bytes());      // NSCOUNT = 0
-        data.extend_from_slice(&0u16.to_be_bytes());      // ARCOUNT = 0
+        data.extend_from_slice(&1u16.to_be_bytes()); // QDCOUNT = 1
+        data.extend_from_slice(&0u16.to_be_bytes()); // ANCOUNT = 0
+        data.extend_from_slice(&0u16.to_be_bytes()); // NSCOUNT = 0
+        data.extend_from_slice(&0u16.to_be_bytes()); // ARCOUNT = 0
 
         // QNAME
         for label in name.split('.') {
@@ -446,10 +448,10 @@ mod tests {
         // 验证 header
         assert_eq!(u16::from_be_bytes([resp[0], resp[1]]), 0x1234); // ID
         assert_eq!(u16::from_be_bytes([resp[2], resp[3]]), 0x8180); // Flags
-        assert_eq!(u16::from_be_bytes([resp[4], resp[5]]), 1);      // QDCOUNT
-        assert_eq!(u16::from_be_bytes([resp[6], resp[7]]), 1);      // ANCOUNT (只有1个 IPv4)
-        assert_eq!(u16::from_be_bytes([resp[8], resp[9]]), 0);      // NSCOUNT
-        assert_eq!(u16::from_be_bytes([resp[10], resp[11]]), 0);    // ARCOUNT
+        assert_eq!(u16::from_be_bytes([resp[4], resp[5]]), 1); // QDCOUNT
+        assert_eq!(u16::from_be_bytes([resp[6], resp[7]]), 1); // ANCOUNT (只有1个 IPv4)
+        assert_eq!(u16::from_be_bytes([resp[8], resp[9]]), 0); // NSCOUNT
+        assert_eq!(u16::from_be_bytes([resp[10], resp[11]]), 0); // ARCOUNT
 
         // 验证 question section 被原样复制
         let q_end = 12 + query.raw_question.len();
@@ -458,11 +460,20 @@ mod tests {
         // 验证 answer section
         let ans_start = q_end;
         // NAME pointer
-        assert_eq!(u16::from_be_bytes([resp[ans_start], resp[ans_start + 1]]), 0xC00C);
+        assert_eq!(
+            u16::from_be_bytes([resp[ans_start], resp[ans_start + 1]]),
+            0xC00C
+        );
         // TYPE = A
-        assert_eq!(u16::from_be_bytes([resp[ans_start + 2], resp[ans_start + 3]]), 1);
+        assert_eq!(
+            u16::from_be_bytes([resp[ans_start + 2], resp[ans_start + 3]]),
+            1
+        );
         // CLASS = IN
-        assert_eq!(u16::from_be_bytes([resp[ans_start + 4], resp[ans_start + 5]]), 1);
+        assert_eq!(
+            u16::from_be_bytes([resp[ans_start + 4], resp[ans_start + 5]]),
+            1
+        );
         // TTL = 60
         assert_eq!(
             u32::from_be_bytes([
@@ -474,7 +485,10 @@ mod tests {
             60
         );
         // RDLENGTH = 4
-        assert_eq!(u16::from_be_bytes([resp[ans_start + 10], resp[ans_start + 11]]), 4);
+        assert_eq!(
+            u16::from_be_bytes([resp[ans_start + 10], resp[ans_start + 11]]),
+            4
+        );
         // RDATA = 1.2.3.4
         assert_eq!(&resp[ans_start + 12..ans_start + 16], &[1, 2, 3, 4]);
     }
@@ -498,9 +512,15 @@ mod tests {
         let q_end = 12 + query.raw_question.len();
         let ans_start = q_end;
         // TYPE = AAAA (28)
-        assert_eq!(u16::from_be_bytes([resp[ans_start + 2], resp[ans_start + 3]]), 28);
+        assert_eq!(
+            u16::from_be_bytes([resp[ans_start + 2], resp[ans_start + 3]]),
+            28
+        );
         // RDLENGTH = 16
-        assert_eq!(u16::from_be_bytes([resp[ans_start + 10], resp[ans_start + 11]]), 16);
+        assert_eq!(
+            u16::from_be_bytes([resp[ans_start + 10], resp[ans_start + 11]]),
+            16
+        );
         // RDATA = IPv6 address
         assert_eq!(&resp[ans_start + 12..ans_start + 28], &v6.octets());
     }

@@ -1,7 +1,7 @@
-﻿use std::time::Instant;
+use std::time::Instant;
 
 use openworld::app::tracker::ConnectionTracker;
-use openworld::config::types::{RuleConfig, RouterConfig};
+use openworld::config::types::{RouterConfig, RuleConfig};
 use openworld::proxy::{Network, Session};
 use openworld::router::Router;
 

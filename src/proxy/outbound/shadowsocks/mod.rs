@@ -14,11 +14,16 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::{TcpStream, UdpSocket};
 use tracing::debug;
 
-use crate::common::{Address, BoxUdpTransport, Dialer, DialerConfig, ProxyStream, UdpPacket, UdpTransport};
+use crate::common::{
+    Address, BoxUdpTransport, Dialer, DialerConfig, ProxyStream, UdpPacket, UdpTransport,
+};
 use crate::config::types::OutboundConfig;
 use crate::proxy::{OutboundHandler, Session};
 
-use crypto::{derive_identity_subkey_2022, derive_subkey, derive_subkey_2022, evp_bytes_to_key, is_aead_2022, ss2022_password_to_key, AeadCipher, CipherKind};
+use crypto::{
+    derive_identity_subkey_2022, derive_subkey, derive_subkey_2022, evp_bytes_to_key, is_aead_2022,
+    ss2022_password_to_key, AeadCipher, CipherKind,
+};
 
 /// Maximum payload size per AEAD frame (0x3FFF = 16383)
 const MAX_PAYLOAD_SIZE: usize = 0x3FFF;
@@ -92,12 +97,7 @@ impl ShadowsocksOutbound {
         let plugin = settings.plugin.clone();
         let plugin_opts = settings.plugin_opts.clone();
         let plugin_runtime = if let Some(plugin_bin) = plugin.as_ref() {
-            let runtime = spawn_sip003_runtime(
-                plugin_bin,
-                plugin_opts.as_deref(),
-                &address,
-                port,
-            )?;
+            let runtime = spawn_sip003_runtime(plugin_bin, plugin_opts.as_deref(), &address, port)?;
 
             let remote_addr = format!("{}:{}", address, port);
             debug!(
@@ -195,13 +195,9 @@ fn spawn_sip003_runtime(
         local_port,
     );
 
-    let mut child = cmd.spawn().map_err(|e| {
-        anyhow::anyhow!(
-            "failed to spawn SIP003 plugin '{}': {}",
-            plugin_bin,
-            e
-        )
-    })?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("failed to spawn SIP003 plugin '{}': {}", plugin_bin, e))?;
 
     std::thread::sleep(Duration::from_millis(80));
     if let Some(status) = child.try_wait()? {
@@ -254,7 +250,9 @@ impl OutboundHandler for ShadowsocksOutbound {
     }
 
     async fn connect(&self, session: &Session) -> Result<ProxyStream> {
-        let (server, use_dialer) = if let (Some(plugin), Some(runtime)) = (&self.plugin, &self.plugin_runtime) {
+        let (server, use_dialer) = if let (Some(plugin), Some(runtime)) =
+            (&self.plugin, &self.plugin_runtime)
+        {
             let addr = ensure_plugin_runtime_alive(
                 runtime,
                 plugin,
@@ -274,7 +272,9 @@ impl OutboundHandler for ShadowsocksOutbound {
                 Some(cfg) => Dialer::new(cfg.clone()),
                 None => Dialer::default_dialer(),
             };
-            dialer.connect_host(&self.server_addr, self.server_port).await?
+            dialer
+                .connect_host(&self.server_addr, self.server_port)
+                .await?
         } else {
             TcpStream::connect(&server).await?
         };
@@ -815,9 +815,15 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(envs.get("SS_REMOTE_HOST").map(String::as_str), Some("1.2.3.4"));
+        assert_eq!(
+            envs.get("SS_REMOTE_HOST").map(String::as_str),
+            Some("1.2.3.4")
+        );
         assert_eq!(envs.get("SS_REMOTE_PORT").map(String::as_str), Some("8388"));
-        assert_eq!(envs.get("SS_LOCAL_HOST").map(String::as_str), Some("127.0.0.1"));
+        assert_eq!(
+            envs.get("SS_LOCAL_HOST").map(String::as_str),
+            Some("127.0.0.1")
+        );
         assert_eq!(envs.get("SS_LOCAL_PORT").map(String::as_str), Some("32001"));
         assert_eq!(
             envs.get("SS_PLUGIN_OPTIONS").map(String::as_str),
