@@ -805,53 +805,33 @@ servers:
     }
 
     #[test]
-    fn parse_quic_address() {
-        let (config, _) = parse_dns_address("quic://1.1.1.1").unwrap();
-        let ns = &config.name_servers()[0];
-        assert_eq!(ns.protocol, Protocol::Quic);
-        assert_eq!(ns.socket_addr.port(), 853);
+    fn parse_quic_address_unsupported() {
+        assert!(parse_dns_address("quic://1.1.1.1").is_err());
     }
 
     #[test]
-    fn parse_quic_address_with_port() {
-        let (config, _) = parse_dns_address("quic://8.8.8.8:8853").unwrap();
-        let ns = &config.name_servers()[0];
-        assert_eq!(ns.protocol, Protocol::Quic);
-        assert_eq!(ns.socket_addr.port(), 8853);
+    fn parse_quic_address_with_port_unsupported() {
+        assert!(parse_dns_address("quic://8.8.8.8:8853").is_err());
     }
 
     #[test]
-    fn parse_quic_address_ipv6() {
-        let (config, _) = parse_dns_address("quic://[2606:4700:4700::1111]").unwrap();
-        let ns = &config.name_servers()[0];
-        assert_eq!(ns.protocol, Protocol::Quic);
-        assert!(ns.socket_addr.ip().is_ipv6());
-        assert_eq!(ns.socket_addr.port(), 853);
+    fn parse_quic_address_ipv6_unsupported() {
+        assert!(parse_dns_address("quic://[2606:4700:4700::1111]").is_err());
     }
 
     #[test]
-    fn parse_h3_address_ip() {
-        let (config, _) = parse_dns_address("h3://8.8.8.8").unwrap();
-        let ns = &config.name_servers()[0];
-        assert_eq!(ns.protocol, Protocol::H3);
-        assert_eq!(ns.socket_addr.port(), 443);
+    fn parse_h3_address_unsupported() {
+        assert!(parse_dns_address("h3://8.8.8.8").is_err());
     }
 
     #[test]
-    fn parse_h3_address_google() {
-        let (config, _) = parse_dns_address("h3://dns.google").unwrap();
-        let ns = &config.name_servers()[0];
-        assert_eq!(ns.protocol, Protocol::H3);
-        assert_eq!(ns.socket_addr.ip(), "8.8.8.8".parse::<IpAddr>().unwrap());
-        assert_eq!(ns.tls_dns_name.as_deref(), Some("dns.google"));
+    fn parse_h3_address_google_unsupported() {
+        assert!(parse_dns_address("h3://dns.google").is_err());
     }
 
     #[test]
-    fn parse_h3_address_cloudflare() {
-        let (config, _) = parse_dns_address("h3://cloudflare-dns.com").unwrap();
-        let ns = &config.name_servers()[0];
-        assert_eq!(ns.protocol, Protocol::H3);
-        assert_eq!(ns.socket_addr.ip(), "1.1.1.1".parse::<IpAddr>().unwrap());
+    fn parse_h3_address_cloudflare_unsupported() {
+        assert!(parse_dns_address("h3://cloudflare-dns.com").is_err());
     }
 
     #[test]
