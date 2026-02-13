@@ -388,7 +388,7 @@ async fn wait_for_tokens(limiter: &RateLimiter, needed: u64) {
 /// without copying to/from user space.
 #[cfg(target_os = "linux")]
 mod splice {
-    use std::os::unix::io::{AsRawFd, RawFd};
+    use std::os::unix::io::RawFd;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
@@ -462,7 +462,7 @@ mod splice {
                     std::ptr::null_mut(),
                     dst_fd,
                     std::ptr::null_mut(),
-                    (n as usize - written),
+                    n as usize - written,
                     SPLICE_FLAGS & !SPLICE_F_NONBLOCK, // blocking for pipe→socket
                 )
             };

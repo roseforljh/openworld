@@ -168,6 +168,7 @@ impl App {
         })
     }
 
+    #[allow(unused_mut)]
     pub async fn run(mut self) -> Result<()> {
         info!("OpenWorld started");
 

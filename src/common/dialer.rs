@@ -221,7 +221,7 @@ impl Dialer {
     fn create_mptcp_socket(&self, ipv4: bool) -> Result<tokio::net::TcpSocket> {
         #[cfg(target_os = "linux")]
         {
-            use std::os::unix::io::FromRawFd;
+            use std::os::unix::io::{FromRawFd, IntoRawFd};
 
             const IPPROTO_MPTCP: i32 = 262;
 

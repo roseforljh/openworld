@@ -1995,7 +1995,7 @@ impl TunDevice for LinuxTunDevice {
 
             let err = std::io::Error::last_os_error();
             match err.raw_os_error() {
-                Some(EAGAIN) | Some(EWOULDBLOCK) => {
+                Some(EAGAIN) => {
                     sleep(Duration::from_millis(2)).await;
                 }
                 _ => anyhow::bail!("read(tun) failed: {}", err),
@@ -2030,7 +2030,7 @@ impl TunDevice for LinuxTunDevice {
 
             let err = std::io::Error::last_os_error();
             match err.raw_os_error() {
-                Some(EAGAIN) | Some(EWOULDBLOCK) => {
+                Some(EAGAIN) => {
                     sleep(Duration::from_millis(2)).await;
                 }
                 _ => anyhow::bail!("write(tun) failed: {}", err),
@@ -2200,7 +2200,7 @@ impl TunDevice for AndroidFdTunDevice {
 
             let err = std::io::Error::last_os_error();
             match err.raw_os_error() {
-                Some(EAGAIN) | Some(EWOULDBLOCK) => {
+                Some(EAGAIN) => {
                     sleep(Duration::from_millis(2)).await;
                 }
                 _ => anyhow::bail!("read(android-tun) failed: {}", err),
@@ -2242,7 +2242,7 @@ impl TunDevice for AndroidFdTunDevice {
 
             let err = std::io::Error::last_os_error();
             match err.raw_os_error() {
-                Some(EAGAIN) | Some(EWOULDBLOCK) => {
+                Some(EAGAIN) => {
                     sleep(Duration::from_millis(2)).await;
                 }
                 _ => anyhow::bail!("write(android-tun) failed: {}", err),

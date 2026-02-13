@@ -334,13 +334,17 @@ impl IcmpProxy {
 
         // 等待 reply
         let async_fd = tokio::io::unix::AsyncFd::new(raw_socket.as_raw_fd())?;
-        let mut reply_buf = vec![0u8; 1500];
+        let mut reply_buf_uninit = vec![std::mem::MaybeUninit::<u8>::uninit(); 1500];
 
         let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
             loop {
                 let guard = async_fd.readable().await?;
-                match raw_socket.recv(&mut reply_buf) {
+                match raw_socket.recv(&mut reply_buf_uninit) {
                     Ok(n) => {
+                        // SAFETY: recv wrote n bytes into reply_buf_uninit
+                        let reply_buf = unsafe {
+                            std::slice::from_raw_parts(reply_buf_uninit.as_ptr() as *const u8, n)
+                        };
                         if n >= 8 {
                             let reply_type = if is_v4 {
                                 ICMP_ECHO_REPLY
@@ -356,7 +360,7 @@ impl IcmpProxy {
                                         source: echo.target,
                                         id: reply_id,
                                         sequence: reply_seq,
-                                        payload: reply_buf[8..n].to_vec(),
+                                        payload: reply_buf[8..].to_vec(),
                                         ttl: 64,
                                     });
                                 }

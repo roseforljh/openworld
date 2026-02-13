@@ -100,7 +100,6 @@ jobs:
       matrix:
         target:
           - armv7-unknown-linux-gnueabihf
-          - mipsel-unknown-linux-gnu
           - riscv64gc-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v4
