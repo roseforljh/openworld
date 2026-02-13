@@ -180,8 +180,14 @@ mod tests {
         assert!(frags.len() >= 4); // 200 / 50 = 4 minimum
         let total: usize = frags.iter().map(|f| f.len()).sum();
         assert_eq!(total, 200);
-        for f in &frags {
-            assert!(f.len() >= 10 && f.len() <= 50, "fragment size {} not in [10, 50]", f.len());
+        for (i, f) in frags.iter().enumerate() {
+            let is_last = i == frags.len() - 1;
+            // 最后一个分片可能因为剩余数据不足而小于 min_len
+            if is_last {
+                assert!(f.len() >= 1 && f.len() <= 50, "last fragment size {} not in [1, 50]", f.len());
+            } else {
+                assert!(f.len() >= 10 && f.len() <= 50, "fragment size {} not in [10, 50]", f.len());
+            }
         }
     }
 

@@ -14,7 +14,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::config::types::InboundConfig;
 use crate::proxy::outbound::wireguard::noise::{
-    self, TransportKeys, WireGuardKeys, parse_base64_key, parse_handshake_init,
+    TransportKeys, WireGuardKeys, parse_base64_key, parse_handshake_init,
     create_handshake_resp, decrypt_transport,
 };
 
@@ -258,6 +258,7 @@ impl WireGuardEndpoint {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proxy::outbound::wireguard::noise;
 
     #[test]
     fn wireguard_endpoint_peer_check() {

@@ -2,6 +2,8 @@
 
 A high-performance proxy kernel written in Rust, designed as a modern alternative to sing-box / Clash / Xray.
 
+> **52,000+ lines Rust · 1050+ tests · Zero-copy relay · Three-platform native**
+
 ## Features
 
 ### Proxy Protocols
@@ -12,8 +14,9 @@ A high-performance proxy kernel written in Rust, designed as a modern alternativ
 | VMess | ✅ | ✅ | ✅ | AEAD + Legacy |
 | Trojan | ✅ | ✅ | ✅ | |
 | Shadowsocks | ✅ | ✅ | ✅ | AEAD + 2022 (Blake3) |
-| Hysteria2 | ✅ | ✅ | ✅ | QUIC, Brutal CC |
+| Hysteria2 | ✅ | ✅ | ✅ | QUIC, Brutal CC, 0-RTT |
 | Hysteria v1 | ✅ | — | — | QUIC, Salamander obfs |
+| TUIC | ✅ | — | ✅ | QUIC, 0-RTT |
 | NaiveProxy | ✅ | — | — | TLS + HTTP/2 CONNECT |
 | WireGuard | ✅ | — | ✅ | |
 | SOCKS5 | ✅ | ✅ | ✅ | |
@@ -58,11 +61,12 @@ A high-performance proxy kernel written in Rust, designed as a modern alternativ
 
 - Domain: suffix, keyword, regex, full match
 - IP CIDR
-- GeoIP (MaxMind MMDB)
+- GeoIP (MaxMind MMDB) with auto-update
 - GeoSite
 - Rule Sets (SRS binary format)
 - Wi-Fi SSID matching
 - Process name matching
+- Rule Providers (remote HTTP + file, auto-refresh)
 
 ### Proxy Groups
 
@@ -70,20 +74,35 @@ A high-performance proxy kernel written in Rust, designed as a modern alternativ
 - URL-Test (auto best latency)
 - Fallback
 - Load Balance
+- Relay (chained proxies)
 
 ### API
 
-- Clash-compatible REST API (`/proxies`, `/rules`, `/connections`, `/traffic`)
+- Clash-compatible REST API (30+ endpoints: `/proxies`, `/rules`, `/connections`, `/traffic`, `/providers`, `/dns`, `/configs`, `/memory`)
 - V2Ray Stats API (traffic counters)
-- WebSocket / SSE real-time streaming
+- WebSocket / SSE real-time streaming (logs, traffic, connections)
+- Prometheus metrics export (`/metrics`)
 - External UI support (yacd, Metacubexd)
+
+### Performance
+
+- **Zero-copy relay**: io_uring splice → libc splice → buffered fallback
+- **Buffer pool**: Lock-free 3-tier pool (4K/32K/64K) with hit/miss stats
+- **TCP connection pool**: LIFO reuse with per-host limits & auto-expiry
+- **Multiplexing**: SingMux with backpressure
+- **Traffic stats persistence**: Cross-restart JSON-based counters
 
 ### Platform
 
-- Linux, macOS, Windows
-- Android (via FFI/JNI, TUN fd mode)
-- TUN stack (gVisor user-space TCP/IP)
-- ICMP Echo proxy
+| Feature | Linux | Windows | macOS | Android |
+|---------|:-----:|:-------:|:-----:|:-------:|
+| TUN | ✅ ioctl | ✅ WinTun | ✅ utun | ✅ fd |
+| System proxy | ✅ env | ✅ Registry | ✅ networksetup | — |
+| Service | ✅ systemd | ✅ SCM | — | — |
+| Auto-start | ✅ systemd enable | ✅ Registry | — | — |
+| Transparent | ✅ nftables/iptables | — | — | — |
+| Zero-copy | ✅ io_uring/splice | — | — | — |
+| Docker | ✅ | — | — | — |
 
 ## Quick Start
 
@@ -94,9 +113,27 @@ cargo build --release
 # Run
 ./target/release/openworld -c config.yaml
 
-# Run with API
+# Run with API (access at http://127.0.0.1:9090)
 ./target/release/openworld -c config.yaml
-# Access API: http://127.0.0.1:9090
+```
+
+### Linux Deployment
+
+```bash
+# One-click install
+sudo ./deploy/install.sh config.yaml
+
+# Manage
+systemctl start openworld
+systemctl enable openworld
+journalctl -u openworld -f
+```
+
+### Docker
+
+```bash
+cd deploy
+docker compose up -d
 ```
 
 ## Configuration
@@ -141,12 +178,17 @@ router:
 # Debug build
 cargo build
 
-# Release build
+# Release build (optimized for size)
 cargo build --release
 
 # Android cross-compile
-rustup target add aarch64-linux-android
-cargo build --target aarch64-linux-android --release
+./scripts/build-android.sh
+
+# Run tests (1050+)
+cargo test --lib
+
+# Run benchmarks
+cargo bench
 ```
 
 ## License

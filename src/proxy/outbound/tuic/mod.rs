@@ -279,7 +279,8 @@ impl TuicConnectionManager {
     }
 
     async fn create_connection(&mut self) -> Result<quinn::Connection> {
-        let tls_config = crate::common::tls::build_tls_config(self.allow_insecure, None)?;
+        let mut tls_config = crate::common::tls::build_tls_config(self.allow_insecure, None)?;
+        tls_config.enable_early_data = true; // Enable 0-RTT
         let mut client_config = quinn::ClientConfig::new(Arc::new(
             quinn::crypto::rustls::QuicClientConfig::try_from(tls_config)?,
         ));
@@ -320,8 +321,24 @@ impl TuicConnectionManager {
             .next()
             .ok_or_else(|| anyhow::anyhow!("failed to resolve {}", addr_str))?;
 
-        let conn = endpoint.connect(server_addr, &self.sni)?.await?;
-        debug!(addr = %server_addr, "TUIC QUIC connection established");
+        let connecting = endpoint.connect(server_addr, &self.sni)?;
+
+        // Try 0-RTT for faster connection establishment
+        let conn = match connecting.into_0rtt() {
+            Ok((conn, zero_rtt_accepted)) => {
+                debug!(addr = %server_addr, "TUIC QUIC 0-RTT connection initiated");
+                tokio::spawn(async move {
+                    let accepted = zero_rtt_accepted.await;
+                    debug!(accepted = accepted, "TUIC QUIC 0-RTT acceptance result");
+                });
+                conn
+            }
+            Err(connecting) => {
+                let conn = connecting.await?;
+                debug!(addr = %server_addr, "TUIC QUIC 1-RTT connection established");
+                conn
+            }
+        };
 
         self.endpoint = Some(endpoint);
         Ok(conn)

@@ -42,8 +42,10 @@ pub struct MasqueOutbound {
     /// 本地虚拟 IPv4 地址
     local_ipv4: Option<IpAddr>,
     /// 本地虚拟 IPv6 地址
+    #[allow(dead_code)]
     local_ipv6: Option<IpAddr>,
     /// CONNECT-IP URI
+    #[allow(dead_code)]
     uri: String,
     /// TLS SNI
     sni: String,
@@ -52,6 +54,7 @@ pub struct MasqueOutbound {
     /// 拥塞控制算法
     congestion: String,
     /// UDP 支持
+    #[allow(dead_code)]
     udp: bool,
     /// 隧道状态
     tunnel: Mutex<Option<TunnelState>>,
@@ -62,6 +65,7 @@ struct TunnelState {
     /// smoltcp 用户态网络栈
     stack: SharedStack,
     /// QUIC 连接
+    #[allow(dead_code)]
     quic_conn: quinn::Connection,
     /// 隧道后台任务 handle
     _tunnel_task: tokio::task::JoinHandle<()>,

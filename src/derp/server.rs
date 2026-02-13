@@ -14,10 +14,10 @@ use crypto_box::{
     aead::{Aead, AeadCore, OsRng},
     PublicKey, SecretKey, SalsaBox,
 };
-use tokio::io::{AsyncRead, AsyncWrite, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::{interval, Duration};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use super::protocol::*;
 
@@ -35,6 +35,7 @@ enum ClientMsg {
         reason: PeerGoneReason,
     },
     /// 健康状态
+    #[allow(dead_code)]
     Health(String),
     /// 关闭连接
     Shutdown,

@@ -120,6 +120,7 @@ struct SingBoxOutbound {
     #[serde(default)]
     user: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     private_key_path: Option<String>,
     #[serde(default)]
     private_key_passphrase: Option<String>,
@@ -135,6 +136,7 @@ struct SingBoxOutbound {
 }
 
 #[derive(Debug, Deserialize, Default)]
+#[allow(dead_code)]
 struct SingBoxWgPeer {
     #[serde(default)]
     public_key: Option<String>,

@@ -9,7 +9,7 @@
 
 use std::io;
 
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 // ========== 常量 ==========

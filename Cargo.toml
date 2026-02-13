@@ -104,6 +104,10 @@ harness = false
 name = "mux_throughput"
 harness = false
 
+[[bench]]
+name = "relay_throughput"
+harness = false
+
 [profile.release]
 opt-level = "z"       # 优化体积而非速度
 lto = true            # 全量链接时优化，去除未用代码

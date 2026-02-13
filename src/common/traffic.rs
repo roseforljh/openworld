@@ -43,7 +43,11 @@ impl RateLimiter {
     }
 
     fn refill(&self) {
-        let mut last = self.last_refill.lock().unwrap();
+        // 如果锁中毒（持有者 panic），静默跳过而非传播 panic
+        let mut last = match self.last_refill.lock() {
+            Ok(guard) => guard,
+            Err(_poisoned) => return,
+        };
         let now = Instant::now();
         let elapsed = now.duration_since(*last);
         let new_tokens = (elapsed.as_millis() as i64 * self.refill_rate) / 1000;

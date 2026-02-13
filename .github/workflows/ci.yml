@@ -121,7 +121,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Run criterion benchmarks
-        run: cargo bench --bench router_match --bench dns_resolve --bench mux_throughput -- --output-format bencher | tee bench_current.txt
+        run: cargo bench --bench router_match --bench dns_resolve --bench mux_throughput --bench relay_throughput -- --output-format bencher | tee bench_current.txt
       - name: Checkout main branch baseline
         run: |
           git fetch origin main

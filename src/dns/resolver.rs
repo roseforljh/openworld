@@ -145,7 +145,21 @@ impl SplitResolver {
 #[async_trait]
 impl DnsResolver for SplitResolver {
     async fn resolve(&self, host: &str) -> Result<Vec<IpAddr>> {
-        self.find_resolver(host).resolve(host).await
+        let resolver = self.find_resolver(host);
+        match resolver.resolve(host).await {
+            Ok(addrs) => Ok(addrs),
+            Err(e) => {
+                // 如果匹配的 resolver 不是默认 resolver，回退到默认
+                let default_ptr = self.default.as_ref() as *const dyn DnsResolver;
+                let matched_ptr = resolver as *const dyn DnsResolver;
+                if !std::ptr::eq(default_ptr, matched_ptr) {
+                    debug!(host = host, error = %e, "DNS split resolver fallback to default");
+                    self.default.resolve(host).await
+                } else {
+                    Err(e)
+                }
+            }
+        }
     }
 }
 

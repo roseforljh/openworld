@@ -167,6 +167,8 @@ impl TunInbound {
         );
 
         let mut read_buf = vec![0u8; 65535];
+        let mut consecutive_errors: u32 = 0;
+        const MAX_CONSECUTIVE_ERRORS: u32 = 50;
 
         loop {
             tokio::select! {
@@ -176,9 +178,31 @@ impl TunInbound {
                 }
                 read_result = tun_device.read_packet(&mut read_buf) => {
                     let packet_len = match read_result {
-                        Ok(len) => len,
+                        Ok(len) => {
+                            consecutive_errors = 0;
+                            len
+                        }
                         Err(err) => {
-                            debug!(tag = self.tag(), error = %err, "tun read failed");
+                            consecutive_errors += 1;
+                            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                                tracing::error!(
+                                    tag = self.tag(),
+                                    errors = consecutive_errors,
+                                    error = %err,
+                                    "tun device: too many consecutive read errors, stopping"
+                                );
+                                break;
+                            }
+                            // 指数退避（1ms→2ms→...→128ms）
+                            let delay_ms = 1u64 << consecutive_errors.min(7);
+                            debug!(
+                                tag = self.tag(),
+                                error = %err,
+                                consecutive = consecutive_errors,
+                                backoff_ms = delay_ms,
+                                "tun read error, backing off"
+                            );
+                            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                             continue;
                         }
                     };

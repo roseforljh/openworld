@@ -1,3 +1,4 @@
+pub mod connection_pool;
 pub mod group;
 pub mod inbound;
 pub mod mux;

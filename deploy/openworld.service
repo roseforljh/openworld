@@ -1,0 +1,32 @@
+[Unit]
+Description=OpenWorld Proxy Kernel
+Documentation=https://github.com/openworld
+After=network.target nss-lookup.target
+
+[Service]
+Type=simple
+User=openworld
+Group=openworld
+ExecStart=/usr/local/bin/openworld /etc/openworld/config.yaml
+Restart=on-failure
+RestartSec=5
+
+# 性能与安全
+LimitNOFILE=1048576
+LimitNPROC=512
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
+NoNewPrivileges=true
+
+# 沙箱
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/openworld /var/log/openworld
+PrivateTmp=true
+PrivateDevices=false
+
+# 工作目录
+WorkingDirectory=/etc/openworld
+
+[Install]
+WantedBy=multi-user.target

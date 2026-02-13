@@ -16,7 +16,7 @@ use anyhow::Result;
 pub fn prepare_tls_config(
     private_key_pem: &str,
     peer_public_key_der: &[u8],
-    sni: &str,
+    _sni: &str,
 ) -> Result<rustls::ClientConfig> {
     // 1. 生成自签名证书
     let (cert_chain, rustls_key) = generate_self_signed_cert(private_key_pem)?;

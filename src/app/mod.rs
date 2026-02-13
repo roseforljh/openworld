@@ -15,7 +15,9 @@ pub mod release;
 pub mod resilience;
 pub mod security;
 pub mod service;
+pub mod system_proxy;
 pub mod tracker;
+pub mod traffic_persist;
 
 use anyhow::Result;
 use std::collections::HashSet;
