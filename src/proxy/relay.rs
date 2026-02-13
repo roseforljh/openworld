@@ -386,7 +386,9 @@ async fn wait_for_tokens(limiter: &RateLimiter, needed: u64) {
 /// Linux splice-based zero-copy relay.
 /// Uses kernel pipes + splice() to move data between two TCP sockets
 /// without copying to/from user space.
+/// NOTE: Currently disabled in relay_proxy_streams due to a data relay bug.
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 mod splice {
     use std::os::unix::io::RawFd;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -772,65 +774,20 @@ pub async fn relay_proxy_streams(
     remote: ProxyStream,
     opts: RelayOptions,
 ) -> Result<(u64, u64)> {
-    // Try zero-copy path on Linux when both sides are raw TcpStream
+    // NOTE: Linux splice zero-copy relay is currently disabled due to a bug
+    // where data is not relayed properly (up=0, down=0 or up=N, down=0).
+    // Both splice and io_uring paths are affected. All platforms now use the
+    // tokio copy_bidirectional fallback below until splice is debugged.
+    // See: relay_proxy_streams_tcp_returns_data test and e2e_protocol_loopback tests.
     #[cfg(target_os = "linux")]
     {
-        use std::os::unix::io::AsRawFd;
         let client_is_tcp = client.as_any().is::<tokio::net::TcpStream>();
         let remote_is_tcp = remote.as_any().is::<tokio::net::TcpStream>();
         debug!(
             client_tcp = client_is_tcp,
             remote_tcp = remote_is_tcp,
-            "zero-copy path check"
+            "zero-copy splice disabled, using tokio fallback"
         );
-
-        if client_is_tcp
-            && remote_is_tcp
-            && opts.upload_limiter.is_none()
-            && opts.download_limiter.is_none()
-        {
-            let client_fd = client
-                .as_any()
-                .downcast_ref::<tokio::net::TcpStream>()
-                .unwrap()
-                .as_raw_fd();
-            let remote_fd = remote
-                .as_any()
-                .downcast_ref::<tokio::net::TcpStream>()
-                .unwrap()
-                .as_raw_fd();
-
-            // Priority 1: io_uring splice (Linux 5.6+ with feature enabled)
-            #[cfg(feature = "io_uring")]
-            {
-                debug!("attempting io_uring splice zero-copy relay");
-                match uring_relay::uring_relay(
-                    client_fd,
-                    remote_fd,
-                    opts.idle_timeout,
-                    opts.stats.clone(),
-                    opts.cancel.clone().unwrap_or_default(),
-                )
-                .await
-                {
-                    Ok(result) => return Ok(result),
-                    Err(e) => {
-                        debug!(error = %e, "io_uring not available, falling back to splice");
-                    }
-                }
-            }
-
-            // Priority 2: libc splice (all Linux)
-            debug!("using splice() zero-copy relay");
-            return splice::splice_relay(
-                client_fd,
-                remote_fd,
-                opts.idle_timeout,
-                opts.stats,
-                opts.cancel.unwrap_or_default(),
-            )
-            .await;
-        }
     }
 
     // Fallback: use Tokio's copy_bidirectional for robust full-duplex relay.
@@ -957,7 +914,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "Linux splice relay bug: echo data returns empty (up=N, down=0)"]
     async fn relay_proxy_streams_tcp_returns_data() {
         let echo_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let echo_addr = echo_listener.local_addr().unwrap();
