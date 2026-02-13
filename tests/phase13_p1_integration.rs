@@ -491,7 +491,8 @@ fn dns_udp_resolver_creation() {
 fn dns_quic_resolver_creation() {
     use openworld::dns::resolver::HickoryResolver;
     let resolver = HickoryResolver::new("quic://8.8.8.8");
-    assert!(resolver.is_ok());
+    // DNS-over-QUIC is no longer supported (ring 0.16 compat issue)
+    assert!(resolver.is_err());
 }
 
 #[test]
