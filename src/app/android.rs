@@ -816,14 +816,6 @@ mod jni_exports {
         ffi::openworld_gc()
     }
 
-    #[no_mangle]
-    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_getMemoryUsage(
-        env: JNIEnv,
-        _c: JClass,
-    ) -> jstring {
-        ffi_str_to_jstring(&env, ffi::openworld_memory_usage())
-    }
-
     // ─── B6: GeoIP/GeoSite 更新 ─────────────────────────────────────────────
 
     #[no_mangle]
@@ -1104,7 +1096,6 @@ pub fn core_jni_methods() -> Vec<JniMethodSignature> {
         JniMethodSignature::new(c, "stopAutoTest", "()Z", true),
         // Phase B5: 内存/GC
         JniMethodSignature::new(c, "gc", "()I", true),
-        JniMethodSignature::new(c, "getMemoryUsage", "()Ljava/lang/String;", true),
         // Phase B6: GeoIP/GeoSite 更新
         JniMethodSignature::new(
             c,

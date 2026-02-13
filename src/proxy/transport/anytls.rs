@@ -129,28 +129,55 @@ impl StreamTransport for AnyTlsTransport {
         )
         .await?;
 
-        // 2. TLS 握手
-        let mut root_store = tokio_rustls::rustls::RootCertStore::empty();
-        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        // 2. TLS 握手（Reality 或标准 TLS）
+        let mut tls_stream: ProxyStream =
+            if self.tls_config.as_ref().map_or(false, |c| c.security == "reality") {
+                // Reality TLS 握手
+                use std::sync::Arc;
+                use crate::proxy::outbound::vless::reality;
+                use super::reality::parse_reality_from_tls;
 
-        let mut config = tokio_rustls::rustls::ClientConfig::builder()
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
+                let tls_cfg = self.tls_config.as_ref().unwrap();
+                let (reality_config, sni) =
+                    parse_reality_from_tls(tls_cfg, &self.server_addr)?;
+                let (rustls_config, handshake_ctx) =
+                    reality::build_reality_config(&reality_config)?;
+                let connector =
+                    tokio_rustls::TlsConnector::from(Arc::new(rustls_config));
+                let server_name =
+                    rustls::pki_types::ServerName::try_from(sni)?;
+                let stream = handshake_ctx
+                    .scope(|| connector.connect(server_name, tcp))
+                    .await?;
+                debug!(server = %self.server_addr, "AnyTLS Reality handshake completed");
+                Box::new(stream)
+            } else {
+                // 标准 TLS 握手
+                let mut root_store = tokio_rustls::rustls::RootCertStore::empty();
+                root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
-        // 使用默认 ALPN，看起来像正常 HTTPS 流量
-        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+                let mut config = tokio_rustls::rustls::ClientConfig::builder()
+                    .with_root_certificates(root_store)
+                    .with_no_client_auth();
 
-        let server_name = self
-            .tls_config
-            .as_ref()
-            .and_then(|c| c.sni.clone())
-            .unwrap_or_else(|| self.server_addr.clone());
+                // 使用默认 ALPN，看起来像正常 HTTPS 流量
+                config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
 
-        let server_name = tokio_rustls::rustls::pki_types::ServerName::try_from(server_name)
-            .map_err(|e| anyhow::anyhow!("invalid server name: {}", e))?;
+                let server_name = self
+                    .tls_config
+                    .as_ref()
+                    .and_then(|c| c.sni.clone())
+                    .unwrap_or_else(|| self.server_addr.clone());
 
-        let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(config));
-        let mut tls_stream = connector.connect(server_name, tcp).await?;
+                let server_name =
+                    tokio_rustls::rustls::pki_types::ServerName::try_from(server_name)
+                        .map_err(|e| anyhow::anyhow!("invalid server name: {}", e))?;
+
+                let connector =
+                    tokio_rustls::TlsConnector::from(std::sync::Arc::new(config));
+                let stream = connector.connect(server_name, tcp).await?;
+                Box::new(stream)
+            };
 
         // 3. 发送认证帧
         let auth_token = self.compute_auth_token();
@@ -181,7 +208,7 @@ impl StreamTransport for AnyTlsTransport {
 
         // 6. 包装为 AnyTlsStream（处理帧协议）
         Ok(Box::new(AnyTlsStream {
-            inner: Box::new(tls_stream),
+            inner: tls_stream,
             read_buf: BytesMut::new(),
         }))
     }

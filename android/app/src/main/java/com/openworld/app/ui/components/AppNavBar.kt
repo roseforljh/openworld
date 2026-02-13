@@ -1,0 +1,133 @@
+package com.openworld.app.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
+import androidx.navigation.compose.currentBackStackEntryAsState
+import com.openworld.app.ui.navigation.Screen
+import com.openworld.app.ui.navigation.getTabForRoute
+import androidx.compose.material3.MaterialTheme
+
+@Composable
+fun AppNavBar(
+    navController: NavController
+) {
+    val items = listOf(
+        Screen.Dashboard,
+        Screen.Nodes,
+        Screen.Profiles,
+        Screen.Settings
+    )
+
+    val gradientColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+
+    Column {
+        // 顶部渐变分隔线
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            gradientColor,
+                            gradientColor,
+                            Color.Transparent
+                        ),
+                        startX = 0f,
+                        endX = Float.POSITIVE_INFINITY
+                    )
+                )
+        )
+
+        NavigationBar(
+            containerColor = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.height(64.dp)
+        ) {
+            val navBackStackEntry by navController.currentBackStackEntryAsState()
+            val currentRoute = navBackStackEntry?.destination?.route
+
+            items.forEach { screen ->
+                val isSelected = getTabForRoute(currentRoute) == screen.route
+
+                NavigationBarItem(
+                    icon = {
+                        Box(
+                            modifier = Modifier.size(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isSelected) {
+                                    when (screen) {
+                                        Screen.Dashboard -> Icons.Filled.Home
+                                        Screen.Nodes -> Icons.Filled.Layers
+                                        Screen.Profiles -> Icons.Filled.Description
+                                        Screen.Settings -> Icons.Filled.Settings
+                                        else -> Icons.Filled.Home
+                                    }
+                                } else {
+                                    when (screen) {
+                                        Screen.Dashboard -> Icons.Outlined.Home
+                                        Screen.Nodes -> Icons.Outlined.Layers
+                                        Screen.Profiles -> Icons.Outlined.Description
+                                        Screen.Settings -> Icons.Outlined.Settings
+                                        else -> Icons.Outlined.Home
+                                    }
+                                },
+                                contentDescription = screen.route,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    },
+                    label = null,
+                    selected = isSelected,
+                    onClick = {
+                        val currentTab = getTabForRoute(currentRoute)
+                        if (currentTab != screen.route) {
+                            navController.navigate(screen.route) {
+                                popUpTo(Screen.Dashboard.route) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = screen != Screen.Settings
+                            }
+                        } else if (screen == Screen.Settings) {
+                            navController.popBackStack(Screen.Settings.route, false)
+                        }
+                    },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.onBackground,
+                        indicatorColor = Color.Transparent,
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
+            }
+        }
+    }
+}

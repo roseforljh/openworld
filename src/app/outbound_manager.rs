@@ -43,13 +43,24 @@ pub struct OutboundManager {
 
 impl OutboundManager {
     pub fn new(configs: &[OutboundConfig], group_configs: &[ProxyGroupConfig]) -> Result<Self> {
+        let normalized_configs: Vec<OutboundConfig> = configs
+            .iter()
+            .cloned()
+            .map(|mut cfg| {
+                crate::config::normalize_outbound_alias(&mut cfg);
+                cfg
+            })
+            .collect();
         let mut handlers: HashMap<String, Arc<dyn OutboundHandler>> = HashMap::new();
         let mut group_metas: HashMap<String, GroupMeta> = HashMap::new();
         let config_map: HashMap<&str, &OutboundConfig> =
-            configs.iter().map(|cfg| (cfg.tag.as_str(), cfg)).collect();
+            normalized_configs
+                .iter()
+                .map(|cfg| (cfg.tag.as_str(), cfg))
+                .collect();
 
         // 1. 注册基础出站
-        for config in configs {
+        for config in &normalized_configs {
             if config.protocol == "chain" {
                 continue;
             }
@@ -85,7 +96,7 @@ impl OutboundManager {
             handlers.insert(config.tag.clone(), handler);
         }
 
-        for config in configs {
+        for config in &normalized_configs {
             if config.protocol != "chain" {
                 continue;
             }
@@ -314,5 +325,42 @@ mod tests {
         }];
 
         assert!(OutboundManager::new(&outbounds, &[]).is_err());
+    }
+
+    #[test]
+    fn outbound_manager_supports_vless_xhttp_reality_alias() {
+        let outbounds = vec![OutboundConfig {
+            tag: "vless-xh".to_string(),
+            protocol: "vless-xhttp-reality-enc".to_string(),
+            settings: OutboundSettings {
+                address: Some("example.com".to_string()),
+                port: Some(443),
+                uuid: Some("550e8400-e29b-41d4-a716-446655440000".to_string()),
+                public_key: Some("3R9vK-TEST-PUBKEY-PLACEHOLDER".to_string()),
+                short_id: Some("6ba85179e30d4fc2".to_string()),
+                ..Default::default()
+            },
+        }];
+
+        let manager = OutboundManager::new(&outbounds, &[]).unwrap();
+        assert!(manager.get("vless-xh").is_some());
+    }
+
+    #[test]
+    fn outbound_manager_supports_vmess_ws_alias() {
+        let outbounds = vec![OutboundConfig {
+            tag: "vmess-ws".to_string(),
+            protocol: "vmess-ws".to_string(),
+            settings: OutboundSettings {
+                address: Some("example.com".to_string()),
+                port: Some(443),
+                uuid: Some("550e8400-e29b-41d4-a716-446655440001".to_string()),
+                security: Some("tls".to_string()),
+                ..Default::default()
+            },
+        }];
+
+        let manager = OutboundManager::new(&outbounds, &[]).unwrap();
+        assert!(manager.get("vmess-ws").is_some());
     }
 }

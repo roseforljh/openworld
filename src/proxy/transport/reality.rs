@@ -21,6 +21,48 @@ pub struct RealityTransport {
     dialer_config: Option<DialerConfig>,
 }
 
+/// 从 TlsConfig 解析 Reality 配置（共享辅助函数）
+///
+/// 返回 (RealityConfig, sni)。供 RealityTransport 和 AnyTlsTransport 复用。
+pub fn parse_reality_from_tls(
+    config: &TlsConfig,
+    fallback_addr: &str,
+) -> Result<(reality::RealityConfig, String)> {
+    let public_key_str = config
+        .public_key
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("reality requires public_key"))?;
+    let server_public_key = reality::parse_public_key(public_key_str)?;
+
+    let short_id_str = config.short_id.as_deref().unwrap_or("");
+    let short_id = if short_id_str.is_empty() {
+        vec![]
+    } else {
+        reality::parse_hex(short_id_str)?
+    };
+
+    let server_name = config
+        .server_name
+        .clone()
+        .or_else(|| config.sni.clone())
+        .unwrap_or_else(|| fallback_addr.to_string());
+
+    let sni = config
+        .sni
+        .clone()
+        .or_else(|| config.server_name.clone())
+        .unwrap_or_else(|| fallback_addr.to_string());
+
+    Ok((
+        reality::RealityConfig {
+            server_public_key,
+            short_id,
+            server_name,
+        },
+        sni,
+    ))
+}
+
 impl RealityTransport {
     pub fn new(
         server_addr: String,
@@ -28,39 +70,12 @@ impl RealityTransport {
         config: &TlsConfig,
         dialer_config: Option<DialerConfig>,
     ) -> Result<Self> {
-        let public_key_str = config
-            .public_key
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("reality requires public_key"))?;
-        let server_public_key = reality::parse_public_key(public_key_str)?;
-
-        let short_id_str = config.short_id.as_deref().unwrap_or("");
-        let short_id = if short_id_str.is_empty() {
-            vec![]
-        } else {
-            reality::parse_hex(short_id_str)?
-        };
-
-        let server_name = config
-            .server_name
-            .clone()
-            .or_else(|| config.sni.clone())
-            .unwrap_or_else(|| server_addr.clone());
-
-        let sni = config
-            .sni
-            .clone()
-            .or_else(|| config.server_name.clone())
-            .unwrap_or_else(|| server_addr.clone());
+        let (reality_config, sni) = parse_reality_from_tls(config, &server_addr)?;
 
         Ok(Self {
             server_addr,
             server_port,
-            reality_config: reality::RealityConfig {
-                server_public_key,
-                short_id,
-                server_name,
-            },
+            reality_config,
             sni,
             dialer_config,
         })

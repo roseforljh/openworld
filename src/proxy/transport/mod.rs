@@ -124,8 +124,8 @@ pub fn build_transport_with_dialer(
             );
             Ok(Box::new(transport))
         }
-        "httpupgrade" => {
-            let tls = if tls_config.enabled {
+        "httpupgrade" | "xhttp" => {
+            let tls = if tls_config.enabled || tls_config.security == "reality" {
                 Some(tls_config.clone())
             } else {
                 None
@@ -163,7 +163,7 @@ pub fn build_transport_with_dialer(
                 .clone()
                 .unwrap_or_default();
             let padding = true; // 默认启用
-            let tls = if tls_config.enabled {
+            let tls = if tls_config.enabled || tls_config.security == "reality" {
                 Some(tls_config.clone())
             } else {
                 None

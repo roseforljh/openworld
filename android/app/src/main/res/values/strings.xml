@@ -1,0 +1,103 @@
+<resources>
+    <string name="app_name">OpenWorld</string>
+    <string name="vpn_notification_channel">VPN 服务</string>
+    <string name="vpn_notification_title">OpenWorld 运行中</string>
+    <string name="vpn_status_connecting">正在连接…</string>
+    <string name="vpn_status_connected">已连接</string>
+    <string name="vpn_status_speed">↑ %1$s  ↓ %2$s · %3$d 连接</string>
+
+    <!-- 通用状态 -->
+    <string name="vpn_status_disconnected">已断开</string>
+    <string name="vpn_status_error">连接错误</string>
+
+    <!-- 导航 -->
+    <string name="nav_dashboard">仪表盘</string>
+    <string name="nav_profiles">配置</string>
+    <string name="nav_nodes">节点</string>
+    <string name="nav_settings">设置</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_upload">上传</string>
+    <string name="dashboard_download">下载</string>
+    <string name="dashboard_connections">连接数</string>
+
+    <!-- Settings -->
+    <string name="settings_title">设置</string>
+    <string name="settings_routing">路由设置</string>
+    <string name="settings_dns">DNS 设置</string>
+    <string name="settings_connections">活跃连接</string>
+    <string name="settings_traffic">流量统计</string>
+    <string name="settings_logs">日志</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_proxy_group">代理设置</string>
+    <string name="settings_monitor_group">监控</string>
+    <string name="settings_other_group">其他</string>
+
+    <!-- DNS -->
+    <string name="dns_title">DNS 设置</string>
+    <string name="dns_local_title">本地 DNS</string>
+    <string name="dns_local_desc">用于解析国内域名，建议使用运营商或公共 DNS</string>
+    <string name="dns_remote_title">远程 DNS</string>
+    <string name="dns_remote_desc">用于解析海外域名，支持 DoT/DoH 协议</string>
+    <string name="dns_saved">DNS 设置已保存</string>
+    <string name="dns_flush">清除 DNS 缓存</string>
+    <string name="dns_flush_ok">DNS 缓存已清除</string>
+    <string name="dns_flush_fail">DNS 缓存清除失败</string>
+    <string name="dns_protocols_title">支持的协议</string>
+
+    <!-- Routing -->
+    <string name="routing_title">路由设置</string>
+    <string name="routing_rule">规则模式</string>
+    <string name="routing_global">全局模式</string>
+    <string name="routing_direct">直连模式</string>
+    <string name="routing_rule_desc">根据规则智能分流，推荐日常使用</string>
+    <string name="routing_global_desc">所有流量走代理</string>
+    <string name="routing_direct_desc">所有流量直连，不经过代理</string>
+
+    <!-- Connections -->
+    <string name="conn_title">活跃连接</string>
+    <string name="conn_close_all">全部关闭</string>
+    <string name="conn_empty">暂无活跃连接</string>
+
+    <!-- Logs -->
+    <string name="logs_title">日志</string>
+    <string name="logs_filter_all">全部</string>
+    <string name="logs_empty">暂无日志</string>
+
+    <!-- Traffic -->
+    <string name="traffic_title">流量统计</string>
+    <string name="traffic_total_up">总上传</string>
+    <string name="traffic_total_down">总下载</string>
+    <string name="traffic_empty">暂无流量数据</string>
+
+    <!-- About -->
+    <string name="about_title">关于</string>
+    <string name="about_subtitle">高性能网络代理内核</string>
+    <string name="about_app_version">App 版本</string>
+    <string name="about_core_version">内核版本</string>
+    <string name="about_memory">内存占用</string>
+    <string name="about_tech">技术栈</string>
+
+    <!-- Profiles -->
+    <string name="profile_import_url">从 URL 导入</string>
+    <string name="profile_import_clipboard">从剪贴板导入</string>
+    <string name="profile_delete">删除</string>
+    <string name="profile_update">更新订阅</string>
+    <string name="profile_update_all">全部更新</string>
+    <string name="profile_empty">暂无配置</string>
+
+    <!-- Nodes -->
+    <string name="nodes_title">节点</string>
+    <string name="nodes_test">测速</string>
+    <string name="nodes_test_all">全部测速</string>
+    <string name="nodes_empty">暂无节点</string>
+    <string name="nodes_search_hint">搜索节点</string>
+
+    <!-- 通用操作 -->
+    <string name="action_back">返回</string>
+    <string name="action_save">保存</string>
+    <string name="action_refresh">刷新</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_confirm">确认</string>
+    <string name="action_close">关闭</string>
+</resources>
