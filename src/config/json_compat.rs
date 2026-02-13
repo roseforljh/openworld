@@ -331,6 +331,7 @@ fn convert_singbox_to_config(sb: SingBoxConfig) -> anyhow::Result<Config> {
         subscriptions: Vec::new(),
         api: None,
         dns,
+        derp: None,
         max_connections: 65536,
     })
 }

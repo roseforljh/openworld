@@ -49,6 +49,9 @@ pub fn detect_protocol(data: &[u8]) -> Option<&'static str> {
     if is_ssh(data) {
         return Some("ssh");
     }
+    if is_ntp(data) {
+        return Some("ntp");
+    }
     None
 }
 
@@ -337,6 +340,43 @@ fn is_ssh(data: &[u8]) -> bool {
             .all(|b| b.is_ascii() && !b.is_ascii_control())
 }
 
+/// 检测 NTP 协议 (RFC 5905)
+/// NTP 包: 最小 48 字节, Version 3-4, Mode 1-5
+pub fn is_ntp(data: &[u8]) -> bool {
+    if data.len() < 48 {
+        return false;
+    }
+    let first = data[0];
+    let version = (first >> 3) & 0x07;  // bits 3-5
+    let mode = first & 0x07;            // bits 0-2
+    // NTP v3 or v4, Mode: 1=symmetric active, 2=symmetric passive, 3=client, 4=server, 5=broadcast
+    (version == 3 || version == 4) && (1..=5).contains(&mode)
+}
+
+/// 解析 NTP 响应时间戳（Transmit Timestamp, 偏移 40-47）
+/// 返回 Unix 时间戳（秒 + 小数部分）
+pub fn parse_ntp_timestamp(data: &[u8]) -> Option<(u64, f64)> {
+    if data.len() < 48 || !is_ntp(data) {
+        return None;
+    }
+    // NTP 模式检查：只解析 server(4) 或 broadcast(5) 响应
+    let mode = data[0] & 0x07;
+    if mode != 4 && mode != 5 {
+        return None;
+    }
+    // Transmit Timestamp 在偏移 40-47
+    let seconds = u32::from_be_bytes([data[40], data[41], data[42], data[43]]) as u64;
+    let fraction = u32::from_be_bytes([data[44], data[45], data[46], data[47]]);
+    if seconds == 0 {
+        return None;
+    }
+    // NTP epoch (1900) → Unix epoch (1970) 差值: 2208988800 秒
+    const NTP_UNIX_OFFSET: u64 = 2_208_988_800;
+    let unix_seconds = seconds.checked_sub(NTP_UNIX_OFFSET)?;
+    let frac = (fraction as f64) / (u32::MAX as f64 + 1.0);
+    Some((unix_seconds, frac))
+}
+
 fn parse_quic_initial_payload(data: &[u8]) -> Option<&[u8]> {
     if !is_quic_initial(data) {
         return None;
@@ -559,6 +599,7 @@ impl SniffResult {
             "dtls" => Some(443),
             "quic" => Some(443),
             "ssh" => Some(22),
+            "ntp" => Some(123),
             _ => None,
         });
         Self {

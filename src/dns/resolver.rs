@@ -181,7 +181,7 @@ fn parse_dns_address(address: &str) -> Result<(ResolverConfig, ResolverOpts)> {
             ResolverConfig::from_parts(None, vec![], NameServerConfigGroup::from(vec![ns]));
         Ok((config, opts))
     } else if let Some(tls_addr) = address.strip_prefix("tls://") {
-        // DNS over TLS
+        // DNS over TLS（启用连接复用）
         let (ip, port) = parse_ip_port(tls_addr, 853)?;
         let ns = NameServerConfig {
             socket_addr: std::net::SocketAddr::new(ip, port),
@@ -191,6 +191,12 @@ fn parse_dns_address(address: &str) -> Result<(ResolverConfig, ResolverOpts)> {
             tls_config: None,
             bind_addr: None,
         };
+        // DoT 连接复用优化
+        opts.num_concurrent_reqs = 4; // 允许单连接上多路并发请求
+        opts.positive_min_ttl = Some(std::time::Duration::from_secs(60)); // 缓存至少 60s
+        opts.positive_max_ttl = Some(std::time::Duration::from_secs(86400)); // 缓存最多 24h
+        opts.negative_min_ttl = Some(std::time::Duration::from_secs(30));  // NXDOMAIN 缓存 30s
+        opts.negative_max_ttl = Some(std::time::Duration::from_secs(600)); // NXDOMAIN 最多 10min
         let config =
             ResolverConfig::from_parts(None, vec![], NameServerConfigGroup::from(vec![ns]));
         Ok((config, opts))

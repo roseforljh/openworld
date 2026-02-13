@@ -184,6 +184,7 @@ pub fn parse_clash_config(content: &str) -> Result<CompatResult> {
         },
         api,
         dns: None,
+        derp: None,
         subscriptions: vec![],
         max_connections: 10000,
     };

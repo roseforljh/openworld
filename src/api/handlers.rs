@@ -42,6 +42,7 @@ pub struct AppState {
     pub config_path: Option<String>,
     pub log_broadcaster: crate::api::log_broadcast::LogBroadcaster,
     pub start_time: std::time::Instant,
+    pub ss_inbound: Option<Arc<crate::proxy::inbound::shadowsocks::ShadowsocksInbound>>,
 }
 
 /// GET /version
@@ -1153,4 +1154,112 @@ pub async fn connections_sse(
 
     axum::response::sse::Sse::new(stream)
         .keep_alive(axum::response::sse::KeepAlive::default())
+}
+
+// ==================== SSM API ====================
+
+/// SSM 添加用户请求体
+#[derive(serde::Deserialize)]
+pub struct SsmAddUserRequest {
+    pub name: String,
+    pub password: String,
+}
+
+/// GET /ssm/users — 列出所有 SS 用户
+pub async fn ssm_list_users(State(state): State<AppState>) -> impl IntoResponse {
+    match &state.ss_inbound {
+        Some(ss) => {
+            let users = ss.list_users().await;
+            (StatusCode::OK, Json(serde_json::json!({ "users": users }))).into_response()
+        }
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({
+            "error": "SS 入站未启用"
+        }))).into_response(),
+    }
+}
+
+/// POST /ssm/users — 添加 SS 用户
+pub async fn ssm_add_user(
+    State(state): State<AppState>,
+    Json(body): Json<SsmAddUserRequest>,
+) -> impl IntoResponse {
+    match &state.ss_inbound {
+        Some(ss) => match ss.add_user(body.name.clone(), &body.password).await {
+            Ok(()) => (StatusCode::CREATED, Json(serde_json::json!({
+                "message": format!("用户 '{}' 已添加", body.name)
+            }))).into_response(),
+            Err(e) => (StatusCode::CONFLICT, Json(serde_json::json!({
+                "error": e.to_string()
+            }))).into_response(),
+        },
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({
+            "error": "SS 入站未启用"
+        }))).into_response(),
+    }
+}
+
+/// DELETE /ssm/users/{name} — 删除 SS 用户
+pub async fn ssm_remove_user(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    match &state.ss_inbound {
+        Some(ss) => {
+            if ss.remove_user(&name).await {
+                (StatusCode::OK, Json(serde_json::json!({
+                    "message": format!("用户 '{}' 已删除", name)
+                }))).into_response()
+            } else {
+                (StatusCode::NOT_FOUND, Json(serde_json::json!({
+                    "error": format!("用户 '{}' 不存在", name)
+                }))).into_response()
+            }
+        }
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({
+            "error": "SS 入站未启用"
+        }))).into_response(),
+    }
+}
+
+/// POST /ssm/users/{name}/reset — 重置用户流量
+pub async fn ssm_reset_traffic(
+    State(state): State<AppState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    match &state.ss_inbound {
+        Some(ss) => {
+            if ss.reset_user_traffic(&name).await {
+                (StatusCode::OK, Json(serde_json::json!({
+                    "message": format!("用户 '{}' 流量已重置", name)
+                }))).into_response()
+            } else {
+                (StatusCode::NOT_FOUND, Json(serde_json::json!({
+                    "error": format!("用户 '{}' 不存在", name)
+                }))).into_response()
+            }
+        }
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({
+            "error": "SS 入站未启用"
+        }))).into_response(),
+    }
+}
+
+/// GET /ssm/stats — SS 服务器统计
+pub async fn ssm_stats(State(state): State<AppState>) -> impl IntoResponse {
+    match &state.ss_inbound {
+        Some(ss) => {
+            let users = ss.list_users().await;
+            let total_up: u64 = users.iter().map(|u| u.traffic_up).sum();
+            let total_down: u64 = users.iter().map(|u| u.traffic_down).sum();
+            (StatusCode::OK, Json(serde_json::json!({
+                "user_count": users.len(),
+                "total_upload": total_up,
+                "total_download": total_down,
+                "method": format!("{:?}", ss.cipher_kind()),
+            }))).into_response()
+        }
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({
+            "error": "SS 入站未启用"
+        }))).into_response(),
+    }
 }

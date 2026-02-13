@@ -19,6 +19,7 @@ pub struct Config {
     pub subscriptions: Vec<SubscriptionConfig>,
     pub api: Option<ApiConfig>,
     pub dns: Option<DnsConfig>,
+    pub derp: Option<DerpConfig>,
     /// 全局最大连接数限制
     #[serde(default = "default_max_connections", rename = "max-connections")]
     pub max_connections: u32,
@@ -213,6 +214,24 @@ pub struct InboundSettings {
     /// TUN DNS 劫持规则（如 ["udp://any:53", "tcp://any:53"]）
     #[serde(default, rename = "dns-hijack")]
     pub dns_hijack: Vec<String>,
+    // ========== WireGuard Endpoint ==========
+    /// WireGuard 私钥 (base64)
+    #[serde(default, rename = "private-key")]
+    pub private_key: Option<String>,
+    /// WireGuard 允许的 peer 列表
+    #[serde(default, rename = "wg-peers")]
+    pub wg_peers: Option<Vec<WgPeerConfig>>,
+    /// WireGuard 预共享密钥 (base64)
+    #[serde(default, rename = "preshared-key")]
+    pub preshared_key: Option<String>,
+}
+
+/// WireGuard Peer 配置
+#[derive(Debug, Deserialize, Clone)]
+pub struct WgPeerConfig {
+    /// Peer 公钥 (base64)
+    #[serde(rename = "public-key")]
+    pub public_key: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -503,6 +522,31 @@ fn default_api_listen() -> String {
 fn default_api_port() -> u16 {
     9090
 }
+
+/// DERP 中继服务配置（Tailscale 兼容）
+#[derive(Debug, Deserialize, Clone)]
+pub struct DerpConfig {
+    /// 是否启用
+    #[serde(default = "default_derp_enabled")]
+    pub enabled: bool,
+    /// 监听端口
+    #[serde(default = "default_derp_port")]
+    pub port: u16,
+    /// 私钥（32 字节 hex 编码，可选；不提供则自动生成）
+    #[serde(default, rename = "private-key")]
+    pub private_key: Option<String>,
+    /// 区域 ID（用于 DERP Map）
+    #[serde(default = "default_derp_region_id", rename = "region-id")]
+    pub region_id: u16,
+    /// 区域名称
+    #[serde(default = "default_derp_region_name", rename = "region-name")]
+    pub region_name: String,
+}
+
+fn default_derp_enabled() -> bool { true }
+fn default_derp_port() -> u16 { 3340 }
+fn default_derp_region_id() -> u16 { 900 }
+fn default_derp_region_name() -> String { "OpenWorld-DERP".to_string() }
 
 /// DNS 配置
 #[derive(Debug, Deserialize, Clone)]

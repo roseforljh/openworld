@@ -175,6 +175,9 @@ pub struct TunStackConfig {
     pub dns_hijack_enabled: bool,
     pub inbound_tag: String,
     pub sniff: bool,
+    /// 是否允许 loopback 地址流量（127.0.0.0/8, ::1）
+    /// false 时自动丢弃目标为 loopback 的包，避免路由循环
+    pub allow_loopback: bool,
 }
 
 impl Default for TunStackConfig {
@@ -187,6 +190,7 @@ impl Default for TunStackConfig {
             dns_hijack_enabled: true,
             inbound_tag: "tun-in".to_string(),
             sniff: true,
+            allow_loopback: false,
         }
     }
 }
@@ -285,6 +289,35 @@ impl TunStack {
                     if parsed.protocol == IpProtocol::Icmp {
                         if !self.config.icmp_policy.should_process(&parsed) {
                             continue; // Drop
+                        }
+                    }
+
+                    // Loopback 防护：丢弃目标为 loopback 地址的包
+                    if !self.config.allow_loopback {
+                        let is_loopback = match &parsed.dst_ip {
+                            std::net::IpAddr::V4(v4) => v4.is_loopback(),
+                            std::net::IpAddr::V6(v6) => v6.is_loopback(),
+                        };
+                        if is_loopback {
+                            debug!(
+                                src = %parsed.src_ip,
+                                dst = %parsed.dst_ip,
+                                "TUN loopback packet dropped (dst is loopback)"
+                            );
+                            continue;
+                        }
+                        // 同样检查源地址为 loopback 的包
+                        let src_loopback = match &parsed.src_ip {
+                            std::net::IpAddr::V4(v4) => v4.is_loopback(),
+                            std::net::IpAddr::V6(v6) => v6.is_loopback(),
+                        };
+                        if src_loopback {
+                            debug!(
+                                src = %parsed.src_ip,
+                                dst = %parsed.dst_ip,
+                                "TUN loopback packet dropped (src is loopback)"
+                            );
+                            continue;
                         }
                     }
 

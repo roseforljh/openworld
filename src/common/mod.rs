@@ -6,6 +6,7 @@ pub mod tls;
 pub mod traffic;
 pub mod udp;
 pub mod ktls;
+pub mod tls_reload;
 
 pub use addr::Address;
 pub use dialer::{Dialer, DialerConfig};

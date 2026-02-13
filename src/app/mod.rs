@@ -20,10 +20,10 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::config::subscription::ProxyNode;
-use crate::config::types::{ApiConfig, OutboundConfig, OutboundSettings, ProxyGroupConfig};
+use crate::config::types::{ApiConfig, DerpConfig, OutboundConfig, OutboundSettings, ProxyGroupConfig};
 use crate::config::Config;
 use crate::dns::{self, DnsResolver, SystemResolver};
 use crate::proxy::inbound::tun_device::{
@@ -56,6 +56,7 @@ pub struct App {
     geo_updater: Option<Arc<GeoUpdater>>,
     system_proxy: Option<SystemProxy>,
     transparent_proxy_manager: Option<TransparentProxyManager>,
+    derp_config: Option<DerpConfig>,
     #[cfg(target_os = "windows")]
     windows_proxy_state: Option<WindowsProxyState>,
 }
@@ -148,6 +149,7 @@ impl App {
             geo_updater,
             system_proxy,
             transparent_proxy_manager,
+            derp_config: config.derp,
             #[cfg(target_os = "windows")]
             windows_proxy_state,
         })
@@ -192,7 +194,19 @@ impl App {
                 self.dispatcher.clone(),
                 self.config_path.clone(),
                 broadcaster,
+                None, // SSM: SS 入站引用（TODO: 从入站列表获取）
             )?)
+        } else {
+            None
+        };
+
+        // 启动 DERP 中继服务（如果配置了）
+        let _derp_handle = if let Some(ref derp_config) = self.derp_config {
+            if derp_config.enabled {
+                Some(Self::start_derp_server(derp_config.clone()))
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -353,6 +367,108 @@ impl App {
 
     pub fn dispatcher(&self) -> &Arc<Dispatcher> {
         &self.dispatcher
+    }
+
+    /// 启动 DERP 中继服务（独立 HTTP 服务）
+    fn start_derp_server(config: DerpConfig) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            use crate::derp::server::DerpServer;
+
+            // 解析私钥或生成新的
+            let server = if let Some(ref key_hex) = config.private_key {
+                let bytes: Vec<u8> = (0..key_hex.len())
+                    .step_by(2)
+                    .filter_map(|i| u8::from_str_radix(&key_hex[i..i + 2], 16).ok())
+                    .collect();
+                if bytes.len() == 32 {
+                    let mut key = [0u8; 32];
+                    key.copy_from_slice(&bytes);
+                    Arc::new(DerpServer::with_key(key))
+                } else {
+                    warn!("DERP 私钥格式错误，将自动生成新密钥");
+                    Arc::new(DerpServer::new())
+                }
+            } else {
+                Arc::new(DerpServer::new())
+            };
+
+            let bind_addr = format!("0.0.0.0:{}", config.port);
+            let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
+                Ok(l) => l,
+                Err(e) => {
+                    tracing::error!(addr = bind_addr, error = %e, "DERP 服务绑定失败");
+                    return;
+                }
+            };
+
+            let region_id = config.region_id;
+            let region_name = config.region_name.clone();
+
+            info!(
+                addr = bind_addr,
+                region_id = region_id,
+                region_name = region_name,
+                "DERP 中继服务已启动"
+            );
+
+            // 预构建 JSON 响应体
+            let info_body = format!(
+                "{{\"type\":\"derp\",\"region\":{},\"name\":\"{}\"}}",
+                region_id, region_name
+            );
+            let info_body = Arc::new(info_body);
+
+            loop {
+                let (stream, peer_addr) = match listener.accept().await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        warn!(error = %e, "DERP 接受连接失败");
+                        continue;
+                    }
+                };
+
+                let server = server.clone();
+                let info_body = info_body.clone();
+                tokio::spawn(async move {
+                    // 简易 HTTP 升级：读取 HTTP 请求头，发送 101 响应
+                    let mut stream = stream;
+                    let mut buf = vec![0u8; 4096];
+                    let n = match tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await {
+                        Ok(n) => n,
+                        Err(_) => return,
+                    };
+
+                    let request = String::from_utf8_lossy(&buf[..n]);
+
+                    // 检查是否为 DERP 升级请求
+                    if request.contains("GET /derp") || request.contains("GET / ") {
+                        // 发送 HTTP 101 Switching Protocols 响应
+                        let response = "HTTP/1.1 101 Switching Protocols\r\n\
+                            Upgrade: DERP\r\n\
+                            Connection: Upgrade\r\n\
+                            \r\n";
+                        if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes()).await {
+                            warn!(error = %e, "DERP 发送升级响应失败");
+                            return;
+                        }
+
+                        debug!(peer = %peer_addr, "DERP HTTP 升级完成");
+                        server.handle_client(stream).await;
+                    } else {
+                        // 非 DERP 请求，返回 200 + 简单信息
+                        let response = format!(
+                            "HTTP/1.1 200 OK\r\n\
+                            Content-Type: application/json\r\n\
+                            Content-Length: {}\r\n\
+                            \r\n{}",
+                            info_body.len(),
+                            &*info_body
+                        );
+                        let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes()).await;
+                    }
+                });
+            }
+        })
     }
 
     pub fn cancel_token(&self) -> &CancellationToken {

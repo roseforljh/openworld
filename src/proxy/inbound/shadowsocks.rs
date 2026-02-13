@@ -1,11 +1,13 @@
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::task::{Context, Poll};
 
 use anyhow::Result;
 use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+use tokio::sync::RwLock;
 
 use crate::common::{Address, ProxyStream, UdpPacket, UdpTransport};
 use crate::config::types::InboundConfig;
@@ -14,15 +16,39 @@ use crate::proxy::outbound::shadowsocks::crypto::{
 };
 use crate::proxy::{InboundHandler, InboundResult, Network, Session};
 
-/// Shadowsocks inbound.
-struct ShadowsocksUser {
-    key: Vec<u8>,
+/// SSM 用户信息（API 返回用）
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SsmUserInfo {
+    pub name: String,
+    pub traffic_up: u64,
+    pub traffic_down: u64,
+}
+
+/// Shadowsocks 用户（支持动态管理）
+pub struct ShadowsocksUser {
+    pub name: String,
+    pub key: Vec<u8>,
+    /// 上行流量（字节）
+    pub traffic_up: AtomicU64,
+    /// 下行流量（字节）
+    pub traffic_down: AtomicU64,
+}
+
+impl ShadowsocksUser {
+    pub fn new(name: String, key: Vec<u8>) -> Self {
+        Self {
+            name,
+            key,
+            traffic_up: AtomicU64::new(0),
+            traffic_down: AtomicU64::new(0),
+        }
+    }
 }
 
 pub struct ShadowsocksInbound {
     tag: String,
     cipher_kind: CipherKind,
-    users: Vec<ShadowsocksUser>,
+    users: Arc<RwLock<Vec<ShadowsocksUser>>>,
 }
 
 impl ShadowsocksInbound {
@@ -38,9 +64,10 @@ impl ShadowsocksInbound {
         let mut users = Vec::new();
 
         if let Some(password) = config.settings.password.as_ref() {
-            users.push(ShadowsocksUser {
-                key: derive_master_key(cipher_kind, password)?,
-            });
+            users.push(ShadowsocksUser::new(
+                "default".to_string(),
+                derive_master_key(cipher_kind, password)?,
+            ));
         }
 
         if let Some(raw_users) = config.settings.users.as_ref() {
@@ -58,10 +85,12 @@ impl ShadowsocksInbound {
                         method
                     );
                 }
-                users.push(ShadowsocksUser {
-                    key: derive_master_key(user_cipher_kind, &raw_user.password)
+                let name = raw_user.password.chars().take(8).collect::<String>();
+                users.push(ShadowsocksUser::new(
+                    format!("user_{}", name),
+                    derive_master_key(user_cipher_kind, &raw_user.password)
                         .map_err(|e| anyhow::anyhow!("invalid shadowsocks user #{}: {}", idx, e))?,
-                });
+                ));
             }
         }
 
@@ -75,8 +104,62 @@ impl ShadowsocksInbound {
         Ok(Self {
             tag: config.tag.clone(),
             cipher_kind,
-            users,
+            users: Arc::new(RwLock::new(users)),
         })
+    }
+
+    // ========== SSM API 方法 ==========
+
+    /// 获取 cipher_kind
+    pub fn cipher_kind(&self) -> CipherKind {
+        self.cipher_kind
+    }
+
+    /// 添加用户
+    pub async fn add_user(&self, name: String, password: &str) -> Result<()> {
+        let key = derive_master_key(self.cipher_kind, password)?;
+        let mut users = self.users.write().await;
+        // 检查名称是否已存在
+        if users.iter().any(|u| u.name == name) {
+            anyhow::bail!("用户 '{}' 已存在", name);
+        }
+        users.push(ShadowsocksUser::new(name, key));
+        Ok(())
+    }
+
+    /// 删除用户
+    pub async fn remove_user(&self, name: &str) -> bool {
+        let mut users = self.users.write().await;
+        let len_before = users.len();
+        users.retain(|u| u.name != name);
+        users.len() < len_before
+    }
+
+    /// 列出所有用户及流量
+    pub async fn list_users(&self) -> Vec<SsmUserInfo> {
+        let users = self.users.read().await;
+        users.iter().map(|u| SsmUserInfo {
+            name: u.name.clone(),
+            traffic_up: u.traffic_up.load(Ordering::Relaxed),
+            traffic_down: u.traffic_down.load(Ordering::Relaxed),
+        }).collect()
+    }
+
+    /// 重置指定用户流量
+    pub async fn reset_user_traffic(&self, name: &str) -> bool {
+        let users = self.users.read().await;
+        if let Some(u) = users.iter().find(|u| u.name == name) {
+            u.traffic_up.store(0, Ordering::Relaxed);
+            u.traffic_down.store(0, Ordering::Relaxed);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// 获取用户总数
+    pub async fn user_count(&self) -> usize {
+        self.users.read().await.len()
     }
 
 }
@@ -111,24 +194,27 @@ impl InboundHandler for ShadowsocksInbound {
         stream.read_exact(&mut len_frame).await?;
 
         let mut selected: Option<(Vec<u8>, usize)> = None;
-        for user in &self.users {
-            let mut decoder = match derive_subkey(&user.key, &salt, self.cipher_kind.key_len()) {
-                Ok(subkey) => AeadCipher::new(self.cipher_kind, subkey),
-                Err(_) => continue,
-            };
+        {
+            let users = self.users.read().await;
+            for user in users.iter() {
+                let mut decoder = match derive_subkey(&user.key, &salt, self.cipher_kind.key_len()) {
+                    Ok(subkey) => AeadCipher::new(self.cipher_kind, subkey),
+                    Err(_) => continue,
+                };
 
-            let len_plain = match decoder.decrypt(&len_frame) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-            if len_plain.len() < 2 {
-                continue;
+                let len_plain = match decoder.decrypt(&len_frame) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                if len_plain.len() < 2 {
+                    continue;
+                }
+
+                let payload_len = u16::from_be_bytes([len_plain[0], len_plain[1]]) as usize;
+                selected = Some((user.key.clone(), payload_len));
+                break;
             }
-
-            let payload_len = u16::from_be_bytes([len_plain[0], len_plain[1]]) as usize;
-            selected = Some((user.key.clone(), payload_len));
-            break;
-        }
+        } // release read lock
 
         let (master_key, payload_len) =
             selected.ok_or_else(|| anyhow::anyhow!("shadowsocks inbound '{}' authentication failed", self.tag))?;

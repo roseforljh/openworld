@@ -12,3 +12,4 @@ pub mod tun_stack;
 pub mod vless;
 pub mod vmess;
 pub mod icmp;
+pub mod wireguard_endpoint;

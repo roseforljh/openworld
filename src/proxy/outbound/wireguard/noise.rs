@@ -287,6 +287,128 @@ pub fn generate_keypair() -> (StaticSecret, PublicKey) {
     (secret, public)
 }
 
+/// 服务端解析客户端 Handshake Init 消息
+/// 返回：(发送者 index, 客户端公钥, chain key, hash) 用于后续生成 response
+pub fn parse_handshake_init(
+    data: &[u8],
+    keys: &WireGuardKeys,
+) -> Result<(u32, PublicKey, [u8; 32], [u8; 32])> {
+    // Handshake init: 4(type) + 4(sender) + 32(eph) + 48(enc_static) + 28(enc_ts) + 16(mac1) + 16(mac2) = 148
+    if data.len() < 148 {
+        anyhow::bail!("handshake init too short: {}", data.len());
+    }
+
+    let msg_type = u32::from_le_bytes(data[0..4].try_into().unwrap());
+    if msg_type != MSG_TYPE_HANDSHAKE_INIT {
+        anyhow::bail!("expected handshake init, got type {}", msg_type);
+    }
+
+    let sender_index = u32::from_le_bytes(data[4..8].try_into().unwrap());
+
+    let initial_chain_key = hash(CONSTRUCTION);
+    let initial_hash = hash(&[hash(CONSTRUCTION).as_ref(), IDENTIFIER].concat());
+
+    let mut ck = initial_chain_key;
+    let mut h = initial_hash;
+
+    // Mix our (server/responder) public key into hash
+    mix_hash(&mut h, keys.public_key.as_bytes());
+
+    // Parse ephemeral public key
+    let eph_bytes: [u8; 32] = data[8..40].try_into().unwrap();
+    let eph_public = PublicKey::from(eph_bytes);
+    ck = kdf1(&ck, &eph_bytes);
+    mix_hash(&mut h, &eph_bytes);
+
+    // DH(our_private, initiator_eph)
+    let shared = keys.private_key.diffie_hellman(&eph_public);
+    let (ck_new, key) = kdf2(&ck, shared.as_bytes());
+    ck = ck_new;
+
+    // Decrypt static public key
+    let encrypted_static = &data[40..88]; // 32 + 16 tag
+    let static_bytes = aead_decrypt(&key, 0, encrypted_static, &h)?;
+    mix_hash(&mut h, encrypted_static);
+
+    let peer_static: [u8; 32] = static_bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("invalid static key length"))?;
+    let peer_public = PublicKey::from(peer_static);
+
+    // DH(our_private, initiator_static)
+    let static_shared = keys.private_key.diffie_hellman(&peer_public);
+    let (ck_new, key) = kdf2(&ck, static_shared.as_bytes());
+    ck = ck_new;
+
+    // Decrypt timestamp
+    let encrypted_timestamp = &data[88..116]; // 12 + 16 tag
+    let _timestamp = aead_decrypt(&key, 0, encrypted_timestamp, &h)?;
+    mix_hash(&mut h, encrypted_timestamp);
+
+    Ok((sender_index, peer_public, ck, h))
+}
+
+/// 服务端生成 Handshake Response 消息
+pub fn create_handshake_resp(
+    keys: &WireGuardKeys,
+    sender_index: u32,
+    peer_sender_index: u32,
+    mut ck: [u8; 32],
+    mut h: [u8; 32],
+    peer_ephemeral: &[u8; 32],
+) -> Result<(Vec<u8>, TransportKeys)> {
+    // Generate responder ephemeral keypair
+    let eph_secret = EphemeralSecret::random_from_rng(rand::thread_rng());
+    let eph_public = PublicKey::from(&eph_secret);
+    let eph_bytes = eph_public.as_bytes();
+
+    ck = kdf1(&ck, eph_bytes);
+    mix_hash(&mut h, eph_bytes);
+
+    // DH(resp_eph, initiator_eph)
+    let peer_eph_public = PublicKey::from(*peer_ephemeral);
+    let shared = eph_secret.diffie_hellman(&peer_eph_public);
+    let (ck_new, _) = kdf2(&ck, shared.as_bytes());
+    ck = ck_new;
+
+    // Apply preshared key
+    let (ck_new, tau, key) = kdf3(&ck, &keys.preshared_key);
+    ck = ck_new;
+    mix_hash(&mut h, &tau);
+
+    // Encrypt empty payload
+    let encrypted_nothing = aead_encrypt(&key, 0, &[], &h)?;
+    mix_hash(&mut h, &encrypted_nothing);
+
+    // Build response message (92 bytes)
+    let mut msg = Vec::with_capacity(92);
+    msg.extend_from_slice(&MSG_TYPE_HANDSHAKE_RESP.to_le_bytes()); // type (4)
+    msg.extend_from_slice(&sender_index.to_le_bytes()); // sender index (4)
+    msg.extend_from_slice(&peer_sender_index.to_le_bytes()); // receiver index (4)
+    msg.extend_from_slice(eph_bytes); // ephemeral (32)
+    msg.extend_from_slice(&encrypted_nothing); // encrypted nothing (16)
+
+    // MAC1
+    let m1 = mac1(keys.peer_public_key.as_bytes(), &msg);
+    msg.extend_from_slice(&m1); // (16)
+
+    // MAC2 (zeros)
+    msg.extend_from_slice(&[0u8; 16]); // (16)
+
+    // Derive transport keys (server: send=recv_key for client, recv=send_key for client)
+    let (t1, t2) = kdf2(&ck, &[]);
+    let transport = TransportKeys {
+        send_key: t2,  // server sends with key 2
+        recv_key: t1,  // server receives with key 1
+        send_index: sender_index,
+        recv_index: peer_sender_index,
+        send_counter: 0,
+        recv_counter: 0,
+    };
+
+    Ok((msg, transport))
+}
+
 pub fn parse_base64_key(s: &str) -> Result<[u8; 32]> {
     use base64::Engine;
     let decoded = base64::engine::general_purpose::STANDARD

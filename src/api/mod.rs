@@ -27,6 +27,7 @@ pub fn start(
     dispatcher: Arc<Dispatcher>,
     config_path: Option<String>,
     log_broadcaster: log_broadcast::LogBroadcaster,
+    ss_inbound: Option<Arc<crate::proxy::inbound::shadowsocks::ShadowsocksInbound>>,
 ) -> Result<JoinHandle<()>> {
     let state = AppState {
         dispatcher,
@@ -34,6 +35,7 @@ pub fn start(
         config_path,
         log_broadcaster,
         start_time: std::time::Instant::now(),
+        ss_inbound,
     };
 
     let mut app = axum::Router::new()
@@ -65,6 +67,11 @@ pub fn start(
         .route("/dns/flush", post(handlers::flush_dns))
         .route("/logs", get(handlers::logs_ws))
         .route("/configs", get(handlers::get_configs).patch(handlers::reload_config))
+        // SSM API
+        .route("/ssm/users", get(handlers::ssm_list_users).post(handlers::ssm_add_user))
+        .route("/ssm/users/{name}", delete(handlers::ssm_remove_user))
+        .route("/ssm/users/{name}/reset", post(handlers::ssm_reset_traffic))
+        .route("/ssm/stats", get(handlers::ssm_stats))
         .route(
             "/providers/rules/{name}",
             get(handlers::get_rule_provider).put(handlers::refresh_rule_provider),
