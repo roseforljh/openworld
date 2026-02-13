@@ -338,7 +338,7 @@ impl IcmpProxy {
 
         let result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
             loop {
-                let guard = async_fd.readable().await?;
+                let mut guard = async_fd.readable().await?;
                 match raw_socket.recv(&mut reply_buf_uninit) {
                     Ok(n) => {
                         // SAFETY: recv wrote n bytes into reply_buf_uninit
