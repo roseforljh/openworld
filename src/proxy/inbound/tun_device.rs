@@ -1907,7 +1907,7 @@ impl LinuxTunDevice {
             anyhow::bail!("open(/dev/net/tun) failed: {}", err);
         }
 
-        if name.as_bytes().len() >= IFNAMSIZ {
+        if name.len() >= IFNAMSIZ {
             unsafe {
                 close(fd);
             }
@@ -2099,8 +2099,6 @@ const O_NONBLOCK: i32 = 0x0800;
 #[cfg(target_os = "linux")]
 const EAGAIN: i32 = 11;
 
-#[cfg(target_os = "linux")]
-const EWOULDBLOCK: i32 = 11;
 
 #[cfg(target_os = "linux")]
 #[repr(C)]

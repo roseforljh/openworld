@@ -115,8 +115,8 @@ fn detect_wifi_ssid_linux() -> Option<String> {
     {
         let stdout = String::from_utf8_lossy(&output.stdout);
         for line in stdout.lines() {
-            if line.starts_with("yes:") {
-                return Some(line[4..].to_string());
+            if let Some(ssid) = line.strip_prefix("yes:") {
+                return Some(ssid.to_string());
             }
         }
     }

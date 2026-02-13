@@ -180,20 +180,11 @@ fn parse_dns_address(address: &str) -> Result<(ResolverConfig, ResolverOpts)> {
         let group = NameServerConfigGroup::from_ips_clear(&ips, 53, true);
         let config = ResolverConfig::from_parts(None, vec![], group);
         Ok((config, opts))
-    } else if let Some(quic_addr) = address.strip_prefix("quic://") {
-        // DNS over QUIC (RFC 9250)
-        let (ip, port) = parse_ip_port(quic_addr, 853)?;
-        let ns = NameServerConfig {
-            socket_addr: std::net::SocketAddr::new(ip, port),
-            protocol: Protocol::Quic,
-            tls_dns_name: Some(ip.to_string()),
-            trust_negative_responses: true,
-            tls_config: None,
-            bind_addr: None,
-        };
-        let config =
-            ResolverConfig::from_parts(None, vec![], NameServerConfigGroup::from(vec![ns]));
-        Ok((config, opts))
+    } else if address.starts_with("quic://") {
+        // DNS over QUIC (RFC 9250) - not currently supported
+        anyhow::bail!(
+            "DNS-over-QUIC (quic://) is not supported in this build. Use tls:// (DoT) or https:// (DoH) instead."
+        );
     } else if let Some(tls_addr) = address.strip_prefix("tls://") {
         // DNS over TLS（启用连接复用）
         let (ip, port) = parse_ip_port(tls_addr, 853)?;
@@ -214,39 +205,11 @@ fn parse_dns_address(address: &str) -> Result<(ResolverConfig, ResolverOpts)> {
         let config =
             ResolverConfig::from_parts(None, vec![], NameServerConfigGroup::from(vec![ns]));
         Ok((config, opts))
-    } else if let Some(h3_addr) = address.strip_prefix("h3://") {
-        // DNS over HTTP/3 (DoH3)
-        // 格式: h3://ip 或 h3://ip:port 或 h3://host（已知服务商自动解析 IP）
-        let (ip, port, tls_name) = if let Ok((ip, port)) = parse_ip_port(h3_addr, 443) {
-            (ip, port, None)
-        } else {
-            // 尝试已知 DoH3 服务商
-            let host = h3_addr.split('/').next().unwrap_or(h3_addr);
-            let host = host.split(':').next().unwrap_or(host);
-            let (ip, tls_name) = match host {
-                "dns.google" | "dns.google.com" => {
-                    ("8.8.8.8".parse().unwrap(), Some(host.to_string()))
-                }
-                "cloudflare-dns.com" => ("1.1.1.1".parse().unwrap(), Some(host.to_string())),
-                "dns.alidns.com" => ("223.5.5.5".parse().unwrap(), Some(host.to_string())),
-                _ => anyhow::bail!(
-                    "DoH3 host '{}' is not a known provider; use IP address instead",
-                    host
-                ),
-            };
-            (ip, 443, tls_name)
-        };
-        let ns = NameServerConfig {
-            socket_addr: std::net::SocketAddr::new(ip, port),
-            protocol: Protocol::H3,
-            tls_dns_name: tls_name.or_else(|| Some(ip.to_string())),
-            trust_negative_responses: true,
-            tls_config: None,
-            bind_addr: None,
-        };
-        let config =
-            ResolverConfig::from_parts(None, vec![], NameServerConfigGroup::from(vec![ns]));
-        Ok((config, opts))
+    } else if address.starts_with("h3://") {
+        // DNS over HTTP/3 (DoH3) - not currently supported
+        anyhow::bail!(
+            "DNS-over-H3 (h3://) is not supported in this build. Use https:// (DoH) or tls:// (DoT) instead."
+        );
     } else if address.starts_with("https://") {
         // DNS over HTTPS
         let parsed = reqwest::Url::parse(address)

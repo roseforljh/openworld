@@ -169,7 +169,7 @@ fn detect_dns_resolv_conf() -> Result<Vec<IpAddr>> {
     Ok(servers)
 }
 
-/// 从行内提取冒号后面的 IP 地址
+#[allow(dead_code)]
 fn extract_ip_after_colon(line: &str) -> Option<&str> {
     let pos = line.rfind(':')?;
     let candidate = line[pos + 1..].trim();
