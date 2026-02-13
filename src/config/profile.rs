@@ -191,6 +191,65 @@ impl ProfileManager {
 
         Ok(())
     }
+
+    /// 从 YAML 字符串导入配置作为 profile
+    pub fn import_from_yaml(&mut self, name: &str, yaml: &str) -> Result<()> {
+        let config: Config = serde_yml::from_str(yaml)
+            .map_err(|e| anyhow::anyhow!("failed to parse YAML: {}", e))?;
+
+        let profile = Profile {
+            name: name.to_string(),
+            description: format!("Imported profile: {}", name),
+            inbounds: config.inbounds,
+            rules: config.router.rules,
+            log_level: config.log.level,
+        };
+        self.profiles.insert(name.to_string(), profile);
+        Ok(())
+    }
+
+    /// 导出 profile 为 JSON 描述
+    pub fn export_to_json(&self, name: &str) -> Result<String> {
+        let profile = self
+            .profiles
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("profile '{}' not found", name))?;
+
+        let json = serde_json::json!({
+            "name": profile.name,
+            "description": profile.description,
+            "inbounds_count": profile.inbounds.len(),
+            "rules_count": profile.rules.len(),
+            "log_level": profile.log_level,
+        });
+        Ok(json.to_string())
+    }
+
+    /// 删除 profile（内置 default/minimal/full 不可删）
+    pub fn delete(&mut self, name: &str) -> bool {
+        match name {
+            "default" | "minimal" | "full" => false,
+            _ => self.profiles.remove(name).is_some(),
+        }
+    }
+
+    /// 返回所有 profiles 的 JSON 数组
+    pub fn list_json(&self) -> String {
+        let profiles: Vec<serde_json::Value> = self
+            .profiles
+            .values()
+            .map(|p| {
+                serde_json::json!({
+                    "name": p.name,
+                    "description": p.description,
+                    "inbounds_count": p.inbounds.len(),
+                    "rules_count": p.rules.len(),
+                    "log_level": p.log_level,
+                })
+            })
+            .collect();
+        serde_json::json!(profiles).to_string()
+    }
 }
 
 #[cfg(test)]
@@ -289,6 +348,7 @@ mod tests {
             subscriptions: vec![],
             api: None,
             dns: None,
+            derp: None,
             max_connections: 10000,
         };
 
@@ -328,6 +388,7 @@ mod tests {
             subscriptions: vec![],
             api: None,
             dns: None,
+            derp: None,
             max_connections: 10000,
         };
 

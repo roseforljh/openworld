@@ -235,7 +235,22 @@ impl Dispatcher {
         let router = self.router().await;
         let outbound_manager = self.outbound_manager().await;
 
-        let (outbound_tag, matched_rule) = router.route_with_rule(&session);
+        // Clash 模式覆盖路由
+        let clash_mode = crate::app::clash_mode::get_mode();
+        let (outbound_tag, matched_rule): (&str, Option<std::borrow::Cow<'_, str>>) = match clash_mode {
+            crate::app::clash_mode::ClashMode::Global => {
+                let global_tag = outbound_manager.first_proxy_tag().unwrap_or("direct");
+                debug!(mode = "global", outbound = global_tag, "clash mode override");
+                (global_tag, Some(std::borrow::Cow::Borrowed("GLOBAL")))
+            }
+            crate::app::clash_mode::ClashMode::Direct => {
+                debug!(mode = "direct", "clash mode override");
+                ("direct", Some(std::borrow::Cow::Borrowed("DIRECT")))
+            }
+            crate::app::clash_mode::ClashMode::Rule => {
+                router.route_with_rule(&session)
+            }
+        };
         let route_tag = matched_rule.as_deref().unwrap_or("MATCH").to_string();
 
         let outbound = match outbound_manager.get(outbound_tag) {

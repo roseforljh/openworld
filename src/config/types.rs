@@ -829,6 +829,7 @@ mod tests {
             subscriptions: vec![],
             api: None,
             dns: None,
+            derp: None,
             proxy_groups: vec![],
             max_connections: 10000,
         }

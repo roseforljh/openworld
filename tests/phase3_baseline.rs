@@ -105,6 +105,7 @@ fn phase3_config_validate_baseline_ok() {
         },
         api: None,
         dns: None,
+        derp: None,
         subscriptions: vec![],
         proxy_groups: vec![],
         max_connections: 10000,

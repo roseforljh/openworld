@@ -663,7 +663,7 @@ mod tests {
         };
         let inbound = ShadowsocksInbound::new(&cfg).unwrap();
         assert_eq!(inbound.tag(), "ss-in");
-        assert_eq!(inbound.users.len(), 1);
+        assert_eq!(inbound.users.try_read().unwrap().len(), 1);
     }
 
     #[test]

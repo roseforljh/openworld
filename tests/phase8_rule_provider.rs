@@ -40,6 +40,7 @@ fn rule_provider_domain_plain_text() {
             rule_type: "rule-set".to_string(),
             values: vec!["proxy-domains".to_string()],
             outbound: "proxy".to_string(),
+            ..Default::default()
         }],
         default: "direct".to_string(),
         rule_providers: providers,
@@ -86,6 +87,7 @@ fn rule_provider_domain_clash_yaml() {
             rule_type: "rule-set".to_string(),
             values: vec!["clash-domains".to_string()],
             outbound: "proxy".to_string(),
+            ..Default::default()
         }],
         default: "direct".to_string(),
         rule_providers: providers,
@@ -131,6 +133,7 @@ fn rule_provider_domain_with_prefix_syntax() {
             rule_type: "rule-set".to_string(),
             values: vec!["mixed-domain".to_string()],
             outbound: "proxy".to_string(),
+            ..Default::default()
         }],
         default: "direct".to_string(),
         rule_providers: providers,
@@ -179,6 +182,7 @@ fn rule_provider_ipcidr() {
             rule_type: "rule-set".to_string(),
             values: vec!["private-cidrs".to_string()],
             outbound: "direct".to_string(),
+            ..Default::default()
         }],
         default: "proxy".to_string(),
         rule_providers: providers,
@@ -222,6 +226,7 @@ fn rule_provider_ipcidr_clash_yaml() {
             rule_type: "rule-set".to_string(),
             values: vec!["cn-cidrs".to_string()],
             outbound: "direct".to_string(),
+            ..Default::default()
         }],
         default: "proxy".to_string(),
         rule_providers: providers,
@@ -263,6 +268,7 @@ fn rule_provider_classical() {
             rule_type: "rule-set".to_string(),
             values: vec!["mixed-rules".to_string()],
             outbound: "proxy".to_string(),
+            ..Default::default()
         }],
         default: "direct".to_string(),
         rule_providers: providers,
@@ -335,11 +341,13 @@ fn rule_provider_multiple_providers() {
                 rule_type: "rule-set".to_string(),
                 values: vec!["private-cidrs".to_string()],
                 outbound: "direct".to_string(),
+                ..Default::default()
             },
             RuleConfig {
                 rule_type: "rule-set".to_string(),
                 values: vec!["proxy-domains".to_string()],
                 outbound: "proxy".to_string(),
+                ..Default::default()
             },
         ],
         default: "direct".to_string(),
@@ -385,12 +393,14 @@ fn rule_provider_mixed_with_regular_rules() {
                 rule_type: "domain-full".to_string(),
                 values: vec!["override.google.com".to_string()],
                 outbound: "special".to_string(),
+                ..Default::default()
             },
             // rule-set 规则
             RuleConfig {
                 rule_type: "rule-set".to_string(),
                 values: vec!["proxy-domains".to_string()],
                 outbound: "proxy".to_string(),
+                ..Default::default()
             },
         ],
         default: "direct".to_string(),
@@ -447,6 +457,7 @@ fn rule_provider_unknown_provider_name_fails() {
             rule_type: "rule-set".to_string(),
             values: vec!["nonexistent-provider".to_string()],
             outbound: "proxy".to_string(),
+            ..Default::default()
         }],
         default: "direct".to_string(),
         ..Default::default()

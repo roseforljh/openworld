@@ -166,6 +166,7 @@ mod tests {
             subscriptions: vec![],
             api: None,
             dns: None,
+            derp: None,
             max_connections: 10000,
         }
     }

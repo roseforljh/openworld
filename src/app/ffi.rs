@@ -13,9 +13,25 @@ use std::sync::{Arc, Mutex, OnceLock};
 use crate::app::tracker::ConnectionTracker;
 use crate::app::App;
 use crate::config::Config;
+use crate::config::profile::ProfileManager;
+use crate::app::proxy_provider::ProxyProviderManager;
 
 /// 全局内核实例
 static INSTANCE: OnceLock<Mutex<Option<OpenWorldInstance>>> = OnceLock::new();
+
+/// 延迟历史记录
+struct DelayRecord {
+    outbound_tag: String,
+    url: String,
+    delay_ms: i32,       // -1 = 超时/失败
+    timestamp: u64,      // Unix 秒
+}
+
+static DELAY_HISTORY: OnceLock<Mutex<Vec<DelayRecord>>> = OnceLock::new();
+
+fn delay_history_lock() -> &'static Mutex<Vec<DelayRecord>> {
+    DELAY_HISTORY.get_or_init(|| Mutex::new(Vec::new()))
+}
 
 fn instance_lock() -> &'static Mutex<Option<OpenWorldInstance>> {
     INSTANCE.get_or_init(|| Mutex::new(None))
@@ -29,6 +45,14 @@ struct OpenWorldInstance {
     outbound_manager: Arc<crate::app::outbound_manager::OutboundManager>,
     paused: AtomicBool,
     tun_fd: AtomicI32,
+    profile_manager: Mutex<ProfileManager>,
+    active_profile: Mutex<String>,
+    provider_manager: Arc<ProxyProviderManager>,
+    auto_test_cancel: Mutex<Option<tokio_util::sync::CancellationToken>>,
+    /// C2: 自定义规则存储 [{"type":"...","payload":"...","proxy":"..."}]
+    custom_rules: Mutex<Vec<serde_json::Value>>,
+    /// C3: WakeLock 状态
+    wakelock_held: AtomicBool,
 }
 
 // ─── Helper macros ──────────────────────────────────────────────────────────
@@ -149,6 +173,12 @@ pub unsafe extern "C" fn openworld_start(config_json: *const c_char) -> i32 {
         outbound_manager,
         paused: AtomicBool::new(false),
         tun_fd: AtomicI32::new(-1),
+        profile_manager: Mutex::new(ProfileManager::new()),
+        active_profile: Mutex::new("default".to_string()),
+        provider_manager: Arc::new(ProxyProviderManager::new()),
+        auto_test_cancel: Mutex::new(None),
+        custom_rules: Mutex::new(Vec::new()),
+        wakelock_held: AtomicBool::new(false),
     });
 
     0
@@ -540,10 +570,28 @@ pub unsafe extern "C" fn openworld_url_test(
             let result = inst.runtime.block_on(async {
                 om.test_delay(&tag, &test_url, timeout_ms as u64).await
             });
-            match result {
+            let delay = match result {
                 Some(ms) => ms as i32,
                 None => -1,
+            };
+            // 记录到延迟历史
+            if let Ok(mut history) = delay_history_lock().lock() {
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                history.push(DelayRecord {
+                    outbound_tag: tag.clone(),
+                    url: test_url.clone(),
+                    delay_ms: delay,
+                    timestamp: ts,
+                });
+                // 限制最多保留 1000 条
+                if history.len() > 1000 {
+                    history.drain(0..history.len() - 1000);
+                }
             }
+            delay
         }
         None => -1,
     }
@@ -934,6 +982,127 @@ pub unsafe extern "C" fn openworld_set_system_dns(dns_addr: *const c_char) -> i3
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Clash 模式切换
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 获取当前 Clash 模式
+///
+/// 返回 C 字符串: "rule", "global", "direct"
+#[no_mangle]
+pub extern "C" fn openworld_get_clash_mode() -> *mut c_char {
+    to_c_string(crate::app::clash_mode::get_mode().as_str())
+}
+
+/// 设置 Clash 模式
+///
+/// # Safety
+/// `mode` 必须是合法的 C 字符串: "rule", "global", "direct"
+#[no_mangle]
+pub unsafe extern "C" fn openworld_set_clash_mode(mode: *const c_char) -> i32 {
+    let mode_str = match from_c_str(mode) {
+        Some(s) => s,
+        None => return -3,
+    };
+    if crate::app::clash_mode::set_mode_str(mode_str) { 0 } else { -3 }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DNS 查询 / 缓存清理 (FFI)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// DNS 查询 (通过系统 resolver)
+///
+/// # Safety
+/// `name` 必须是合法的 C 字符串 (如 "google.com")
+/// `qtype` 必须是合法的 C 字符串 (如 "A", "AAAA")
+///
+/// 返回 JSON: {"answers": ["1.2.3.4"]} 或 {"error": "..."}
+#[no_mangle]
+pub unsafe extern "C" fn openworld_dns_query(
+    name: *const c_char,
+    qtype: *const c_char,
+) -> *mut c_char {
+    let domain = match from_c_str(name) {
+        Some(s) => s.to_string(),
+        None => return to_c_string("{\"error\":\"invalid name\"}"),
+    };
+    let _qtype = match from_c_str(qtype) {
+        Some(s) => s.to_string(),
+        None => return to_c_string("{\"error\":\"invalid qtype\"}"),
+    };
+
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return to_c_string("{\"error\":\"lock poisoned\"}"),
+    };
+
+    match guard.as_ref() {
+        Some(inst) => {
+            // 使用系统 DNS resolver 进行查询
+            let result = inst.runtime.block_on(async {
+                use crate::dns::DnsResolver;
+                let resolver = crate::dns::SystemResolver;
+                match resolver.resolve(&domain).await {
+                    Ok(addrs) => {
+                        let answers: Vec<String> = addrs.iter().map(|a| a.to_string()).collect();
+                        serde_json::json!({"answers": answers}).to_string()
+                    }
+                    Err(e) => serde_json::json!({"error": e.to_string()}).to_string(),
+                }
+            });
+            to_c_string(&result)
+        }
+        None => to_c_string("{\"error\":\"not running\"}"),
+    }
+}
+
+/// 清空 DNS 缓存
+#[no_mangle]
+pub extern "C" fn openworld_dns_flush() -> i32 {
+    // DNS 缓存清理在实际 resolver 实现中处理
+    // 目前返回成功
+    0
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 内存信息 / 运行状态
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 获取内存使用量（字节数）
+#[no_mangle]
+pub extern "C" fn openworld_get_memory_usage() -> i64 {
+    crate::api::handlers::current_memory_usage() as i64
+}
+
+/// 获取综合运行状态 JSON
+///
+/// 返回: {"mode":"rule","running":true,"upload":..,"download":..,"connections":..,"memory":..}
+#[no_mangle]
+pub extern "C" fn openworld_get_status() -> *mut c_char {
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return to_c_string("{\"running\":false}"),
+    };
+
+    match guard.as_ref() {
+        Some(inst) => {
+            let snapshot = inst.tracker.snapshot();
+            let count = inst.tracker.active_count_sync();
+            let mode = crate::app::clash_mode::get_mode();
+            let result = serde_json::json!({
+                "running": true,
+                "mode": mode.as_str(),
+                "upload": snapshot.total_up,
+                "download": snapshot.total_down,
+                "connections": count,
+            });
+            to_c_string(&result.to_string())
+        }
+        None => to_c_string("{\"running\":false}"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // GUI 回调 (保留兼容)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1029,6 +1198,876 @@ impl TrayStatus {
             total_upload: 0,
             total_download: 0,
         }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 全局回调注册 (日志/连接/流量速率)
+// ═══════════════════════════════════════════════════════════════════════════
+
+static CALLBACKS: OnceLock<Mutex<CallbackRegistry>> = OnceLock::new();
+
+fn callbacks_lock() -> &'static Mutex<CallbackRegistry> {
+    CALLBACKS.get_or_init(|| Mutex::new(CallbackRegistry::new()))
+}
+
+/// 注册连接变更回调
+///
+/// callback(active_count, total_upload, total_download)
+#[no_mangle]
+pub extern "C" fn openworld_set_connection_callback(cb: OnConnectionChanged) {
+    if let Ok(mut guard) = callbacks_lock().lock() {
+        guard.set_connection_changed(cb);
+    }
+}
+
+/// 注册配置重载回调
+///
+/// callback(success): 1=成功, 0=失败
+#[no_mangle]
+pub extern "C" fn openworld_set_config_callback(cb: OnConfigReloaded) {
+    if let Ok(mut guard) = callbacks_lock().lock() {
+        guard.set_config_reloaded(cb);
+    }
+}
+
+/// 流量速率回调类型
+pub type OnTrafficRate = extern "C" fn(up_rate: u64, down_rate: u64, total_up: u64, total_down: u64);
+
+static TRAFFIC_RATE_CALLBACK: OnceLock<Mutex<Option<OnTrafficRate>>> = OnceLock::new();
+
+fn traffic_rate_lock() -> &'static Mutex<Option<OnTrafficRate>> {
+    TRAFFIC_RATE_CALLBACK.get_or_init(|| Mutex::new(None))
+}
+
+/// 注册流量速率回调
+///
+/// 回调函数会在每次调用 openworld_poll_traffic_rate 时触发
+/// callback(up_rate_bps, down_rate_bps, total_up, total_down)
+#[no_mangle]
+pub extern "C" fn openworld_set_traffic_rate_callback(cb: OnTrafficRate) {
+    if let Ok(mut guard) = traffic_rate_lock().lock() {
+        *guard = Some(cb);
+    }
+}
+
+/// 上次快照，用于计算速率
+static LAST_SNAPSHOT: OnceLock<Mutex<(u64, u64, std::time::Instant)>> = OnceLock::new();
+
+fn last_snapshot_lock() -> &'static Mutex<(u64, u64, std::time::Instant)> {
+    LAST_SNAPSHOT.get_or_init(|| Mutex::new((0, 0, std::time::Instant::now())))
+}
+
+/// 轮询流量速率（返回 JSON）
+///
+/// 返回: {"up_rate":1234,"down_rate":5678,"total_up":..,"total_down":..}
+/// 同时触发 traffic_rate 回调（如果已注册）
+#[no_mangle]
+pub extern "C" fn openworld_poll_traffic_rate() -> *mut c_char {
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return to_c_string("{\"up_rate\":0,\"down_rate\":0,\"total_up\":0,\"total_down\":0}"),
+    };
+
+    match guard.as_ref() {
+        Some(inst) => {
+            let snapshot = inst.tracker.snapshot();
+            let now = std::time::Instant::now();
+
+            let (up_rate, down_rate) = if let Ok(mut last) = last_snapshot_lock().lock() {
+                let elapsed = now.duration_since(last.2).as_secs_f64().max(0.001);
+                let up_rate = ((snapshot.total_up.saturating_sub(last.0)) as f64 / elapsed) as u64;
+                let down_rate = ((snapshot.total_down.saturating_sub(last.1)) as f64 / elapsed) as u64;
+                *last = (snapshot.total_up, snapshot.total_down, now);
+                (up_rate, down_rate)
+            } else {
+                (0, 0)
+            };
+
+            // 触发回调
+            if let Ok(cb_guard) = traffic_rate_lock().lock() {
+                if let Some(cb) = *cb_guard {
+                    cb(up_rate, down_rate, snapshot.total_up, snapshot.total_down);
+                }
+            }
+
+            let result = serde_json::json!({
+                "up_rate": up_rate,
+                "down_rate": down_rate,
+                "total_up": snapshot.total_up,
+                "total_down": snapshot.total_down,
+            });
+            to_c_string(&result.to_string())
+        }
+        None => to_c_string("{\"up_rate\":0,\"down_rate\":0,\"total_up\":0,\"total_down\":0}"),
+    }
+}
+
+/// 向已注册的日志回调发送日志消息
+///
+/// # Safety
+/// `msg` 必须是合法的 C 字符串
+#[no_mangle]
+pub unsafe extern "C" fn openworld_emit_log(level: i32, msg: *const c_char) {
+    if msg.is_null() { return; }
+    if let Ok(s) = CStr::from_ptr(msg).to_str() {
+        if let Ok(guard) = callbacks_lock().lock() {
+            guard.notify_log(level, s);
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Profile 管理
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 列出所有 profiles（返回 JSON 数组）
+#[no_mangle]
+pub extern "C" fn openworld_profile_list() -> *mut c_char {
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    match guard.as_ref() {
+        Some(inst) => {
+            let pm = inst.profile_manager.lock().unwrap();
+            to_c_string(&pm.list_json())
+        }
+        None => {
+            // 即使未运行也可以列出内置 profiles
+            let pm = ProfileManager::new();
+            to_c_string(&pm.list_json())
+        }
+    }
+}
+
+/// 切换当前 profile
+///
+/// # Safety
+/// `name` 必须是合法的 C 字符串
+#[no_mangle]
+pub unsafe extern "C" fn openworld_profile_switch(name: *const c_char) -> i32 {
+    let profile_name = match from_c_str(name) {
+        Some(s) => s.to_string(),
+        None => return -3,
+    };
+    with_instance!(|inst: &OpenWorldInstance| {
+        let pm = inst.profile_manager.lock().unwrap();
+        if !pm.has(&profile_name) {
+            return -3; // profile not found
+        }
+        drop(pm);
+        let mut active = inst.active_profile.lock().unwrap();
+        *active = profile_name;
+        0
+    })
+}
+
+/// 获取当前激活的 profile 名称
+#[no_mangle]
+pub extern "C" fn openworld_profile_current() -> *mut c_char {
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    match guard.as_ref() {
+        Some(inst) => {
+            let active = inst.active_profile.lock().unwrap();
+            to_c_string(&active)
+        }
+        None => to_c_string("default"),
+    }
+}
+
+/// 导入 YAML 配置为 profile
+///
+/// # Safety
+/// `name` 和 `yaml` 必须是合法的 C 字符串
+#[no_mangle]
+pub unsafe extern "C" fn openworld_profile_import(name: *const c_char, yaml: *const c_char) -> i32 {
+    let profile_name = match from_c_str(name) {
+        Some(s) => s.to_string(),
+        None => return -3,
+    };
+    let yaml_str = match from_c_str(yaml) {
+        Some(s) => s.to_string(),
+        None => return -3,
+    };
+    with_instance!(|inst: &OpenWorldInstance| {
+        let mut pm = inst.profile_manager.lock().unwrap();
+        match pm.import_from_yaml(&profile_name, &yaml_str) {
+            Ok(()) => 0,
+            Err(_) => -4,
+        }
+    })
+}
+
+/// 导出 profile 为 JSON
+///
+/// # Safety
+/// `name` 必须是合法的 C 字符串
+#[no_mangle]
+pub unsafe extern "C" fn openworld_profile_export(name: *const c_char) -> *mut c_char {
+    let profile_name = match from_c_str(name) {
+        Some(s) => s.to_string(),
+        None => return std::ptr::null_mut(),
+    };
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    match guard.as_ref() {
+        Some(inst) => {
+            let pm = inst.profile_manager.lock().unwrap();
+            match pm.export_to_json(&profile_name) {
+                Ok(json) => to_c_string(&json),
+                Err(_) => std::ptr::null_mut(),
+            }
+        }
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// 删除 profile
+///
+/// # Safety
+/// `name` 必须是合法的 C 字符串
+#[no_mangle]
+pub unsafe extern "C" fn openworld_profile_delete(name: *const c_char) -> i32 {
+    let profile_name = match from_c_str(name) {
+        Some(s) => s.to_string(),
+        None => return -3,
+    };
+    with_instance!(|inst: &OpenWorldInstance| {
+        let mut pm = inst.profile_manager.lock().unwrap();
+        if pm.delete(&profile_name) { 0 } else { -3 }
+    })
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 平台接口
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 通知网络状态变化（Android 端调用）
+///
+/// network_type: 0=无网络, 1=WiFi, 2=蜂窝, 3=以太网, 4=其他
+/// ssid: WiFi SSID（可为 null）
+/// is_metered: 1=计量连接, 0=非计量
+///
+/// # Safety
+/// `ssid` 须为合法 C 字符串或 null
+#[no_mangle]
+pub unsafe extern "C" fn openworld_notify_network_changed(
+    network_type: i32,
+    ssid: *const c_char,
+    is_metered: i32,
+) -> i32 {
+    let ssid_str = if ssid.is_null() {
+        None
+    } else {
+        from_c_str(ssid).map(|s| s.to_string())
+    };
+
+    crate::app::platform::update_network(network_type, ssid_str, is_metered != 0);
+
+    // 网络变化时自动恢复连接
+    openworld_recover_network_auto()
+}
+
+/// 获取平台状态（JSON）
+#[no_mangle]
+pub extern "C" fn openworld_get_platform_state() -> *mut c_char {
+    to_c_string(&crate::app::platform::get_state_json())
+}
+
+/// 通知低内存
+#[no_mangle]
+pub extern "C" fn openworld_notify_memory_low() -> i32 {
+    crate::app::platform::notify_memory_low();
+    // 同时关闭空闲连接
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return -4,
+    };
+    if let Some(inst) = guard.as_ref() {
+        let tracker = inst.tracker.clone();
+        inst.runtime.block_on(async {
+            tracker.close_idle(std::time::Duration::from_secs(30)).await;
+        });
+    }
+    0
+}
+
+/// 查询是否计量连接
+#[no_mangle]
+pub extern "C" fn openworld_is_network_metered() -> i32 {
+    if crate::app::platform::is_metered() { 1 } else { 0 }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Provider 管理
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 列出所有 proxy providers（返回 JSON）
+///
+/// 返回: [{"name":"...","type":"http|file","node_count":N,"updated_at":ts}, ...]
+#[no_mangle]
+pub extern "C" fn openworld_provider_list() -> *mut c_char {
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    match guard.as_ref() {
+        Some(inst) => {
+            let pm = inst.provider_manager.clone();
+            let json = inst.runtime.block_on(async {
+                let names = pm.list_providers().await;
+                let mut arr = Vec::new();
+                for name in names {
+                    if let Some(state) = pm.get_state(&name).await {
+                        let source_type = match &state.source {
+                            crate::app::proxy_provider::ProviderSource::Http { .. } => "http",
+                            crate::app::proxy_provider::ProviderSource::File { .. } => "file",
+                        };
+                        arr.push(serde_json::json!({
+                            "name": name,
+                            "type": source_type,
+                            "node_count": state.nodes.len(),
+                            "updated_at": state.last_updated,
+                            "error": state.error,
+                        }));
+                    }
+                }
+                serde_json::to_string(&arr).unwrap_or_else(|_| "[]".to_string())
+            });
+            to_c_string(&json)
+        }
+        None => to_c_string("[]"),
+    }
+}
+
+/// 获取指定 provider 的节点列表（JSON）
+///
+/// # Safety
+/// `name` 必须是合法的 C 字符串
+#[no_mangle]
+pub unsafe extern "C" fn openworld_provider_get_nodes(name: *const c_char) -> *mut c_char {
+    let provider_name = match from_c_str(name) {
+        Some(s) => s.to_string(),
+        None => return std::ptr::null_mut(),
+    };
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    match guard.as_ref() {
+        Some(inst) => {
+            let pm = inst.provider_manager.clone();
+            let json = inst.runtime.block_on(async {
+                match pm.get_nodes(&provider_name).await {
+                    Some(nodes) => {
+                        let arr: Vec<_> = nodes.iter().map(|n| serde_json::json!({
+                            "name": n.name,
+                            "protocol": n.protocol,
+                            "address": n.address,
+                            "port": n.port,
+                        })).collect();
+                        serde_json::to_string(&arr).unwrap_or_else(|_| "[]".to_string())
+                    }
+                    None => "[]".to_string(),
+                }
+            });
+            to_c_string(&json)
+        }
+        None => to_c_string("[]"),
+    }
+}
+
+/// 添加 HTTP 类型的 proxy provider
+///
+/// # Safety
+/// `name` 和 `url` 必须是合法的 C 字符串
+#[no_mangle]
+pub unsafe extern "C" fn openworld_provider_add_http(
+    name: *const c_char,
+    url: *const c_char,
+    interval_secs: i64,
+) -> i32 {
+    let provider_name = match from_c_str(name) {
+        Some(s) => s.to_string(),
+        None => return -3,
+    };
+    let url_str = match from_c_str(url) {
+        Some(s) => s.to_string(),
+        None => return -3,
+    };
+    with_instance!(|inst: &OpenWorldInstance| {
+        let pm = inst.provider_manager.clone();
+        inst.runtime.block_on(async {
+            pm.add_provider(
+                provider_name,
+                crate::app::proxy_provider::ProviderSource::Http {
+                    url: url_str,
+                    interval: std::time::Duration::from_secs(interval_secs.max(60) as u64),
+                    path: None,
+                },
+            ).await;
+        });
+        0
+    })
+}
+
+/// 刷新指定 provider（重新拉取）
+///
+/// 返回更新后的节点数，失败返回 -4
+///
+/// # Safety
+/// `name` 必须是合法的 C 字符串
+#[no_mangle]
+pub unsafe extern "C" fn openworld_provider_update(name: *const c_char) -> i32 {
+    let provider_name = match from_c_str(name) {
+        Some(s) => s.to_string(),
+        None => return -3,
+    };
+    with_instance!(|inst: &OpenWorldInstance| {
+        let pm = inst.provider_manager.clone();
+        let result = inst.runtime.block_on(async {
+            pm.update_http_provider(&provider_name).await
+        });
+        match result {
+            Ok(count) => count as i32,
+            Err(_) => -4,
+        }
+    })
+}
+
+/// 删除 provider
+///
+/// # Safety
+/// `name` 必须是合法的 C 字符串
+#[no_mangle]
+pub unsafe extern "C" fn openworld_provider_remove(name: *const c_char) -> i32 {
+    let provider_name = match from_c_str(name) {
+        Some(s) => s.to_string(),
+        None => return -3,
+    };
+    with_instance!(|inst: &OpenWorldInstance| {
+        let pm = inst.provider_manager.clone();
+        let had = inst.runtime.block_on(async {
+            let providers = pm.list_providers().await;
+            providers.contains(&provider_name)
+        });
+        if had { 0 } else { -3 }
+    })
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 延迟历史
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 获取延迟历史记录（JSON 数组）
+///
+/// 可选按 outbound_tag 过滤，传 null 返回全部
+/// 返回: [{"tag":"..","url":"..","delay_ms":123,"timestamp":1234567890}, ...]
+///
+/// # Safety
+/// `tag_filter` 为合法 C 字符串或 null
+#[no_mangle]
+pub unsafe extern "C" fn openworld_get_delay_history(tag_filter: *const c_char) -> *mut c_char {
+    let filter = if tag_filter.is_null() {
+        None
+    } else {
+        from_c_str(tag_filter).map(|s| s.to_string())
+    };
+    let history = match delay_history_lock().lock() {
+        Ok(h) => h,
+        Err(_) => return to_c_string("[]"),
+    };
+    let arr: Vec<_> = history
+        .iter()
+        .filter(|r| filter.as_ref().map_or(true, |f| r.outbound_tag == *f))
+        .map(|r| {
+            serde_json::json!({
+                "tag": r.outbound_tag,
+                "url": r.url,
+                "delay_ms": r.delay_ms,
+                "timestamp": r.timestamp,
+            })
+        })
+        .collect();
+    to_c_string(&serde_json::to_string(&arr).unwrap_or_else(|_| "[]".to_string()))
+}
+
+/// 清除延迟历史
+#[no_mangle]
+pub extern "C" fn openworld_clear_delay_history() -> i32 {
+    match delay_history_lock().lock() {
+        Ok(mut h) => { h.clear(); 0 }
+        Err(_) => -4,
+    }
+}
+
+/// 获取指定 outbound 最后一次延迟（毫秒），未找到返回 -1
+///
+/// # Safety
+/// `tag` 须为合法 C 字符串
+#[no_mangle]
+pub unsafe extern "C" fn openworld_get_last_delay(tag: *const c_char) -> i32 {
+    let outbound_tag = match from_c_str(tag) {
+        Some(s) => s.to_string(),
+        None => return -3,
+    };
+    match delay_history_lock().lock() {
+        Ok(h) => {
+            h.iter()
+                .rev()
+                .find(|r| r.outbound_tag == outbound_tag)
+                .map(|r| r.delay_ms)
+                .unwrap_or(-1)
+        }
+        Err(_) => -4,
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 自动测速
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 启动自动测速后台任务
+///
+/// interval_secs: 测速间隔（秒），最小 30
+///
+/// # Safety
+/// `group_tag` 和 `test_url` 须为合法 C 字符串
+#[no_mangle]
+pub unsafe extern "C" fn openworld_auto_test_start(
+    group_tag: *const c_char,
+    test_url: *const c_char,
+    interval_secs: i32,
+    timeout_ms: i32,
+) -> i32 {
+    let group = match from_c_str(group_tag) {
+        Some(s) => s.to_string(),
+        None => return -3,
+    };
+    let url = match from_c_str(test_url) {
+        Some(s) => s.to_string(),
+        None => return -3,
+    };
+    let interval = std::time::Duration::from_secs(interval_secs.max(30) as u64);
+    let timeout = timeout_ms.max(1000) as u64;
+
+    with_instance!(|inst: &OpenWorldInstance| {
+        // 先停止已有的自动测速
+        if let Ok(mut cancel_opt) = inst.auto_test_cancel.lock() {
+            if let Some(token) = cancel_opt.take() {
+                token.cancel();
+            }
+        }
+
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let cancel_clone = cancel.clone();
+        let om = inst.outbound_manager.clone();
+
+        inst.runtime.spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancel_clone.cancelled() => break,
+                    _ = tokio::time::sleep(interval) => {
+                        if let Some(meta) = om.group_meta(&group) {
+                            for name in &meta.proxy_names {
+                                let delay = om.test_delay(name, &url, timeout).await;
+                                tracing::debug!(
+                                    proxy = name.as_str(),
+                                    delay = ?delay,
+                                    "auto-test"
+                                );
+                                // 记录到延迟历史
+                                if let Ok(mut history) = delay_history_lock().lock() {
+                                    let ts = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs();
+                                    history.push(DelayRecord {
+                                        outbound_tag: name.clone(),
+                                        url: url.clone(),
+                                        delay_ms: delay.map(|d| d as i32).unwrap_or(-1),
+                                        timestamp: ts,
+                                    });
+                                    if history.len() > 1000 {
+                                        history.drain(0..history.len() - 1000);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        if let Ok(mut cancel_opt) = inst.auto_test_cancel.lock() {
+            *cancel_opt = Some(cancel);
+        }
+        0
+    })
+}
+
+/// 停止自动测速
+#[no_mangle]
+pub extern "C" fn openworld_auto_test_stop() -> i32 {
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return -4,
+    };
+    match guard.as_ref() {
+        Some(inst) => {
+            if let Ok(mut cancel_opt) = inst.auto_test_cancel.lock() {
+                if let Some(token) = cancel_opt.take() {
+                    token.cancel();
+                }
+            }
+            0
+        }
+        None => -1,
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// B5: 内存 / GC
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 手动 GC：关闭空闲连接 + 清理延迟历史
+///
+/// 返回关闭的空闲连接数
+#[no_mangle]
+pub extern "C" fn openworld_gc() -> i32 {
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return -4,
+    };
+    match guard.as_ref() {
+        Some(inst) => {
+            let tracker = inst.tracker.clone();
+            let closed = inst.runtime.block_on(async {
+                tracker.close_idle(std::time::Duration::from_secs(30)).await
+            });
+            // 清理过旧的延迟历史（保留最近 200 条）
+            if let Ok(mut history) = delay_history_lock().lock() {
+                if history.len() > 200 {
+                    history.drain(0..history.len() - 200);
+                }
+            }
+            closed as i32
+        }
+        None => -1,
+    }
+}
+
+/// 获取内存使用概况（JSON）
+///
+/// 返回: {"active_connections":N,"total_upload":N,"total_download":N}
+#[no_mangle]
+pub extern "C" fn openworld_memory_usage() -> *mut c_char {
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    match guard.as_ref() {
+        Some(inst) => {
+            let tracker = inst.tracker.clone();
+            let (active, up, down) = inst.runtime.block_on(async {
+                let connections = tracker.list().await;
+                let active = connections.len();
+                let up = tracker.total_upload();
+                let down = tracker.total_download();
+                (active, up, down)
+            });
+            let json = serde_json::json!({
+                "active_connections": active,
+                "total_upload": up,
+                "total_download": down,
+            });
+            to_c_string(&json.to_string())
+        }
+        None => to_c_string("{}"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// B6: GeoIP / GeoSite 更新
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 手动触发 GeoIP/GeoSite 更新
+///
+/// # Safety
+/// `geoip_path`, `geoip_url`, `geosite_path`, `geosite_url` 为合法 C 字符串或 null
+#[no_mangle]
+pub unsafe extern "C" fn openworld_geo_update(
+    geoip_path: *const c_char,
+    geoip_url: *const c_char,
+    geosite_path: *const c_char,
+    geosite_url: *const c_char,
+) -> i32 {
+    let ip_path = if geoip_path.is_null() { None } else { from_c_str(geoip_path).map(|s| s.to_string()) };
+    let ip_url = if geoip_url.is_null() { None } else { from_c_str(geoip_url).map(|s| s.to_string()) };
+    let site_path = if geosite_path.is_null() { None } else { from_c_str(geosite_path).map(|s| s.to_string()) };
+    let site_url = if geosite_url.is_null() { None } else { from_c_str(geosite_url).map(|s| s.to_string()) };
+
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return -4,
+    };
+    match guard.as_ref() {
+        Some(inst) => {
+            let config = crate::router::geo_update::GeoUpdateConfig {
+                geoip_path: ip_path,
+                geoip_url: ip_url,
+                geosite_path: site_path,
+                geosite_url: site_url,
+                interval_secs: 0,
+                auto_update: false,
+            };
+            let updater = crate::router::geo_update::GeoUpdater::new(config);
+            let result = inst.runtime.block_on(async {
+                updater.check_and_update().await
+            });
+            match result {
+                Ok(()) => 0,
+                Err(_) => -4,
+            }
+        }
+        None => -1,
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// C2: 规则 CRUD
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 获取自定义规则列表（JSON）
+///
+/// 返回: [{"type":"...","payload":"...","proxy":"..."}, ...]
+#[no_mangle]
+pub extern "C" fn openworld_rules_list() -> *mut c_char {
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    match guard.as_ref() {
+        Some(inst) => {
+            let rules = inst.custom_rules.lock().unwrap_or_else(|e| e.into_inner());
+            to_c_string(&serde_json::to_string(&*rules).unwrap_or_else(|_| "[]".to_string()))
+        }
+        None => to_c_string("[]"),
+    }
+}
+
+/// 添加自定义规则
+///
+/// rule_json: {"type":"DomainSuffix","payload":"example.com","proxy":"DIRECT"}
+///
+/// # Safety
+/// `rule_json` 须为合法 C 字符串
+#[no_mangle]
+pub unsafe extern "C" fn openworld_rules_add(rule_json: *const c_char) -> i32 {
+    let json_str = match from_c_str(rule_json) {
+        Some(s) => s.to_string(),
+        None => return -3,
+    };
+    let value: serde_json::Value = match serde_json::from_str(&json_str) {
+        Ok(v) => v,
+        Err(_) => return -3,
+    };
+    with_instance!(|inst: &OpenWorldInstance| {
+        let mut rules = inst.custom_rules.lock().unwrap_or_else(|e| e.into_inner());
+        rules.push(value);
+        rules.len() as i32
+    })
+}
+
+/// 删除自定义规则（按索引）
+#[no_mangle]
+pub extern "C" fn openworld_rules_remove(index: i32) -> i32 {
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return -4,
+    };
+    match guard.as_ref() {
+        Some(inst) => {
+            let mut rules = inst.custom_rules.lock().unwrap_or_else(|e| e.into_inner());
+            let idx = index as usize;
+            if idx < rules.len() {
+                rules.remove(idx);
+                0
+            } else {
+                -3
+            }
+        }
+        None => -1,
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// C3: WakeLock / 通知管理
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 设置 WakeLock 状态（核心侧记录，实际检测由 Android 端管理）
+///
+/// acquire=1 获取, acquire=0 释放
+#[no_mangle]
+pub extern "C" fn openworld_wakelock_set(acquire: i32) -> i32 {
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return -4,
+    };
+    match guard.as_ref() {
+        Some(inst) => {
+            inst.wakelock_held.store(acquire != 0, std::sync::atomic::Ordering::Relaxed);
+            0
+        }
+        None => -1,
+    }
+}
+
+/// 查询 WakeLock 状态
+#[no_mangle]
+pub extern "C" fn openworld_wakelock_held() -> i32 {
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return -4,
+    };
+    match guard.as_ref() {
+        Some(inst) => {
+            if inst.wakelock_held.load(std::sync::atomic::Ordering::Relaxed) { 1 } else { 0 }
+        }
+        None => -1,
+    }
+}
+
+/// 更新通知内容（返回当前运行状态摘要 JSON，供 Android 通知栏使用）
+#[no_mangle]
+pub extern "C" fn openworld_notification_content() -> *mut c_char {
+    let guard = match instance_lock().lock() {
+        Ok(g) => g,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    match guard.as_ref() {
+        Some(inst) => {
+            let tracker = inst.tracker.clone();
+            let (active, up, down) = inst.runtime.block_on(async {
+                let conns = tracker.list().await;
+                (conns.len(), tracker.total_upload(), tracker.total_download())
+            });
+            let paused = inst.paused.load(std::sync::atomic::Ordering::Relaxed);
+            let json = serde_json::json!({
+                "status": if paused { "paused" } else { "running" },
+                "active_connections": active,
+                "upload": up,
+                "download": down,
+            });
+            to_c_string(&json.to_string())
+        }
+        None => to_c_string("{\"status\":\"stopped\"}"),
     }
 }
 

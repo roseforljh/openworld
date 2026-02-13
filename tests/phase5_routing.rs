@@ -140,6 +140,7 @@ fn router_geoip_rule_without_db_does_not_match() {
             rule_type: "geoip".to_string(),
             values: vec!["CN".to_string()],
             outbound: "direct".to_string(),
+            ..Default::default()
         }],
         default: "proxy".to_string(),
         ..Default::default()
@@ -165,6 +166,7 @@ fn router_geosite_rule_without_db_does_not_match() {
             rule_type: "geosite".to_string(),
             values: vec!["cn".to_string()],
             outbound: "direct".to_string(),
+            ..Default::default()
         }],
         default: "proxy".to_string(),
         ..Default::default()
@@ -191,11 +193,13 @@ fn router_mixed_rules_priority() {
                 rule_type: "domain-full".to_string(),
                 values: vec!["specific.example.com".to_string()],
                 outbound: "direct".to_string(),
+                ..Default::default()
             },
             RuleConfig {
                 rule_type: "domain-suffix".to_string(),
                 values: vec!["example.com".to_string()],
                 outbound: "proxy".to_string(),
+                ..Default::default()
             },
         ],
         default: "reject".to_string(),
@@ -244,6 +248,7 @@ fn router_api_accessors() {
             rule_type: "domain-suffix".to_string(),
             values: vec!["cn".to_string()],
             outbound: "direct".to_string(),
+            ..Default::default()
         }],
         default: "proxy".to_string(),
         ..Default::default()

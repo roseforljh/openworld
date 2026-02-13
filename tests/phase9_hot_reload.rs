@@ -48,6 +48,11 @@ async fn dispatcher_hot_swap_router() {
             rule_type: "domain-suffix".to_string(),
             values: vec!["example.com".to_string()],
             outbound: "direct".to_string(),
+            action: "route".to_string(),
+            override_address: None,
+            override_port: None,
+            sniff: false,
+            resolve_strategy: None,
         }],
         default: "direct".to_string(),
         ..Default::default()
@@ -136,6 +141,11 @@ async fn dispatcher_snapshot_isolation() {
             rule_type: "domain-suffix".to_string(),
             values: vec!["test.com".to_string()],
             outbound: "direct".to_string(),
+            action: "route".to_string(),
+            override_address: None,
+            override_port: None,
+            sniff: false,
+            resolve_strategy: None,
         }],
         default: "direct".to_string(),
         ..Default::default()
@@ -197,6 +207,7 @@ router:
         config_path: None,
         log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
         start_time: std::time::Instant::now(),
+        ss_inbound: None,
     };
 
     let app = axum::Router::new()
@@ -249,6 +260,7 @@ async fn api_reload_config_file_not_found() {
         config_path: None,
         log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
         start_time: std::time::Instant::now(),
+        ss_inbound: None,
     };
 
     let app = axum::Router::new()
@@ -308,6 +320,7 @@ async fn api_reload_config_invalid_config() {
         config_path: None,
         log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
         start_time: std::time::Instant::now(),
+        ss_inbound: None,
     };
 
     let app = axum::Router::new()
@@ -378,6 +391,7 @@ router:
         config_path: Some(tmp.path().to_str().unwrap().to_string()),
         log_broadcaster: openworld::api::log_broadcast::LogBroadcaster::new(16),
         start_time: std::time::Instant::now(),
+        ss_inbound: None,
     };
 
     let app = axum::Router::new()

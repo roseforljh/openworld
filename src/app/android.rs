@@ -198,6 +198,319 @@ mod jni_exports {
         let cu = match std::ffi::CString::new(u) { Ok(s) => s, Err(_) => return -3 };
         unsafe { ffi::openworld_url_test(ct.as_ptr(), cu.as_ptr(), timeout_ms) }
     }
+
+    // ─── Clash 模式 ───────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_getClashMode(env: JNIEnv, _c: JClass) -> jstring {
+        ffi_str_to_jstring(&env, ffi::openworld_get_clash_mode())
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_setClashMode(
+        mut env: JNIEnv, _c: JClass, mode: JString,
+    ) -> jboolean {
+        let m: String = match env.get_string(&mode) { Ok(s) => s.into(), Err(_) => return JNI_FALSE };
+        let cm = match std::ffi::CString::new(m) { Ok(s) => s, Err(_) => return JNI_FALSE };
+        ok(unsafe { ffi::openworld_set_clash_mode(cm.as_ptr()) })
+    }
+
+    // ─── DNS 查询 ────────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_dnsQuery(
+        mut env: JNIEnv, _c: JClass, name: JString, qtype: JString,
+    ) -> jstring {
+        let n: String = match env.get_string(&name) { Ok(s) => s.into(), Err(_) => return std::ptr::null_mut() };
+        let q: String = match env.get_string(&qtype) { Ok(s) => s.into(), Err(_) => return std::ptr::null_mut() };
+        let cn = match std::ffi::CString::new(n) { Ok(s) => s, Err(_) => return std::ptr::null_mut() };
+        let cq = match std::ffi::CString::new(q) { Ok(s) => s, Err(_) => return std::ptr::null_mut() };
+        ffi_str_to_jstring(&env, unsafe { ffi::openworld_dns_query(cn.as_ptr(), cq.as_ptr()) })
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_dnsFlush(_env: JNIEnv, _c: JClass) -> jboolean {
+        ok(ffi::openworld_dns_flush())
+    }
+
+    // ─── 内存 / 状态 ──────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_getMemoryUsage(_env: JNIEnv, _c: JClass) -> jlong {
+        ffi::openworld_get_memory_usage()
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_getStatus(env: JNIEnv, _c: JClass) -> jstring {
+        ffi_str_to_jstring(&env, ffi::openworld_get_status())
+    }
+
+    // ─── 流量速率 ────────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_pollTrafficRate(env: JNIEnv, _c: JClass) -> jstring {
+        ffi_str_to_jstring(&env, ffi::openworld_poll_traffic_rate())
+    }
+
+    // ─── Profile 管理 ────────────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_listProfiles(env: JNIEnv, _c: JClass) -> jstring {
+        ffi_str_to_jstring(&env, ffi::openworld_profile_list())
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_switchProfile(mut env: JNIEnv, _c: JClass, name: JString) -> jboolean {
+        let s: String = match env.get_string(&name) { Ok(v) => v.into(), Err(_) => return JNI_FALSE };
+        let c_str = std::ffi::CString::new(s).unwrap();
+        ok(unsafe { ffi::openworld_profile_switch(c_str.as_ptr()) })
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_getCurrentProfile(env: JNIEnv, _c: JClass) -> jstring {
+        ffi_str_to_jstring(&env, ffi::openworld_profile_current())
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_importProfile(
+        mut env: JNIEnv, _c: JClass, name: JString, yaml: JString,
+    ) -> jboolean {
+        let n: String = match env.get_string(&name) { Ok(v) => v.into(), Err(_) => return JNI_FALSE };
+        let y: String = match env.get_string(&yaml) { Ok(v) => v.into(), Err(_) => return JNI_FALSE };
+        let cn = std::ffi::CString::new(n).unwrap();
+        let cy = std::ffi::CString::new(y).unwrap();
+        ok(unsafe { ffi::openworld_profile_import(cn.as_ptr(), cy.as_ptr()) })
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_exportProfile(
+        mut env: JNIEnv, _c: JClass, name: JString,
+    ) -> jstring {
+        let s: String = match env.get_string(&name) { Ok(v) => v.into(), Err(_) => return std::ptr::null_mut() };
+        let c_str = std::ffi::CString::new(s).unwrap();
+        ffi_str_to_jstring(&env, unsafe { ffi::openworld_profile_export(c_str.as_ptr()) })
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_deleteProfile(
+        mut env: JNIEnv, _c: JClass, name: JString,
+    ) -> jboolean {
+        let s: String = match env.get_string(&name) { Ok(v) => v.into(), Err(_) => return JNI_FALSE };
+        let c_str = std::ffi::CString::new(s).unwrap();
+        ok(unsafe { ffi::openworld_profile_delete(c_str.as_ptr()) })
+    }
+
+    // ─── 平台接口 ────────────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_notifyNetworkChanged(
+        mut env: JNIEnv, _c: JClass, network_type: jint, ssid: JString, is_metered: jboolean,
+    ) {
+        let ssid_ptr = match env.get_string(&ssid) {
+            Ok(v) => {
+                let s: String = v.into();
+                if s.is_empty() { std::ptr::null() } else {
+                    // 需要保持 CString 存活
+                    let cs = std::ffi::CString::new(s).unwrap();
+                    let ptr = cs.as_ptr();
+                    unsafe { ffi::openworld_notify_network_changed(network_type, ptr, if is_metered != 0 { 1 } else { 0 }); }
+                    return;
+                }
+            }
+            Err(_) => std::ptr::null(),
+        };
+        unsafe { ffi::openworld_notify_network_changed(network_type, ssid_ptr, if is_metered != 0 { 1 } else { 0 }); }
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_getPlatformState(env: JNIEnv, _c: JClass) -> jstring {
+        ffi_str_to_jstring(&env, ffi::openworld_get_platform_state())
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_notifyMemoryLow(_e: JNIEnv, _c: JClass) {
+        ffi::openworld_notify_memory_low();
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_isNetworkMetered(_e: JNIEnv, _c: JClass) -> jboolean {
+        if ffi::openworld_is_network_metered() != 0 { JNI_TRUE } else { JNI_FALSE }
+    }
+
+    // ─── Provider 管理 ───────────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_listProviders(env: JNIEnv, _c: JClass) -> jstring {
+        ffi_str_to_jstring(&env, ffi::openworld_provider_list())
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_getProviderNodes(
+        mut env: JNIEnv, _c: JClass, name: JString,
+    ) -> jstring {
+        let s: String = match env.get_string(&name) { Ok(v) => v.into(), Err(_) => return std::ptr::null_mut() };
+        let c_str = std::ffi::CString::new(s).unwrap();
+        ffi_str_to_jstring(&env, unsafe { ffi::openworld_provider_get_nodes(c_str.as_ptr()) })
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_addHttpProvider(
+        mut env: JNIEnv, _c: JClass, name: JString, url: JString, interval: jlong,
+    ) -> jboolean {
+        let n: String = match env.get_string(&name) { Ok(v) => v.into(), Err(_) => return JNI_FALSE };
+        let u: String = match env.get_string(&url) { Ok(v) => v.into(), Err(_) => return JNI_FALSE };
+        let cn = std::ffi::CString::new(n).unwrap();
+        let cu = std::ffi::CString::new(u).unwrap();
+        ok(unsafe { ffi::openworld_provider_add_http(cn.as_ptr(), cu.as_ptr(), interval) })
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_updateProvider(
+        mut env: JNIEnv, _c: JClass, name: JString,
+    ) -> jint {
+        let s: String = match env.get_string(&name) { Ok(v) => v.into(), Err(_) => return -3 };
+        let c_str = std::ffi::CString::new(s).unwrap();
+        unsafe { ffi::openworld_provider_update(c_str.as_ptr()) }
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_removeProvider(
+        mut env: JNIEnv, _c: JClass, name: JString,
+    ) -> jboolean {
+        let s: String = match env.get_string(&name) { Ok(v) => v.into(), Err(_) => return JNI_FALSE };
+        let c_str = std::ffi::CString::new(s).unwrap();
+        ok(unsafe { ffi::openworld_provider_remove(c_str.as_ptr()) })
+    }
+
+    // ─── 延迟历史 ────────────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_getDelayHistory(
+        mut env: JNIEnv, _c: JClass, tag_filter: JString,
+    ) -> jstring {
+        let filter_ptr = match env.get_string(&tag_filter) {
+            Ok(v) => {
+                let s: String = v.into();
+                if s.is_empty() {
+                    std::ptr::null()
+                } else {
+                    let cs = std::ffi::CString::new(s).unwrap();
+                    return ffi_str_to_jstring(&env, unsafe { ffi::openworld_get_delay_history(cs.as_ptr()) });
+                }
+            }
+            Err(_) => std::ptr::null(),
+        };
+        ffi_str_to_jstring(&env, unsafe { ffi::openworld_get_delay_history(filter_ptr) })
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_clearDelayHistory(_e: JNIEnv, _c: JClass) -> jboolean {
+        ok(ffi::openworld_clear_delay_history())
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_getLastDelay(
+        mut env: JNIEnv, _c: JClass, tag: JString,
+    ) -> jint {
+        let s: String = match env.get_string(&tag) { Ok(v) => v.into(), Err(_) => return -3 };
+        let c_str = std::ffi::CString::new(s).unwrap();
+        unsafe { ffi::openworld_get_last_delay(c_str.as_ptr()) }
+    }
+
+    // ─── 自动测速 ────────────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_startAutoTest(
+        mut env: JNIEnv, _c: JClass, group_tag: JString, test_url: JString,
+        interval_secs: jint, timeout_ms: jint,
+    ) -> jboolean {
+        let g: String = match env.get_string(&group_tag) { Ok(v) => v.into(), Err(_) => return JNI_FALSE };
+        let u: String = match env.get_string(&test_url) { Ok(v) => v.into(), Err(_) => return JNI_FALSE };
+        let cg = std::ffi::CString::new(g).unwrap();
+        let cu = std::ffi::CString::new(u).unwrap();
+        ok(unsafe { ffi::openworld_auto_test_start(cg.as_ptr(), cu.as_ptr(), interval_secs, timeout_ms) })
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_stopAutoTest(_e: JNIEnv, _c: JClass) -> jboolean {
+        ok(ffi::openworld_auto_test_stop())
+    }
+
+    // ─── B5: 内存/GC ───────────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_gc(_e: JNIEnv, _c: JClass) -> jint {
+        ffi::openworld_gc()
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_getMemoryUsage(env: JNIEnv, _c: JClass) -> jstring {
+        ffi_str_to_jstring(&env, ffi::openworld_memory_usage())
+    }
+
+    // ─── B6: GeoIP/GeoSite 更新 ─────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_updateGeoDatabases(
+        mut env: JNIEnv, _c: JClass,
+        geoip_path: JString, geoip_url: JString,
+        geosite_path: JString, geosite_url: JString,
+    ) -> jboolean {
+        let ip_path = env.get_string(&geoip_path).ok().map(|v| { let s: String = v.into(); std::ffi::CString::new(s).unwrap() });
+        let ip_url = env.get_string(&geoip_url).ok().map(|v| { let s: String = v.into(); std::ffi::CString::new(s).unwrap() });
+        let site_path = env.get_string(&geosite_path).ok().map(|v| { let s: String = v.into(); std::ffi::CString::new(s).unwrap() });
+        let site_url = env.get_string(&geosite_url).ok().map(|v| { let s: String = v.into(); std::ffi::CString::new(s).unwrap() });
+        ok(unsafe {
+            ffi::openworld_geo_update(
+                ip_path.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+                ip_url.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+                site_path.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+                site_url.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+            )
+        })
+    }
+
+    // ─── C2: 规则 CRUD ─────────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_rulesList(env: JNIEnv, _c: JClass) -> jstring {
+        ffi_str_to_jstring(&env, ffi::openworld_rules_list())
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_rulesAdd(
+        mut env: JNIEnv, _c: JClass, rule_json: JString,
+    ) -> jint {
+        let s: String = match env.get_string(&rule_json) { Ok(v) => v.into(), Err(_) => return -3 };
+        let c_str = std::ffi::CString::new(s).unwrap();
+        unsafe { ffi::openworld_rules_add(c_str.as_ptr()) }
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_rulesRemove(
+        _e: JNIEnv, _c: JClass, index: jint,
+    ) -> jboolean {
+        ok(ffi::openworld_rules_remove(index))
+    }
+
+    // ─── C3: WakeLock / 通知 ─────────────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_wakelockSet(
+        _e: JNIEnv, _c: JClass, acquire: jboolean,
+    ) -> jboolean {
+        ok(ffi::openworld_wakelock_set(if acquire != 0 { 1 } else { 0 }))
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_wakelockHeld(_e: JNIEnv, _c: JClass) -> jboolean {
+        if ffi::openworld_wakelock_held() != 0 { JNI_TRUE } else { JNI_FALSE }
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_notificationContent(env: JNIEnv, _c: JClass) -> jstring {
+        ffi_str_to_jstring(&env, ffi::openworld_notification_content())
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -265,6 +578,52 @@ pub fn core_jni_methods() -> Vec<JniMethodSignature> {
         JniMethodSignature::new(c, "importSubscription", "(Ljava/lang/String;)Ljava/lang/String;", true),
         JniMethodSignature::new(c, "setSystemDns", "(Ljava/lang/String;)Z", true),
         JniMethodSignature::new(c, "urlTest", "(Ljava/lang/String;Ljava/lang/String;I)I", true),
+        // Phase A: Clash 模式 + DNS + 状态
+        JniMethodSignature::new(c, "getClashMode", "()Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "setClashMode", "(Ljava/lang/String;)Z", true),
+        JniMethodSignature::new(c, "dnsQuery", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "dnsFlush", "()Z", true),
+        JniMethodSignature::new(c, "getMemoryUsage", "()J", true),
+        JniMethodSignature::new(c, "getStatus", "()Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "pollTrafficRate", "()Ljava/lang/String;", true),
+        // Phase A6: Profile 管理
+        JniMethodSignature::new(c, "listProfiles", "()Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "switchProfile", "(Ljava/lang/String;)Z", true),
+        JniMethodSignature::new(c, "getCurrentProfile", "()Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "importProfile", "(Ljava/lang/String;Ljava/lang/String;)Z", true),
+        JniMethodSignature::new(c, "exportProfile", "(Ljava/lang/String;)Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "deleteProfile", "(Ljava/lang/String;)Z", true),
+        // Phase B1: 平台接口
+        JniMethodSignature::new(c, "notifyNetworkChanged", "(ILjava/lang/String;Z)V", true),
+        JniMethodSignature::new(c, "getPlatformState", "()Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "notifyMemoryLow", "()V", true),
+        JniMethodSignature::new(c, "isNetworkMetered", "()Z", true),
+        // Phase B2: Provider 管理
+        JniMethodSignature::new(c, "listProviders", "()Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "getProviderNodes", "(Ljava/lang/String;)Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "addHttpProvider", "(Ljava/lang/String;Ljava/lang/String;J)Z", true),
+        JniMethodSignature::new(c, "updateProvider", "(Ljava/lang/String;)I", true),
+        JniMethodSignature::new(c, "removeProvider", "(Ljava/lang/String;)Z", true),
+        // Phase B3: 延迟历史
+        JniMethodSignature::new(c, "getDelayHistory", "(Ljava/lang/String;)Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "clearDelayHistory", "()Z", true),
+        JniMethodSignature::new(c, "getLastDelay", "(Ljava/lang/String;)I", true),
+        // Phase B4: 自动测速
+        JniMethodSignature::new(c, "startAutoTest", "(Ljava/lang/String;Ljava/lang/String;II)Z", true),
+        JniMethodSignature::new(c, "stopAutoTest", "()Z", true),
+        // Phase B5: 内存/GC
+        JniMethodSignature::new(c, "gc", "()I", true),
+        JniMethodSignature::new(c, "getMemoryUsage", "()Ljava/lang/String;", true),
+        // Phase B6: GeoIP/GeoSite 更新
+        JniMethodSignature::new(c, "updateGeoDatabases", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z", true),
+        // Phase C2: 规则 CRUD
+        JniMethodSignature::new(c, "rulesList", "()Ljava/lang/String;", true),
+        JniMethodSignature::new(c, "rulesAdd", "(Ljava/lang/String;)I", true),
+        JniMethodSignature::new(c, "rulesRemove", "(I)Z", true),
+        // Phase C3: WakeLock / 通知
+        JniMethodSignature::new(c, "wakelockSet", "(Z)Z", true),
+        JniMethodSignature::new(c, "wakelockHeld", "()Z", true),
+        JniMethodSignature::new(c, "notificationContent", "()Ljava/lang/String;", true),
     ]
 }
 

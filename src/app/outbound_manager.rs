@@ -211,6 +211,24 @@ impl OutboundManager {
         let timeout = std::time::Duration::from_millis(timeout_ms);
         HealthChecker::test_proxy(handler.as_ref(), url, timeout).await
     }
+
+    /// 获取第一个代理出站的 tag（用于 Global 模式）
+    /// 优先返回 selector 组 tag，否则返回第一个非 direct/reject 出站
+    pub fn first_proxy_tag(&self) -> Option<&str> {
+        // 1. 优先选 selector 组（dispatcher 调 connect 时会走组的 selected）
+        for (name, meta) in &self.group_metas {
+            if meta.group_type == "selector" {
+                return Some(name.as_str());
+            }
+        }
+        // 2. 第一个非 direct/reject 出站
+        for (tag, _) in &self.handlers {
+            if tag != "direct" && tag != "reject" {
+                return Some(tag.as_str());
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]

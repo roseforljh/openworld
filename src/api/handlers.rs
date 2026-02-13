@@ -595,6 +595,21 @@ pub async fn reload_config(
     State(state): State<AppState>,
     Json(body): Json<ReloadConfigRequest>,
 ) -> impl IntoResponse {
+    // 处理模式切换
+    if let Some(ref mode) = body.mode {
+        if !crate::app::clash_mode::set_mode_str(mode) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"message": format!("invalid mode: {}", mode)})),
+            )
+                .into_response();
+        }
+        // 如果只是切换模式（没有 path），直接返回
+        if body.path.is_none() {
+            return StatusCode::NO_CONTENT.into_response();
+        }
+    }
+
     let path = body
         .path
         .or(state.config_path.clone())
@@ -684,7 +699,7 @@ pub async fn get_memory() -> Json<MemoryResponse> {
     })
 }
 
-fn current_memory_usage() -> u64 {
+pub fn current_memory_usage() -> u64 {
     #[cfg(windows)]
     {
         use std::mem;
@@ -1058,7 +1073,7 @@ pub async fn get_configs(State(state): State<AppState>) -> Json<ConfigsResponse>
         port: 0,
         socks_port: 0,
         mixed_port: 0,
-        mode: "rule".to_string(),
+        mode: crate::app::clash_mode::get_mode().as_str().to_string(),
         log_level: "info".to_string(),
         allow_lan: false,
         outbound_count,

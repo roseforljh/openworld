@@ -140,6 +140,8 @@ pub struct SelectProxyRequest {
 #[derive(serde::Deserialize)]
 pub struct ReloadConfigRequest {
     pub path: Option<String>,
+    /// Clash 模式: "rule", "global", "direct"
+    pub mode: Option<String>,
 }
 
 /// GET /proxies/{name}/delay 响应
