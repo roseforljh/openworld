@@ -2099,7 +2099,6 @@ const O_NONBLOCK: i32 = 0x0800;
 #[cfg(target_os = "linux")]
 const EAGAIN: i32 = 11;
 
-
 #[cfg(target_os = "linux")]
 #[repr(C)]
 struct IfReq {
