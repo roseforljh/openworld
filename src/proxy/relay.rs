@@ -790,35 +790,8 @@ pub async fn relay_proxy_streams(
         );
     }
 
-    // Fallback: use Tokio's copy_bidirectional for robust full-duplex relay.
-    let mut client = client;
-    let mut remote = remote;
-
-    let result = tokio::time::timeout(opts.idle_timeout, async {
-        tokio::io::copy_bidirectional(&mut client, &mut remote)
-            .await
-            .map_err(anyhow::Error::from)
-    })
-    .await;
-
-    match result {
-        Ok(Ok((up, down))) => {
-            debug!(upload = up, download = down, "relay finished");
-            if let Some(ref stats) = opts.stats {
-                stats.upload.fetch_add(up, Ordering::Relaxed);
-                stats.download.fetch_add(down, Ordering::Relaxed);
-            }
-            Ok((up, down))
-        }
-        Ok(Err(e)) => {
-            debug!(error = %e, "relay error");
-            Err(e)
-        }
-        Err(_) => {
-            debug!("relay idle timeout ({:?}), closing", opts.idle_timeout);
-            Ok((0, 0))
-        }
-    }
+    // Fallback: use relay_with_options which handles split + join + stats + cancel.
+    relay_with_options(client, remote, opts).await
 }
 
 #[cfg(test)]
