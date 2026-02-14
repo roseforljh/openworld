@@ -1,0 +1,17 @@
+# Text files
+*.md text
+*.txt text
+*.kt text
+*.java text
+*.xml text
+*.json text
+*.properties text
+
+# Binary files
+*.aar binary
+*.jar binary
+*.so binary
+*.png binary
+*.jpg binary
+*.jks binary
+*.keystore binary

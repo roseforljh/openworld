@@ -1,0 +1,78 @@
+*.iml
+.gradle
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+build/
+
+# 签名相关敏感文件
+*.jks
+*.keystore
+signing.properties
+keystore.properties
+keystore_base64.txt
+
+# 临时文件和解压目录
+temp_aar_extracted/
+SFA-1.12.13-universal/
+SFA-1.12.13-arm64-v8a/
+SFA-1.12.13-arm64-v8a.zip
+
+# Git submodule（无需上传，会通过 .gitmodules 自动拉取）
+sing-box/
+!NekoBoxForAndroid/**
+NekoBoxForAndroid/.git
+# Claude Code 配置文件
+CLAUDE.md
+AGENTS.md
+.claude/
+build_log.txt
+
+# MCP 安装文档（本地配置文档，无需提交）
+docs/mcp-setup/
+
+# 临时文件和调试文件
+temp_fix.txt
+planning-with-files/
+.worktrees/
+
+# 方案文档目录（本地规划文档，无需提交）
+plans/
+
+# 备份文件
+*.backup
+*.backup_*
+*.bak
+*.old
+*.tmp
+*~
+
+# 构建脚本目录（本地编译用，无需提交）
+buildScript/
+
+# libbox 编译临时文件
+app/libs/*.zip
+app/libs/classes_check/
+app/libs/libbox_check/
+docs/
+temp/
+META-INF/
+.vscode/
+
+# 构建缓存
+.cache/
+.gradle-user-home/
+app/schemas/
+
+# sing-box 本地源码目录 (用于内核修改)
+# 如需提交源码修改，请移除此行
+singbox-core/
+app/.idea/
+nul
+Kkunbox/
+OPENWORLD_MIGRATION_PLAN.md

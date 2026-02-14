@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ZXing 扫描器颜色 -->
+    <color name="zxing_mask">#99000000</color>
+    <color name="zxing_laser">#FF4CAF50</color>
+    <color name="zxing_result_points">#C0FFFF00</color>
+    <color name="zxing_viewfinder_border">#FFFFFFFF</color>
+    <color name="zxing_viewfinder_corner">#FF4CAF50</color>
+</resources>
