@@ -2,15 +2,13 @@ package com.openworld.app.service.manager
 
 import android.util.Log
 import com.openworld.app.core.SelectorManager as CoreSelectorManager
-import io.nekohasekai.libbox.CommandClient
+import com.openworld.app.core.bridge.CommandClient
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * 节点选择管理器 (协调者)
- * 封装 core.SelectorManager，提供统一的节点切换接口
- * 使用 Result<T> 返回值模式
- *
- * 热切换策略 (渐进式降级):
+ * 节点选择管理�?(协调�?
+ * 封装 core.SelectorManager，提供统一的节点切换接�? * 使用 Result<T> 返回值模�? *
+ * 热切换策�?(渐进式降�?:
  * 1. 原生 CommandClient API (最可靠)
  * 2. BoxWrapperManager (备用)
  * 3. 完整重启 (fallback)
@@ -61,7 +59,7 @@ class SelectorManager {
     }
 
     /**
-     * 执行节点切换 (渐进式降级)
+     * 执行节点切换 (渐进式降�?
      */
     fun switchNode(nodeTag: String): SwitchResult {
         // 检查是否可以热切换
@@ -72,7 +70,7 @@ class SelectorManager {
         // 策略 1: 使用 CommandClient
         commandClient?.let { client ->
             try {
-                val success = CoreSelectorManager.selectOutbound(client, PROXY_SELECTOR_TAG, nodeTag)
+                val success = client.selectOutbound(PROXY_SELECTOR_TAG, nodeTag)
                 if (success) {
                     Log.i(TAG, "Hot switch via CommandClient: -> $nodeTag")
                     return SwitchResult.Success(nodeTag, "CommandClient")
@@ -94,38 +92,34 @@ class SelectorManager {
             Log.w(TAG, "BoxWrapper switch failed: ${e.message}")
         }
 
-        // 策略 3: 需要完整重启
-        return SwitchResult.NeedRestart(nodeTag, "All hot switch methods failed")
+        // 策略 3: 需要完整重�?        return SwitchResult.NeedRestart(nodeTag, "All hot switch methods failed")
     }
 
     /**
-     * 获取当前选中的节点
-     */
+     * 获取当前选中的节�?     */
     fun getSelectedOutbound(): String? = CoreSelectorManager.getSelectedOutbound()
 
     /**
-     * 获取选中节点的 Flow
+     * 获取选中节点�?Flow
      */
     fun getSelectedOutboundFlow(): StateFlow<String?> = CoreSelectorManager.selectedOutbound
 
     /**
-     * 获取当前 selector 的所有节点
-     */
+     * 获取当前 selector 的所有节�?     */
     fun getCurrentOutbounds(): List<String> = CoreSelectorManager.getCurrentOutboundTags()
 
     /**
-     * 检查是否有有效的 selector
+     * 检查是否有有效�?selector
      */
     fun hasSelector(): Boolean = CoreSelectorManager.hasSelector()
 
     /**
-     * 获取热切换能力 Flow
+     * 获取热切换能�?Flow
      */
     fun getCanHotSwitchFlow(): StateFlow<Boolean> = CoreSelectorManager.canHotSwitchFlow
 
     /**
-     * 清理状态
-     */
+     * 清理状�?     */
     fun clear(): Result<Unit> {
         return runCatching {
             CoreSelectorManager.clear()
@@ -141,3 +135,10 @@ class SelectorManager {
         this.commandClient = client
     }
 }
+
+
+
+
+
+
+

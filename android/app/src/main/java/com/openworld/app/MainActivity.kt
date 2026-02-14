@@ -66,12 +66,12 @@ import com.openworld.app.model.ConnectionState
 import com.openworld.app.model.AppLanguage
 import com.openworld.app.utils.LocaleHelper
 import com.openworld.app.utils.DeepLinkHandler
-import com.openworld.app.ipc.SingBoxRemote
+import com.openworld.app.ipc.OpenWorldRemote
 import com.openworld.app.service.VpnTileService
 import com.openworld.app.ui.components.AppNavBar
 import com.openworld.app.ui.navigation.AppNavigation
 import com.openworld.app.ui.theme.PureWhite
-import com.openworld.app.ui.theme.SingBoxTheme
+import com.openworld.app.ui.theme.OpenWorldTheme
 import android.content.ComponentName
 import android.service.quicksettings.TileService
 import androidx.work.WorkManager
@@ -91,7 +91,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun attachBaseContext(newBase: Context) {
-        // 从 SharedPreferences 读取语言设置
+        // �?SharedPreferences 读取语言设置
         val prefs = newBase.getSharedPreferences("settings", Context.MODE_PRIVATE)
         val languageName = prefs.getString("app_language_cache", null)
         val language = if (languageName != null) {
@@ -109,14 +109,13 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 在 super.onCreate 之前启用边到边显示
-        enableEdgeToEdge(
+        // �?super.onCreate 之前启用边到边显�?        enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         )
         super.onCreate(savedInstanceState)
         setContent {
-            SingBoxApp()
+            OpenWorldApp()
         }
 
         cancelRuleSetUpdateWork()
@@ -128,7 +127,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun SingBoxApp() {
+fun OpenWorldApp() {
     val context = LocalContext.current
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -138,7 +137,7 @@ fun SingBoxApp() {
     )
 
     LaunchedEffect(Unit) {
-        SingBoxRemote.ensureBound(context)
+        OpenWorldRemote.ensureBound(context)
         // Best-effort: ask system to refresh QS tile state after app process restarts/force-stops.
         runCatching {
             TileService.requestListeningState(context, ComponentName(context, VpnTileService::class.java))
@@ -156,14 +155,13 @@ fun SingBoxApp() {
     val settings by settingsRepository.settings.collectAsState(initial = null)
     val dashboardViewModel: DashboardViewModel = viewModel()
 
-    // 前台恢复时统一走 refreshState（内部已包含 ensureBound + MMKV 即时恢复）
-    // 不再在 ON_START 单独调用 ensureBound，避免与 ON_RESUME 的 refreshState 竞争
+    // 前台恢复时统一�?refreshState（内部已包含 ensureBound + MMKV 即时恢复�?    // 不再�?ON_START 单独调用 ensureBound，避免与 ON_RESUME �?refreshState 竞争
     // 导致 rebind 打断正在进行的连接，触发 STOPPED 闪烁
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         dashboardViewModel.refreshState()
     }
 
-    // 当语言设置变化时,缓存到 SharedPreferences 供 attachBaseContext 使用
+    // 当语言设置变化�?缓存�?SharedPreferences �?attachBaseContext 使用
     LaunchedEffect(settings?.appLanguage) {
         settings?.appLanguage?.let { language ->
             val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -171,23 +169,20 @@ fun SingBoxApp() {
         }
     }
 
-    // 自动检查更新 - 当 VPN 连接后检查，或 App 启动 10 秒后检查（直连尝试）
-    val isVpnRunningForUpdate by SingBoxRemote.isRunning.collectAsState()
+    // 自动检查更�?- �?VPN 连接后检查，�?App 启动 10 秒后检查（直连尝试�?    val isVpnRunningForUpdate by OpenWorldRemote.isRunning.collectAsState()
     var updateChecked by remember { mutableStateOf(false) }
 
     LaunchedEffect(settings?.autoCheckUpdate, isVpnRunningForUpdate) {
         if (settings?.autoCheckUpdate != true || updateChecked) return@LaunchedEffect
 
         if (isVpnRunningForUpdate) {
-            // VPN 已连接，延迟 1 秒后通过代理检查
-            kotlinx.coroutines.delay(1000L)
+            // VPN 已连接，延迟 1 秒后通过代理检�?            kotlinx.coroutines.delay(1000L)
             updateChecked = true
             com.openworld.app.utils.AppUpdateChecker.checkAndNotify(context)
         }
     }
 
-    // 兜底：如果 10 秒后 VPN 仍未连接，尝试直连检查
-    LaunchedEffect(settings?.autoCheckUpdate) {
+    // 兜底：如�?10 秒后 VPN 仍未连接，尝试直连检�?    LaunchedEffect(settings?.autoCheckUpdate) {
         if (settings?.autoCheckUpdate != true) return@LaunchedEffect
         kotlinx.coroutines.delay(10000L)
         if (!updateChecked) {
@@ -214,21 +209,21 @@ fun SingBoxApp() {
                     intent.action = null
                 }
                 android.content.Intent.ACTION_VIEW -> {
-                    // 处理 URL Scheme (singbox:// 或 kunbox://)
+                    // 处理 URL Scheme (singbox:// �?kunbox://)
                     intent.data?.let { uri ->
                         val scheme = uri.scheme
                         val host = uri.host
 
                         if ((scheme == "singbox" || scheme == "kunbox") && host == "install-config") {
                             val url = uri.getQueryParameter("url")
-                            val name = uri.getQueryParameter("name") ?: "导入的订阅"
+                            val name = uri.getQueryParameter("name") ?: "导入的订�?
                             val intervalStr = uri.getQueryParameter("interval")
                             val interval = intervalStr?.toIntOrNull() ?: 0
 
                             if (!url.isNullOrBlank()) {
                                 // 使用 DeepLinkHandler 存储数据
                                 DeepLinkHandler.setPendingSubscriptionImport(name, url, interval)
-                                // 导航到 profiles 页面
+                                // 导航�?profiles 页面
                                 pendingNavigation = "profiles"
                             }
                         }
@@ -240,15 +235,15 @@ fun SingBoxApp() {
         }
     }
     val connectionState by dashboardViewModel.connectionState.collectAsState()
-    val isRunning by SingBoxRemote.isRunning.collectAsState()
-    val isStarting by SingBoxRemote.isStarting.collectAsState()
-    val manuallyStopped by SingBoxRemote.manuallyStopped.collectAsState()
+    val isRunning by OpenWorldRemote.isRunning.collectAsState()
+    val isStarting by OpenWorldRemote.isStarting.collectAsState()
+    val manuallyStopped by OpenWorldRemote.manuallyStopped.collectAsState()
 
-    // 监听 VPN 状态变化，清理网络连接池，避免复用失效的 Socket
+    // 监听 VPN 状态变化，清理网络连接池，避免复用失效�?Socket
     LaunchedEffect(isRunning, isStarting) {
-        // 当 VPN 状态发生重大变化（启动、停止、重启）时，底层的网络接口可能已变更
+        // �?VPN 状态发生重大变化（启动、停止、重启）时，底层的网络接口可能已变更
         // 此时必须清理连接池，防止 OkHttp 复用绑定在旧网络接口上的连接导致 "use of closed network connection"
-        // 必须在 IO 线程执行，因为 connectionPool.evictAll() 会关闭 SSL socket，涉及网络 I/O
+        // 必须�?IO 线程执行，因�?connectionPool.evictAll() 会关�?SSL socket，涉及网�?I/O
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             com.openworld.app.utils.NetworkClient.clearConnectionPool()
         }
@@ -283,10 +278,9 @@ fun SingBoxApp() {
     LaunchedEffect(Unit) {
         SettingsRepository.restartRequiredEvents.collectLatest {
             // 如果 VPN 没有在运行，也没有正在启动，就不弹窗（因为下次启动自然生效）
-            if (!SingBoxRemote.isRunning.value && !SingBoxRemote.isStarting.value) return@collectLatest
+            if (!OpenWorldRemote.isRunning.value && !OpenWorldRemote.isStarting.value) return@collectLatest
 
-            // 新提示出现时，立即关闭旧的，只保留最新的那一个
-            snackbarHostState.currentSnackbarData?.dismiss()
+            // 新提示出现时，立即关闭旧的，只保留最新的那一�?            snackbarHostState.currentSnackbarData?.dismiss()
 
             snackbarHostState.showSnackbar(
                 message = context.getString(R.string.settings_restart_needed),
@@ -297,7 +291,7 @@ fun SingBoxApp() {
 
     val appTheme = settings?.appTheme ?: com.openworld.app.model.AppThemeMode.SYSTEM
 
-    SingBoxTheme(appTheme = appTheme) {
+    OpenWorldTheme(appTheme = appTheme) {
         val navController = rememberNavController()
 
         // Handle pending navigation from App Shortcuts
@@ -401,7 +395,7 @@ fun SingBoxApp() {
                 Surface(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(bottom = innerPadding.calculateBottomPadding()) // 只应用底部 padding
+                        .padding(bottom = innerPadding.calculateBottomPadding()) // 只应用底�?padding
                 ) {
                     AppNavigation(navController)
                 }
@@ -409,3 +403,10 @@ fun SingBoxApp() {
         }
     }
 }
+
+
+
+
+
+
+

@@ -14,12 +14,10 @@ import kotlinx.coroutines.*
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * 连接管理器
- * 负责网络状态监控、底层网络绑定、连接重置等
+ * 连接管理�? * 负责网络状态监控、底层网络绑定、连接重置等
  *
  * 2025-fix-v17: 添加接口名变化检测，参考上游接口名追踪逻辑
- * 只有在网络接口真正变化时（如 WiFi ↔ 移动数据切换）才重置连接，
- * 避免在同一网络上频繁重置导致的性能问题
+ * 只有在网络接口真正变化时（如 WiFi �?移动数据切换）才重置连接�? * 避免在同一网络上频繁重置导致的性能问题
  */
 class ConnectManager(
     private val context: Context,
@@ -43,8 +41,7 @@ class ConnectManager(
     /**
      * 2025-fix-v17: 跟踪上游网络接口名称
      * 参考通用 upstreamInterfaceName 逻辑
-     * 用于检测真正的网络切换（如 wlan0 -> rmnet0）
-     */
+     * 用于检测真正的网络切换（如 wlan0 -> rmnet0�?     */
     @Volatile
     private var upstreamInterfaceName: String? = null
 
@@ -139,7 +136,7 @@ class ConnectManager(
     }
 
     /**
-     * 获取物理网络 (不使用缓存)
+     * 获取物理网络 (不使用缓�?
      */
     fun getPhysicalNetwork(): Network? {
         val cm = connectivityManager ?: return null
@@ -166,8 +163,7 @@ class ConnectManager(
     }
 
     /**
-     * 等待可用的物理网络
-     */
+     * 等待可用的物理网�?     */
     suspend fun waitForNetwork(timeoutMs: Long): Result<Network?> {
         return runCatching {
             withTimeout(timeoutMs) {
@@ -187,8 +183,7 @@ class ConnectManager(
     }
 
     /**
-     * 是否在启动窗口期内
-     */
+     * 是否在启动窗口期�?     */
     fun isInStartupWindow(): Boolean {
         val startedAt = vpnStartedAtMs.get()
         if (startedAt == 0L) return false
@@ -196,7 +191,7 @@ class ConnectManager(
     }
 
     /**
-     * 设置底层网络 (无防抖，参考即时回调策略)
+     * 设置底层网络 (无防抖，参考即时回调策�?
      * 2025-fix-v16: 在每次网络回调时都立即调用，不做防抖
      */
     fun setUnderlyingNetworks(
@@ -210,15 +205,14 @@ class ConnectManager(
                 return@runCatching false
             }
 
-            // 2025-fix-v16: 移除防抖，立即执行
-            setUnderlyingFn(networks)
+            // 2025-fix-v16: 移除防抖，立即执�?            setUnderlyingFn(networks)
             Log.i(TAG, "setUnderlyingNetworks: ${networks?.size ?: 0} networks")
             true
         }
     }
 
     /**
-     * 重置连接 (带防抖)
+     * 重置连接 (带防�?
      */
     fun resetConnections(resetFn: () -> Unit): Result<Boolean> {
         return runCatching {
@@ -237,8 +231,7 @@ class ConnectManager(
     }
 
     /**
-     * 检查网络状态
-     */
+     * 检查网络状�?     */
     fun getNetworkState(): NetworkState {
         val network = lastKnownNetwork
         val caps = network?.let { connectivityManager?.getNetworkCapabilities(it) }
@@ -289,11 +282,9 @@ class ConnectManager(
      * 处理网络丢失事件
      *
      * 2025-fix-v28/v29: 网络切换优化
-     * 问题: 切换网络时，系统会先触发 onLost(旧网络)，再触发 onAvailable(新网络)。
-     * WiFi -> 移动数据切换时，移动数据的 onAvailable 可能延迟几百毫秒。
-     *
+     * 问题: 切换网络时，系统会先触发 onLost(旧网�?，再触发 onAvailable(新网�?�?     * WiFi -> 移动数据切换时，移动数据�?onAvailable 可能延迟几百毫秒�?     *
      * 解决方案:
-     * 1. 先检查 activeNetwork 是否已有替代网络（WiFi-A -> WiFi-B 快速切换）
+     * 1. 先检�?activeNetwork 是否已有替代网络（WiFi-A -> WiFi-B 快速切换）
      * 2. 如果没有，延迟一段时间再次检查（WiFi -> 移动数据 慢速切换）
      * 3. 只有确认没有替代网络时才清除 underlying networks
      */
@@ -317,10 +308,9 @@ class ConnectManager(
             return
         }
 
-        // 没有立即找到替代网络，延迟后再次检查（WiFi -> 移动数据场景）
-        serviceScope.launch {
+        // 没有立即找到替代网络，延迟后再次检查（WiFi -> 移动数据场景�?        serviceScope.launch {
             delay(NETWORK_SWITCH_DELAY_MS)
-            // 再次检查 lastKnownNetwork，可能在延迟期间已经收到 onAvailable
+            // 再次检�?lastKnownNetwork，可能在延迟期间已经收到 onAvailable
             if (lastKnownNetwork != null && lastKnownNetwork != network) {
                 Log.i(TAG, "Network already switched during delay")
                 return@launch
@@ -328,8 +318,7 @@ class ConnectManager(
             if (tryFindReplacementNetwork(cm, network)) {
                 return@launch
             }
-            // 确认没有替代网络，真正断网
-            Log.i(TAG, "No replacement network found, clearing underlying networks")
+            // 确认没有替代网络，真正断�?            Log.i(TAG, "No replacement network found, clearing underlying networks")
             lastKnownNetwork = null
             StateCache.invalidateNetworkCache()
             setUnderlyingNetworksFn?.invoke(null)
@@ -368,8 +357,7 @@ class ConnectManager(
 
     /**
      * 检测网络接口名变化并在需要时重置连接
-     * 参考常见 preInit 阶段的处理方式
-     */
+     * 参考常�?preInit 阶段的处理方�?     */
     private fun checkAndResetOnInterfaceChange(network: Network) {
         val linkProps = connectivityManager?.getLinkProperties(network)
         val newInterfaceName = linkProps?.interfaceName
@@ -395,3 +383,10 @@ class ConnectManager(
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
     }
 }
+
+
+
+
+
+
+

@@ -4,7 +4,7 @@
 
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9.0-purple.svg?style=flat&logo=kotlin)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material3-4285F4.svg?style=flat&logo=android)](https://developer.android.com/jetpack/compose)
-[![Sing-box](https://img.shields.io/badge/Core-Sing--box-success.svg?style=flat)](https://github.com/SagerNet/sing-box)
+[![OpenWorldCore](https://img.shields.io/badge/Core-OpenWorldCore-success.svg?style=flat)](#-core-features)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat)](LICENSE)
 [![Telegram](https://img.shields.io/badge/Telegram-Chat-blue?style=flat&logo=telegram)](https://t.me/+EKxpszVkOBc1MGJl)
 [![Downloads](https://img.shields.io/github/downloads/roseforljh/OpenWorld/total.svg?style=flat&logo=github)](https://github.com/roseforljh/OpenWorld/releases)
@@ -73,7 +73,7 @@ Unlike traditional Material Design, we've adopted a deeply customized **True Bla
 - **Adaptive Icons**: Support for Android 13+ themed adaptive icons
 
 ### 🚀 High-Performance Core
-Based on the **Sing-box (libbox)** next-generation universal proxy core written in Golang.
+Powered by **OpenWorldCore** (Rust native kernel).
 - **Memory Usage**: 30%+ lower than traditional cores
 - **Startup Speed**: Millisecond-level cold start
 - **Connection Stability**: Excellent connection reuse and keepalive mechanisms
@@ -118,7 +118,8 @@ We've built a comprehensive protocol support network, compatible with most proxy
 | **AnyTLS** | `AnyTLS` | `anytls://` | Universal TLS wrapper, Traffic obfuscation |
 
 ### Subscription Ecosystem Support
-- **Sing-box JSON**: Native support with full features.
+- **OpenWorld JSON Config**: Native support with full features.
+- **Sing-box JSON (Compatible)**: Fully compatible input support.
 - **Clash YAML**: Perfect compatibility with Clash / Clash Meta (Mihomo) configurations, automatic policy group conversion.
 - **Standard Base64**: Compatible with V2RayN / Shadowrocket subscription formats.
 - **Import Methods**: Supports clipboard import, URL subscription import, QR code scanning, local file import.
@@ -131,11 +132,11 @@ This project follows best practices of modern Android architecture, adopting MVV
 
 ```
 OpenWorld-Android/
-├── app/src/main/java/com/openworld/singbox/
-│   ├── core/              # libbox JNI wrapper (BoxWrapperManager, SingBoxCore)
+├── app/src/main/java/com/openworld/app/
+│   ├── core/              # OpenWorldCore JNI wrapper (BoxWrapperManager, SingBoxCore)
 │   ├── database/          # Room database (dao/, entity/)
-│   ├── ipc/               # VPN inter-process communication (SingBoxIpcHub, VpnStateStore)
-│   ├── model/             # Data models (SingBoxConfig, RoutingModels, Settings)
+│   ├── ipc/               # VPN inter-process communication (OpenWorldIpcHub, VpnStateStore)
+│   ├── model/             # Data models (OpenWorldConfig, RoutingModels, Settings)
 │   ├── repository/        # Data repository layer
 │   │   ├── config/        # Configuration builders (InboundBuilder, OutboundFixer)
 │   │   ├── store/         # Settings storage
@@ -151,8 +152,8 @@ OpenWorld-Android/
 │   ├── utils/parser/      # Protocol parsers (NodeLinkParser, ClashYamlParser)
 │   └── viewmodel/         # ViewModel layer
 │
-├── Kkunbox/               # Sing-box core source and build scripts
-│   └── buildScript/       # libbox compilation scripts
+├── src/                   # OpenWorld Rust kernel source
+└── scripts/               # Android cross-compilation scripts
 │
 └── config/detekt/         # Code quality check configuration
 ```
@@ -161,12 +162,12 @@ OpenWorld-Android/
 
 #### Multi-process Architecture
 - VPN service runs in a separate process (`:vpn_service`)
-- UI communicates across processes via `SingBoxIpcHub`
+- UI communicates across processes via `OpenWorldIpcHub` (AIDL)
 - Uses `VpnStateStore` (MMKV) for cross-process state synchronization
 
 #### VPN Data Flow
 ```
-SingBoxService -> CoreManager -> BoxWrapperManager -> libbox.aar
+OpenWorldService -> CoreManager -> BoxWrapperManager -> libopenworld.so
 ```
 
 ---
@@ -178,7 +179,7 @@ SingBoxService -> CoreManager -> BoxWrapperManager -> libbox.aar
 | **Language** | Kotlin 1.9 | 100% pure Kotlin code, using Coroutines and Flow for async streams |
 | **UI Framework** | Jetpack Compose | Declarative UI, Material 3 design specification |
 | **Architecture** | MVVM | Separation of concerns with ViewModel and Repository |
-| **Core Engine** | Sing-box (Go) | Communicates with Go core library via JNI |
+| **Core Engine** | OpenWorldCore (Rust) | Communicates with Rust core library via JNI |
 | **Database** | Room | Local data persistence |
 | **KV Storage** | MMKV | High-performance cross-process key-value storage |
 | **Network** | OkHttp 4 | For subscription updates, latency tests, and other network requests |
@@ -194,7 +195,7 @@ SingBoxService -> CoreManager -> BoxWrapperManager -> libbox.aar
 
 - **JDK**: 17 or higher
 - **Android Studio**: Hedgehog (2023.1.1) or higher
-- **Go**: 1.24+ (only needed when compiling libbox core)
+- **Rust**: stable toolchain (required when building OpenWorldCore)
 - **NDK**: r29 or higher
 
 ### Clone Project
@@ -231,41 +232,27 @@ Then execute:
 .\gradlew assembleRelease
 ```
 
-### Compile libbox Core (Optional)
+### Compile OpenWorldCore (Optional)
 
-If you need to modify the underlying core code, compile libbox:
+If you need to modify the underlying core code, build OpenWorldCore:
 
 ```powershell
-# Compile from local source (requires Go 1.24+)
-.\Kkunbox\buildScript\tasks\build_libbox.ps1 -UseLocalSource
-
-# Compile from remote repository
-.\Kkunbox\buildScript\tasks\build_libbox.ps1
+# Build Rust kernel and copy libopenworld.so into Android jniLibs
+.\scripts\build_android.ps1 -Release
 ```
 
-After compilation, `libbox.aar` will be automatically placed in the `app/libs/` directory.
+After build, `libopenworld.so` is copied to `android/app/src/main/jniLibs/arm64-v8a/`.
 
 ### Sync Upstream Kernel
 
-OpenWorld uses a fixed branch `kunbox-extensions` to manage kernel extensions. This branch is based on an official sing-box tag, with OpenWorld extension commits stacked on top.
+OpenWorld can be synced against newer upstream kernel changes directly in this repository.
 
 To sync to a new upstream version:
 
 ```powershell
-cd Kkunbox\singbox-core
-
-# 1. Fetch latest upstream tags
-git fetch upstream --tags
-
-# 2. Rebase onto the new version tag (e.g. v1.12.22)
-git rebase v1.12.22
-
-# 3. Go back to project root and rebuild the kernel
-cd ..\..
-.\Kkunbox\buildScript\tasks\build_libbox.ps1 -UseLocalSource -AutoReplace
+# Rebuild Android native kernel
+.\scripts\build_android.ps1 -Release
 ```
-
-> **Note**: OpenWorld extension commits are automatically preserved on top of the branch during rebase. If conflicts occur, resolve them manually and run `git rebase --continue`.
 
 ### Run Tests
 
@@ -296,12 +283,12 @@ cd ..\..
 OpenWorld supports quick configuration import via URL Scheme:
 
 ```
-kunbox://import?url=<subscription_url>
+kunbox://install-config?url=<subscription_url>
 ```
 
 Example:
 ```
-kunbox://import?url=https%3A%2F%2Fexample.com%2Fsubscription
+kunbox://install-config?url=https%3A%2F%2Fexample.com%2Fsubscription
 ```
 
 ---
@@ -365,7 +352,7 @@ A: Please check:
 A: Multiple methods supported:
 1. Click "+" in the top right corner and select "Import from Clipboard"
 2. Long press subscription link and select "Open with OpenWorld"
-3. Use URL Scheme: `kunbox://import?url=<url>`
+3. Use URL Scheme: `kunbox://install-config?url=<url>`
 
 ### Q: What to do about high battery usage?
 A: Suggestions:
@@ -394,7 +381,7 @@ Thanks to the following users for their generous support:
 
 This project stands on the shoulders of giants, special thanks to the following open source projects:
 
-* **[SagerNet/sing-box](https://github.com/SagerNet/sing-box)**: Next-generation universal proxy platform core
+* **OpenWorldCore (this repository)**: Rust native proxy kernel for Android integration
 * **[MatsuriDayo/NekoBoxForAndroid](https://github.com/MatsuriDayo/NekoBoxForAndroid)**: Excellent Android proxy client reference
 * **[v2ray/v2ray-core](https://github.com/v2ray/v2ray-core)**: V2Ray team's pioneering contribution to the proxy ecosystem
 * **[Jetpack Compose](https://developer.android.com/jetpack/compose)**: Modern Android UI toolkit
@@ -422,7 +409,7 @@ limitations under the License.
 
 <div align="center">
 
-**[⬆ Back to Top](#kunbox-for-android)**
+**[⬆ Back to Top](#openworld-for-android)**
 
 <sub>This project is for learning and researching network technology only. Please comply with local laws and regulations.</sub>
 

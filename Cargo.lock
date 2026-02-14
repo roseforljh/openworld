@@ -2250,6 +2250,7 @@ dependencies = [
  "maxminddb",
  "md-5",
  "notify",
+ "once_cell",
  "p256",
  "quinn",
  "rand 0.8.5",

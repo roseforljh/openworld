@@ -57,3 +57,10 @@ class LogViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
     }
 }
+
+
+
+
+
+
+

@@ -5,7 +5,7 @@ import java.util.Collections
 /**
  * 地区检测工具类
  *
- * 根据节点名称检测地区标志 (国旗 Emoji)
+ * 根据节点名称检测地区标�?(国旗 Emoji)
  * 使用预编译规则和 LRU 缓存优化性能
  */
 object RegionDetector {
@@ -25,24 +25,24 @@ object RegionDetector {
         RegionRule("🇭🇰", listOf("香港"), listOf("hong kong"), listOf("hk")),
         RegionRule("🇹🇼", listOf("台湾"), listOf("taiwan"), listOf("tw")),
         RegionRule("🇯🇵", listOf("日本"), listOf("japan", "tokyo"), listOf("jp")),
-        RegionRule("🇸🇬", listOf("新加坡"), listOf("singapore"), listOf("sg")),
+        RegionRule("🇸🇬", listOf("新加�?), listOf("singapore"), listOf("sg")),
         RegionRule("🇺🇸", listOf("美国"), listOf("united states", "america"), listOf("us", "usa")),
         RegionRule("🇰🇷", listOf("韩国"), listOf("korea"), listOf("kr")),
         RegionRule("🇬🇧", listOf("英国"), listOf("britain", "england"), listOf("uk", "gb")),
         RegionRule("🇩🇪", listOf("德国"), listOf("germany"), listOf("de")),
         RegionRule("🇫🇷", listOf("法国"), listOf("france"), listOf("fr")),
-        RegionRule("🇨🇦", listOf("加拿大"), listOf("canada"), listOf("ca")),
+        RegionRule("🇨🇦", listOf("加拿�?), listOf("canada"), listOf("ca")),
         RegionRule("🇦🇺", listOf("澳大利亚"), listOf("australia"), listOf("au")),
-        RegionRule("🇷🇺", listOf("俄罗斯"), listOf("russia"), listOf("ru")),
+        RegionRule("🇷🇺", listOf("俄罗�?), listOf("russia"), listOf("ru")),
         RegionRule("🇮🇳", listOf("印度"), listOf("india"), listOf("in")),
         RegionRule("🇧🇷", listOf("巴西"), listOf("brazil"), listOf("br")),
         RegionRule("🇳🇱", listOf("荷兰"), listOf("netherlands"), listOf("nl")),
         RegionRule("🇹🇷", listOf("土耳其"), listOf("turkey"), listOf("tr")),
-        RegionRule("🇦🇷", listOf("阿根廷"), listOf("argentina"), listOf("ar")),
+        RegionRule("🇦🇷", listOf("阿根�?), listOf("argentina"), listOf("ar")),
         RegionRule("🇲🇾", listOf("马来西亚"), listOf("malaysia"), listOf("my")),
         RegionRule("🇹🇭", listOf("泰国"), listOf("thailand"), listOf("th")),
         RegionRule("🇻🇳", listOf("越南"), listOf("vietnam"), listOf("vn")),
-        RegionRule("🇵🇭", listOf("菲律宾"), listOf("philippines"), listOf("ph")),
+        RegionRule("🇵🇭", listOf("菲律�?), listOf("philippines"), listOf("ph")),
         RegionRule("🇮🇩", listOf("印尼"), listOf("indonesia"), listOf("id"))
     )
 
@@ -66,10 +66,9 @@ object RegionDetector {
     }
 
     /**
-     * 根据节点名称检测地区标志
-     *
+     * 根据节点名称检测地区标�?     *
      * @param name 节点名称
-     * @return 国旗 Emoji，未知地区返回 "🌐"
+     * @return 国旗 Emoji，未知地区返�?"🌐"
      */
     @Suppress("ReturnCount")
     fun detect(name: String): String {
@@ -107,3 +106,10 @@ object RegionDetector {
         cache.clear()
     }
 }
+
+
+
+
+
+
+

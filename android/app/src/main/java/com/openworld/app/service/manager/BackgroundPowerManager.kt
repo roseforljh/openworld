@@ -6,13 +6,8 @@ import com.openworld.app.repository.LogRepository
 import kotlinx.coroutines.CoroutineScope
 
 /**
- * 后台省电管理器（降级为状态记录器）
- *
- * 说明：
- * - 保留原有 API 形状与调用入口，兼容现有调用方。
- * - 不再执行任何会影响连接稳定性的省电动作。
- * - 主进程后台超时自杀由 AppLifecycleObserver 负责，这里仅记录状态。
- */
+ * 后台省电管理器（降级为状态记录器�? *
+ * 说明�? * - 保留原有 API 形状与调用入口，兼容现有调用方�? * - 不再执行任何会影响连接稳定性的省电动作�? * - 主进程后台超时自杀�?AppLifecycleObserver 负责，这里仅记录状态�? */
 class BackgroundPowerManager(
     @Suppress("unused")
     private val serviceScope: CoroutineScope
@@ -20,41 +15,40 @@ class BackgroundPowerManager(
     companion object {
         private const val TAG = "BackgroundPowerManager"
 
-        /** 默认后台省电阈值: 30 分钟 */
+        /** 默认后台省电阈�? 30 分钟 */
         const val DEFAULT_BACKGROUND_THRESHOLD_MS = 30 * 60 * 1000L
 
-        /** 最小阈值: 5 分钟 (防止过于激进) */
+        /** 最小阈�? 5 分钟 (防止过于激�? */
         const val MIN_THRESHOLD_MS = 5 * 60 * 1000L
 
-        /** 最大阈值: 2 小时 */
+        /** 最大阈�? 2 小时 */
         const val MAX_THRESHOLD_MS = 2 * 60 * 60 * 1000L
 
-        /** 恢复触发最小离开时长: 3 秒（避免过度触发） */
+        /** 恢复触发最小离开时长: 3 秒（避免过度触发�?*/
         private const val MIN_RECOVERY_AWAY_MS = 3_000L
     }
 
     /**
-     * 省电模式状态（兼容保留）
-     */
+     * 省电模式状态（兼容保留�?     */
     enum class PowerMode {
         NORMAL,
         POWER_SAVING
     }
 
     /**
-     * 回调接口 - 由 SingBoxService 实现（兼容保留）
+     * 回调接口 - �?OpenWorldService 实现（兼容保留）
      */
     interface Callbacks {
         /** VPN 是否正在运行 */
         val isVpnRunning: Boolean
 
-        /** 暂停非核心进程 (进入省电模式) */
+        /** 暂停非核心进�?(进入省电模式) */
         fun suspendNonEssentialProcesses()
 
-        /** 恢复非核心进程 (退出省电模式) */
+        /** 恢复非核心进�?(退出省电模�? */
         fun resumeNonEssentialProcesses()
 
-        /** 请求核心网络恢复（由 Service 网关统一决策） */
+        /** 请求核心网络恢复（由 Service 网关统一决策�?*/
         fun requestCoreNetworkRecovery(reason: String, force: Boolean = false)
     }
 
@@ -67,8 +61,7 @@ class BackgroundPowerManager(
     @Volatile
     private var userAwayAtMs: Long = 0L
 
-    // 双信号状态
-    @Volatile
+    // 双信号状�?    @Volatile
     private var isAppInBackground: Boolean = false
 
     @Volatile
@@ -95,7 +88,7 @@ class BackgroundPowerManager(
     val isPowerSaving: Boolean get() = currentMode == PowerMode.POWER_SAVING
 
     /**
-     * 用户是否离开 (后台或息屏)
+     * 用户是否离开 (后台或息�?
      */
     private val isUserAway: Boolean get() = isAppInBackground || isScreenOff
 
@@ -114,8 +107,7 @@ class BackgroundPowerManager(
     }
 
     /**
-     * 更新后台省电阈值
-     */
+     * 更新后台省电阈�?     */
     fun setThreshold(thresholdMs: Long) {
         backgroundThresholdMs = if (thresholdMs == Long.MAX_VALUE) {
             Long.MAX_VALUE
@@ -126,10 +118,10 @@ class BackgroundPowerManager(
         Log.i(TAG, "Threshold updated to $thresholdDisplay")
     }
 
-    // ==================== 信号1: 主进程 IPC 通知 ====================
+    // ==================== 信号1: 主进�?IPC 通知 ====================
 
     /**
-     * App 进入后台 (来自主进程 IPC)
+     * App 进入后台 (来自主进�?IPC)
      */
     fun onAppBackground() {
         if (isAppInBackground) return
@@ -140,7 +132,7 @@ class BackgroundPowerManager(
     }
 
     /**
-     * App 返回前台 (来自主进程 IPC)
+     * App 返回前台 (来自主进�?IPC)
      */
     fun onAppForeground() {
         if (!isAppInBackground) {
@@ -173,7 +165,7 @@ class BackgroundPowerManager(
         evaluateUserPresence()
     }
 
-    // ==================== 信号2: 屏幕状态 ====================
+    // ==================== 信号2: 屏幕状�?====================
 
     /**
      * 屏幕关闭 (来自 ScreenStateManager)
@@ -210,7 +202,7 @@ class BackgroundPowerManager(
         evaluateUserPresence()
     }
 
-    // ==================== 统一判断逻辑（状态记录 + 轻量恢复桥接） ====================
+    // ==================== 统一判断逻辑（状态记�?+ 轻量恢复桥接�?====================
 
     /**
      * 在用户回到可交互态时按需触发核心网络恢复
@@ -277,37 +269,33 @@ class BackgroundPowerManager(
         }
         userAwayAtMs = 0L
 
-        // 兼容兜底：若旧状态残留为 POWER_SAVING，则复位为 NORMAL，但不触发任何恢复动作
-        if (currentMode == PowerMode.POWER_SAVING) {
+        // 兼容兜底：若旧状态残留为 POWER_SAVING，则复位�?NORMAL，但不触发任何恢复动�?        if (currentMode == PowerMode.POWER_SAVING) {
             Log.i(TAG, "Resetting legacy POWER_SAVING state to NORMAL (no-op)")
             currentMode = PowerMode.NORMAL
         }
     }
 
     /**
-     * 进入省电模式（兼容保留，no-op）
-     */
+     * 进入省电模式（兼容保留，no-op�?     */
     private fun enterPowerSavingMode() {
         Log.d(TAG, "enterPowerSavingMode ignored: state-recorder-only mode")
     }
 
     /**
-     * 退出省电模式（兼容保留，no-op）
-     */
+     * 退出省电模式（兼容保留，no-op�?     */
     private fun exitPowerSavingMode() {
         Log.d(TAG, "exitPowerSavingMode ignored: state-recorder-only mode")
     }
 
     /**
-     * 强制进入省电模式 (用于测试或手动触发)
+     * 强制进入省电模式 (用于测试或手动触�?
      */
     fun forceEnterPowerSaving() {
         enterPowerSavingMode()
     }
 
     /**
-     * 强制退出省电模式
-     */
+     * 强制退出省电模�?     */
     fun forceExitPowerSaving() {
         exitPowerSavingMode()
     }
@@ -352,3 +340,10 @@ class BackgroundPowerManager(
         )
     }
 }
+
+
+
+
+
+
+

@@ -30,8 +30,7 @@ data class DnsResolveResult(
 }
 
 /**
- * DoH (DNS over HTTPS) 解析器
- *
+ * DoH (DNS over HTTPS) 解析�? *
  * 支持通过 HTTPS 安全地解析域名，绕过本地 DNS 污染
  */
 class DnsResolver(
@@ -40,8 +39,7 @@ class DnsResolver(
     companion object {
         private const val TAG = "DnsResolver"
 
-        // 预定义的 DoH 服务器
-        const val DOH_CLOUDFLARE = "https://1.1.1.1/dns-query"
+        // 预定义的 DoH 服务�?        const val DOH_CLOUDFLARE = "https://1.1.1.1/dns-query"
         const val DOH_GOOGLE = "https://8.8.8.8/dns-query"
         const val DOH_ALIDNS = "https://223.5.5.5/dns-query"
 
@@ -57,7 +55,7 @@ class DnsResolver(
         }
 
         /**
-         * 判断是否为 IP 地址
+         * 判断是否�?IP 地址
          */
         fun isIpAddress(host: String): Boolean {
             return IPV4_REGEX.matches(host) || (host.contains(":") && IPV6_REGEX.matches(host))
@@ -139,8 +137,7 @@ class DnsResolver(
     }
 
     /**
-     * 使用 DoH 异步解析（可取消）
-     */
+     * 使用 DoH 异步解析（可取消�?     */
     @Suppress("CognitiveComplexMethod")
     private suspend fun resolveViaDoHAsync(
         domain: String,
@@ -200,8 +197,7 @@ class DnsResolver(
     }
 
     /**
-     * 竞速解析：同时启动 DoH 和系统 DNS，谁先成功用谁
-     */
+     * 竞速解析：同时启动 DoH 和系�?DNS，谁先成功用�?     */
     @Suppress("CognitiveComplexMethod")
     suspend fun resolve(
         domain: String,
@@ -230,8 +226,7 @@ class DnsResolver(
             return@withContext winner
         }
 
-        // 第一个失败了，等另一个
-        val fallback = select {
+        // 第一个失败了，等另一�?        val fallback = select {
             if (dohDeferred != null && dohDeferred.isActive) {
                 dohDeferred.onAwait { it }
             }
@@ -249,9 +244,7 @@ class DnsResolver(
      * 批量解析多个域名
      *
      * @param domains 域名列表
-     * @param dohServer DoH 服务器
-     * @param concurrency 并发数
-     * @return 域名到解析结果的映射
+     * @param dohServer DoH 服务�?     * @param concurrency 并发�?     * @return 域名到解析结果的映射
      */
     suspend fun resolveBatch(
         domains: List<String>,
@@ -378,3 +371,10 @@ class DnsResolver(
         }
     }
 }
+
+
+
+
+
+
+

@@ -10,8 +10,7 @@ import kotlinx.coroutines.flow.Flow
 /**
  * 节点延迟缓存数据访问对象
  *
- * 管理节点的延迟测试结果
- */
+ * 管理节点的延迟测试结�? */
 @Dao
 interface NodeLatencyDao {
 
@@ -49,3 +48,10 @@ interface NodeLatencyDao {
     @Query("INSERT OR REPLACE INTO node_latencies (nodeId, latencyMs, testedAt) VALUES (:nodeId, :latencyMs, :testedAt)")
     suspend fun upsert(nodeId: String, latencyMs: Long, testedAt: Long = System.currentTimeMillis())
 }
+
+
+
+
+
+
+

@@ -39,8 +39,7 @@ class DataExportRepository(private val context: Context) {
     }
 
     // 使用 Application Scope 替代 GlobalScope,避免内存泄漏
-    // Repository 是单例且生命周期与应用相同,使用 SupervisorJob 确保子协程异常不影响父协程
-    private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // Repository 是单例且生命周期与应用相�?使用 SupervisorJob 确保子协程异常不影响父协�?    private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val gson: Gson = GsonBuilder()
         .setPrettyPrinting()
@@ -55,27 +54,23 @@ class DataExportRepository(private val context: Context) {
         get() = File(context.filesDir, "configs").also { it.mkdirs() }
 
     /**
-     * 导出所有数据
-     * @return 导出数据的 JSON 字符串
-     */
+     * 导出所有数�?     * @return 导出数据�?JSON 字符�?     */
     suspend fun exportAllData(): Result<String> = withContext(Dispatchers.IO) {
         try {
 
             // 1. 获取当前设置
             val settings = settingsRepository.settings.first()
 
-            // 2. 获取配置列表和节点数据
-            val profiles = configRepository.profiles.value
+            // 2. 获取配置列表和节点数�?            val profiles = configRepository.profiles.value
             val activeProfileId = configRepository.activeProfileId.value
             val activeNodeId = configRepository.activeNodeId.value
 
-            // 3. 加载每个配置的完整节点数据
-            val profileExportDataList = profiles.mapNotNull { profile ->
+            // 3. 加载每个配置的完整节点数�?            val profileExportDataList = profiles.mapNotNull { profile ->
                 try {
                     val configFile = File(configDir, "${profile.id}.json")
                     if (configFile.exists()) {
                         val configJson = configFile.readText()
-                        val config = gson.fromJson(configJson, SingBoxConfig::class.java)
+                        val config = gson.fromJson(configJson, OpenWorldConfig::class.java)
                         ProfileExportData(profile = profile, config = config)
                     } else {
                         Log.w(TAG, "Config file not found for profile: ${profile.id}")
@@ -112,8 +107,7 @@ class DataExportRepository(private val context: Context) {
     }
 
     /**
-     * 导出到文件
-     * @param uri 目标文件 URI
+     * 导出到文�?     * @param uri 目标文件 URI
      */
     suspend fun exportToFile(uri: Uri): Result<Unit> = withContext(Dispatchers.IO) {
         try {
@@ -138,8 +132,7 @@ class DataExportRepository(private val context: Context) {
 
     /**
      * 验证导入数据
-     * @param jsonData 导入的 JSON 字符串
-     * @return 解析后的导出数据
+     * @param jsonData 导入�?JSON 字符�?     * @return 解析后的导出数据
      */
     suspend fun validateImportData(jsonData: String): Result<ExportData> = withContext(Dispatchers.IO) {
         try {
@@ -198,8 +191,7 @@ class DataExportRepository(private val context: Context) {
 
     /**
      * 导入数据
-     * @param jsonData 导入的 JSON 字符串
-     * @param options 导入选项
+     * @param jsonData 导入�?JSON 字符�?     * @param options 导入选项
      * @return 导入结果
      */
     suspend fun importData(jsonData: String, options: ImportOptions = ImportOptions()): Result<ImportResult> = withContext(Dispatchers.IO) {
@@ -222,12 +214,10 @@ class DataExportRepository(private val context: Context) {
                     importSettings(exportData.settings)
                     settingsImported = true
 
-                    // 触发规则集下载
-                    if (exportData.settings.ruleSets.isNotEmpty()) {
+                    // 触发规则集下�?                    if (exportData.settings.ruleSets.isNotEmpty()) {
                         Log.i(TAG, "Triggering rule set download after import...")
                         // 使用 repositoryScope 替代 GlobalScope,避免内存泄漏
-                        // 在后台启动下载任务，不阻塞导入流程
-                        repositoryScope.launch {
+                        // 在后台启动下载任务，不阻塞导入流�?                        repositoryScope.launch {
                             try {
                                 ruleSetRepository.ensureRuleSetsReady(forceUpdate = false, allowNetwork = true) {
                                 }
@@ -242,8 +232,7 @@ class DataExportRepository(private val context: Context) {
                 }
             }
 
-            // 3. 导入配置和节点
-            if (options.importProfiles) {
+            // 3. 导入配置和节�?            if (options.importProfiles) {
                 for (profileData in exportData.profiles) {
                     try {
                         val nodeCount = importProfile(profileData, options.overwriteExisting)
@@ -256,11 +245,9 @@ class DataExportRepository(private val context: Context) {
                 }
             }
 
-            // 4. 恢复活跃状态
-            if (options.importProfiles && exportData.activeProfileId != null) {
+            // 4. 恢复活跃状�?            if (options.importProfiles && exportData.activeProfileId != null) {
                 try {
-                    // 检查活跃配置是否存在
-                    val profiles = configRepository.profiles.value
+                    // 检查活跃配置是否存�?                    val profiles = configRepository.profiles.value
                     if (profiles.any { it.id == exportData.activeProfileId }) {
                         configRepository.setActiveProfile(
                             exportData.activeProfileId,
@@ -295,8 +282,7 @@ class DataExportRepository(private val context: Context) {
     }
 
     /**
-     * 从文件导入
-     * @param uri 源文件 URI
+     * 从文件导�?     * @param uri 源文�?URI
      * @param options 导入选项
      */
     suspend fun importFromFile(uri: Uri, options: ImportOptions = ImportOptions()): Result<ImportResult> = withContext(Dispatchers.IO) {
@@ -313,8 +299,7 @@ class DataExportRepository(private val context: Context) {
     }
 
     /**
-     * 从文件验证数据（用于预览）
-     */
+     * 从文件验证数据（用于预览�?     */
     suspend fun validateFromFile(uri: Uri): Result<ExportData> = withContext(Dispatchers.IO) {
         try {
             val jsonData = context.contentResolver.openInputStream(uri)?.use { inputStream ->
@@ -389,8 +374,7 @@ class DataExportRepository(private val context: Context) {
         settingsRepository.setAppRules(settings.appRules)
         settingsRepository.setAppGroups(settings.appGroups)
 
-        // 规则集自动更新
-        settingsRepository.setRuleSetAutoUpdateEnabled(settings.ruleSetAutoUpdateEnabled)
+        // 规则集自动更�?        settingsRepository.setRuleSetAutoUpdateEnabled(settings.ruleSetAutoUpdateEnabled)
         settingsRepository.setRuleSetAutoUpdateInterval(settings.ruleSetAutoUpdateInterval)
 
         // 节点列表设置
@@ -401,14 +385,12 @@ class DataExportRepository(private val context: Context) {
 
     /**
      * 导入单个配置
-     * @return 导入的节点数量
-     */
+     * @return 导入的节点数�?     */
     private suspend fun importProfile(profileData: ProfileExportData, overwrite: Boolean): Int {
         val profile = profileData.profile
         val config = profileData.config
 
-        // 检查是否已存在同名或同ID的配置
-        val existingProfiles = configRepository.profiles.value
+        // 检查是否已存在同名或同ID的配�?        val existingProfiles = configRepository.profiles.value
         val existingById = existingProfiles.find { it.id == profile.id }
         val existingByName = existingProfiles.find { it.name == profile.name }
 
@@ -427,8 +409,7 @@ class DataExportRepository(private val context: Context) {
         val configFile = File(configDir, "${profile.id}.json")
         configFile.writeText(gson.toJson(config))
 
-        // 使用 ConfigRepository 直接导入 profile 到 Room 数据库
-        val newProfile = profile.copy(
+        // 使用 ConfigRepository 直接导入 profile �?Room 数据�?        val newProfile = profile.copy(
             id = profile.id,
             lastUpdated = System.currentTimeMillis(),
             updateStatus = UpdateStatus.Idle
@@ -450,15 +431,18 @@ class DataExportRepository(private val context: Context) {
     }
 
     /**
-     * 清理资源，取消协程 scope
+     * 清理资源，取消协�?scope
      *
-     * 注意：由于 DataExportRepository 是单例且生命周期与 Application 相同，
-     * 通常不需要手动调用此方法。此方法主要用于：
-     * 1. 测试场景中清理资源
-     * 2. 极端内存压力下的紧急清理
-     */
+     * 注意：由�?DataExportRepository 是单例且生命周期�?Application 相同�?     * 通常不需要手动调用此方法。此方法主要用于�?     * 1. 测试场景中清理资�?     * 2. 极端内存压力下的紧急清�?     */
     fun cleanup() {
         repositoryScope.cancel()
         Log.i(TAG, "DataExportRepository cleanup completed")
     }
 }
+
+
+
+
+
+
+

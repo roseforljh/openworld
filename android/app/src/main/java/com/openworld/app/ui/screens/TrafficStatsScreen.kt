@@ -114,7 +114,7 @@ fun TrafficStatsScreen(
     if (showClearDialog) {
         ConfirmDialog(
             title = "清除流量统计",
-            message = "确定要清除所有流量统计数据吗？此操作不可撤销。",
+            message = "确定要清除所有流量统计数据吗？此操作不可撤销�?,
             confirmText = "清除",
             onConfirm = {
                 viewModel.clearAllStats()
@@ -275,7 +275,7 @@ private fun TotalTrafficCard(
     StandardCard {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "总流量",
+                text = "总流�?,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -569,13 +569,13 @@ private fun NodeRankingItem(
                 )
                 Row {
                     Text(
-                        text = "↑${formatBytes(stats.upload)}",
+                        text = "�?{formatBytes(stats.upload)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFF22C55E)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "↓${formatBytes(stats.download)}",
+                        text = "�?{formatBytes(stats.download)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFF3B82F6)
                     )
@@ -620,7 +620,7 @@ private fun EmptyStateCard() {
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "连接 VPN 后开始记录流量统计",
+                text = "连接 VPN 后开始记录流量统�?,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
@@ -637,3 +637,10 @@ private fun formatBytes(bytes: Long): String {
     val gb = mb / 1024.0
     return String.format(Locale.US, "%.2f GB", gb)
 }
+
+
+
+
+
+
+

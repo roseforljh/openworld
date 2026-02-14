@@ -14,14 +14,12 @@ import java.util.concurrent.TimeUnit
  * VPN 进程保活 Worker
  *
  * 功能:
- * 1. 定期检查 VPN 服务进程是否存活
- * 2. 检测到异常终止时尝试自动恢复
- * 3. 避免用户感知的 VPN 中断
+ * 1. 定期检�?VPN 服务进程是否存活
+ * 2. 检测到异常终止时尝试自动恢�? * 3. 避免用户感知�?VPN 中断
  *
  * 设计理由:
- * - Service 运行在独立进程 (:bg),系统可能在内存紧张时杀死
- * - 用户期望 VPN 持续运行,意外断开影响体验
- * - WorkManager 提供系统级保活能力,即使应用被杀也能执行
+ * - Service 运行在独立进�?(:bg),系统可能在内存紧张时杀�? * - 用户期望 VPN 持续运行,意外断开影响体验
+ * - WorkManager 提供系统级保活能�?即使应用被杀也能执行
  */
 class VpnKeepaliveWorker(
     context: Context,
@@ -32,7 +30,7 @@ class VpnKeepaliveWorker(
         private const val TAG = "VpnKeepaliveWorker"
         private const val WORK_NAME = "vpn_keepalive"
 
-        // 检查间隔: 15分钟一次 (WorkManager PeriodicWorkRequest 最小周期)
+        // 检查间�? 15分钟一�?(WorkManager PeriodicWorkRequest 最小周�?
         private const val CHECK_INTERVAL_MINUTES = 15L
 
         /**
@@ -40,23 +38,19 @@ class VpnKeepaliveWorker(
          *
          * 策略:
          * - 使用 PeriodicWorkRequest 定期执行
-         * - 设置网络约束: 需要网络连接(VPN 本身需要网络)
-         * - 设置电池约束: 非低电量模式才执行保活
-         * - 允许在充电时运行
+         * - 设置网络约束: 需要网络连�?VPN 本身需要网�?
+         * - 设置电池约束: 非低电量模式才执行保�?         * - 允许在充电时运行
          */
         fun schedule(context: Context) {
             val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED) // 需要网络连接
-                .setRequiresBatteryNotLow(true) // 电量充足时运行
-                .build()
+                .setRequiredNetworkType(NetworkType.CONNECTED) // 需要网络连�?                .setRequiresBatteryNotLow(true) // 电量充足时运�?                .build()
 
             val workRequest = PeriodicWorkRequestBuilder<VpnKeepaliveWorker>(
                 repeatInterval = CHECK_INTERVAL_MINUTES,
                 repeatIntervalTimeUnit = TimeUnit.MINUTES
             )
                 .setConstraints(constraints)
-                .setInitialDelay(15, TimeUnit.MINUTES) // 周期任务对齐 15 分钟，避免启动后短时间唤醒
-                .build()
+                .setInitialDelay(15, TimeUnit.MINUTES) // 周期任务对齐 15 分钟，避免启动后短时间唤�?                .build()
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
@@ -76,8 +70,7 @@ class VpnKeepaliveWorker(
         }
 
         /**
-         * 检查后台进程是否存活
-         */
+         * 检查后台进程是否存�?         */
         private fun isBackgroundProcessAlive(context: Context): Boolean {
             val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             val processes = activityManager.runningAppProcesses ?: return false
@@ -90,36 +83,31 @@ class VpnKeepaliveWorker(
     override suspend fun doWork(): Result {
         return try {
 
-            // 1. 检查是否应该运行 VPN (用户未手动停止)
+            // 1. 检查是否应该运�?VPN (用户未手动停�?
             val isManuallyStopped = VpnStateStore.isManuallyStopped()
             if (isManuallyStopped) {
                 return Result.success()
             }
 
-            // 2. 检查当前 VPN 模式
+            // 2. 检查当�?VPN 模式
             val currentMode = VpnStateStore.getMode()
             if (currentMode == VpnStateStore.CoreMode.NONE) {
                 return Result.success()
             }
 
-            // 3. 检查后台进程是否存活
-            val bgProcessAlive = isBackgroundProcessAlive(applicationContext)
+            // 3. 检查后台进程是否存�?            val bgProcessAlive = isBackgroundProcessAlive(applicationContext)
 
-            // 4. 如果进程死亡但应该运行,则尝试恢复
-            if (!bgProcessAlive) {
+            // 4. 如果进程死亡但应该运�?则尝试恢�?            if (!bgProcessAlive) {
                 Log.w(TAG, "Detected background process died unexpectedly, attempting recovery...")
                 attemptVpnRecovery(currentMode)
             } else {
-                // 5. 进程存活,检查服务状态是否一致
-                // 这里通过 SingBoxRemote 检查,但由于是跨进程,可能有延迟
-                // 主要作为辅助验证
+                // 5. 进程存活,检查服务状态是否一�?                // 这里通过 OpenWorldRemote 检�?但由于是跨进�?可能有延�?                // 主要作为辅助验证
             }
 
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "VPN keepalive check failed", e)
-            // 失败时重试,最多重试3次
-            if (runAttemptCount < 3) {
+            // 失败时重�?最多重�?�?            if (runAttemptCount < 3) {
                 Result.retry()
             } else {
                 Result.failure()
@@ -131,8 +119,7 @@ class VpnKeepaliveWorker(
      * 尝试恢复 VPN 连接
      *
      * 策略:
-     * 1. 读取上次的配置路径
-     * 2. 使用相同配置重启 VPN 服务
+     * 1. 读取上次的配置路�?     * 2. 使用相同配置重启 VPN 服务
      * 3. 记录恢复日志
      */
     private suspend fun attemptVpnRecovery(mode: VpnStateStore.CoreMode) {
@@ -146,9 +133,9 @@ class VpnKeepaliveWorker(
             // 准备重启 Intent
             val intent = when (mode) {
                 VpnStateStore.CoreMode.VPN -> {
-                    Intent(applicationContext, SingBoxService::class.java).apply {
-                        action = SingBoxService.ACTION_START
-                        putExtra(SingBoxService.EXTRA_CONFIG_PATH,
+                    Intent(applicationContext, OpenWorldService::class.java).apply {
+                        action = OpenWorldService.ACTION_START
+                        putExtra(OpenWorldService.EXTRA_CONFIG_PATH,
                             applicationContext.filesDir.resolve("config.json").absolutePath)
                     }
                 }
@@ -176,8 +163,7 @@ class VpnKeepaliveWorker(
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start VPN service during recovery", e)
 
-                // 如果启动失败,清除状态避免无限重试
-                VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
+                // 如果启动失败,清除状态避免无限重�?                VpnStateStore.setMode(VpnStateStore.CoreMode.NONE)
                 VpnTileService.persistVpnState(applicationContext, false)
             }
         } catch (e: Exception) {
@@ -185,3 +171,10 @@ class VpnKeepaliveWorker(
         }
     }
 }
+
+
+
+
+
+
+

@@ -24,7 +24,7 @@ import okhttp3.Response
 /**
  * 应用版本更新检查器
  *
- * 检查 GitHub Release 获取最新版本，如果有新版本则发送通知
+ * 检�?GitHub Release 获取最新版本，如果有新版本则发送通知
  */
 object AppUpdateChecker {
     private const val TAG = "AppUpdateChecker"
@@ -58,9 +58,7 @@ object AppUpdateChecker {
      * 检查更新并在有新版本时发送通知
      *
      * @param context Context
-     * @param forceNotify 是否强制通知（即使之前已通知过该版本）
-     * @return 检查结果，包含是否有新版本及版本信息
-     */
+     * @param forceNotify 是否强制通知（即使之前已通知过该版本�?     * @return 检查结果，包含是否有新版本及版本信�?     */
     suspend fun checkAndNotify(
         context: Context,
         forceNotify: Boolean = false
@@ -81,8 +79,7 @@ object AppUpdateChecker {
             if (isNewerVersion(latestVersion, currentVersion)) {
                 Log.i(TAG, "New version available: $latestVersion")
 
-                // 检查是否已经通知过这个版本
-                val lastNotifiedVersion = getLastNotifiedVersion(context)
+                // 检查是否已经通知过这个版�?                val lastNotifiedVersion = getLastNotifiedVersion(context)
                 if (forceNotify || lastNotifiedVersion != latestVersion) {
                     showUpdateNotification(context, release)
                     setLastNotifiedVersion(context, latestVersion)
@@ -120,7 +117,7 @@ object AppUpdateChecker {
     }
 
     /**
-     * 从 GitHub API 获取最新 Release
+     * �?GitHub API 获取最�?Release
      * 2026-01-27: 代理优先+直连回退，解决被墙和代理崩溃问题
      */
     private suspend fun fetchLatestReleaseWithFallback(context: Context): GitHubRelease? {
@@ -191,10 +188,8 @@ object AppUpdateChecker {
     }
 
     /**
-     * 比较版本号，判断 newVersion 是否比 currentVersion 新
-     *
-     * 支持格式: x.y.z, x.y.z-beta, x.y.z-rc1 等
-     */
+     * 比较版本号，判断 newVersion 是否�?currentVersion �?     *
+     * 支持格式: x.y.z, x.y.z-beta, x.y.z-rc1 �?     */
     private fun isNewerVersion(newVersion: String, currentVersion: String): Boolean {
         try {
             val newParts = parseVersion(newVersion)
@@ -217,11 +212,9 @@ object AppUpdateChecker {
     }
 
     /**
-     * 解析版本号字符串为数字列表
-     */
+     * 解析版本号字符串为数字列�?     */
     private fun parseVersion(version: String): List<Int> {
-        // 移除 v 前缀和后缀（如 -beta, -rc1）
-        val cleanVersion = version
+        // 移除 v 前缀和后缀（如 -beta, -rc1�?        val cleanVersion = version
             .removePrefix("v")
             .split("-")[0]
 
@@ -297,16 +290,14 @@ object AppUpdateChecker {
     }
 
     /**
-     * 获取上次通知的版本
-     */
+     * 获取上次通知的版�?     */
     private fun getLastNotifiedVersion(context: Context): String? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getString(KEY_LAST_NOTIFIED_VERSION, null)
     }
 
     /**
-     * 设置上次通知的版本
-     */
+     * 设置上次通知的版�?     */
     private fun setLastNotifiedVersion(context: Context, version: String) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putString(KEY_LAST_NOTIFIED_VERSION, version).apply()
@@ -322,8 +313,7 @@ object AppUpdateChecker {
 }
 
 /**
- * 更新检查结果
- */
+ * 更新检查结�? */
 sealed class UpdateCheckResult {
     data class UpdateAvailable(
         val currentVersion: String,
@@ -336,3 +326,10 @@ sealed class UpdateCheckResult {
 
     data class Error(val message: String) : UpdateCheckResult()
 }
+
+
+
+
+
+
+

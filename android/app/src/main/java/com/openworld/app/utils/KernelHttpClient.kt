@@ -5,31 +5,28 @@ import android.util.Log
 import com.openworld.app.core.BoxWrapperManager
 import com.openworld.app.ipc.VpnStateStore
 import com.openworld.app.repository.SettingsRepository
-import io.nekohasekai.libbox.Libbox
+import com.openworld.core.OpenWorldCore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 /**
- * 内核级 HTTP 客户端
- *
+ * 内核�?HTTP 客户�? *
  * v1.12.20: 使用 Libbox.newHTTPClient() API 通过本地 SOCKS5 代理发起请求
  *
  * 使用场景:
- * - 订阅更新 (需要翻墙的订阅源)
- * - 规则集下载
- * - 任何需要走代理的 HTTP 请求
+ * - 订阅更新 (需要翻墙的订阅�?
+ * - 规则集下�? * - 任何需要走代理�?HTTP 请求
  */
 object KernelHttpClient {
     private const val TAG = "KernelHttpClient"
 
-    // 默认超时 30 秒
-    private const val DEFAULT_TIMEOUT_MS = 30000
+    // 默认超时 30 �?    private const val DEFAULT_TIMEOUT_MS = 30000
 
     // 默认代理端口
     private const val DEFAULT_PROXY_PORT = 2080
 
-    // 缓存的代理端口 (避免频繁读取设置)
+    // 缓存的代理端�?(避免频繁读取设置)
     @Volatile
     private var cachedProxyPort: Int = DEFAULT_PROXY_PORT
 
@@ -52,16 +49,14 @@ object KernelHttpClient {
     }
 
     /**
-     * 更新缓存的代理端口
-     * 在 VPN 启动时调用，避免运行时频繁读取设置
-     */
+     * 更新缓存的代理端�?     * �?VPN 启动时调用，避免运行时频繁读取设�?     */
     fun updateProxyPort(port: Int) {
         cachedProxyPort = port
         Log.d(TAG, "Proxy port updated to $port")
     }
 
     /**
-     * 从 Context 更新代理端口
+     * �?Context 更新代理端口
      */
     suspend fun updateProxyPortFromSettings(context: Context) {
         try {
@@ -83,7 +78,7 @@ object KernelHttpClient {
      * v1.12.20: 使用 Libbox.newHTTPClient() 通过本地 SOCKS5 代理
      *
      * @param url 请求 URL
-     * @param outboundTag 使用的出站标签 (已忽略，v1.12.20 不支持指定出站)
+     * @param outboundTag 使用的出站标�?(已忽略，v1.12.20 不支持指定出�?
      * @param timeoutMs 超时时间 (毫秒)
      * @return HttpResult
      */
@@ -93,8 +88,7 @@ object KernelHttpClient {
         outboundTag: String = "proxy",
         timeoutMs: Int = DEFAULT_TIMEOUT_MS
     ): HttpResult = withContext(Dispatchers.IO) {
-        // 优先尝试内核 HTTP 客户端
-        if (isKernelFetchAvailable()) {
+        // 优先尝试内核 HTTP 客户�?        if (isKernelFetchAvailable()) {
             val kernelResult = fetchViaKernel(url)
             if (kernelResult.success) {
                 return@withContext kernelResult
@@ -102,19 +96,18 @@ object KernelHttpClient {
             Log.w(TAG, "Kernel fetch failed, falling back to OkHttp: ${kernelResult.error}")
         }
 
-        // 回退到 OkHttp
+        // 回退�?OkHttp
         Log.d(TAG, "fetch: $url (using OkHttp)")
         fetchWithOkHttp(url, timeoutMs)
     }
 
     /**
      * 使用运行中的 VPN 服务发起请求 (带自定义 Headers)
-     * v1.12.20: 使用 Libbox.newHTTPClient() 支持自定义 Headers
+     * v1.12.20: 使用 Libbox.newHTTPClient() 支持自定�?Headers
      *
      * @param url 请求 URL
-     * @param headers 请求头 Map
-     * @param outboundTag 使用的出站标签
-     * @param timeoutMs 超时时间 (毫秒)
+     * @param headers 请求�?Map
+     * @param outboundTag 使用的出站标�?     * @param timeoutMs 超时时间 (毫秒)
      * @return HttpResult
      */
     @Suppress("UNUSED_PARAMETER")
@@ -124,8 +117,7 @@ object KernelHttpClient {
         outboundTag: String = "proxy",
         timeoutMs: Int = DEFAULT_TIMEOUT_MS
     ): HttpResult = withContext(Dispatchers.IO) {
-        // 优先尝试内核 HTTP 客户端
-        if (isKernelFetchAvailable()) {
+        // 优先尝试内核 HTTP 客户�?        if (isKernelFetchAvailable()) {
             val kernelResult = fetchViaKernel(url, headers)
             if (kernelResult.success) {
                 return@withContext kernelResult
@@ -133,15 +125,13 @@ object KernelHttpClient {
             Log.w(TAG, "Kernel fetch with headers failed, falling back to OkHttp: ${kernelResult.error}")
         }
 
-        // 回退到 OkHttp
+        // 回退�?OkHttp
         Log.d(TAG, "fetchWithHeaders: $url (using OkHttp)")
         fetchWithOkHttpAndHeaders(url, headers, timeoutMs)
     }
 
     /**
-     * 智能请求 - 自动选择最佳方式
-     * v1.12.20: VPN 运行时优先使用内核 HTTP 客户端
-     *
+     * 智能请求 - 自动选择最佳方�?     * v1.12.20: VPN 运行时优先使用内�?HTTP 客户�?     *
      * @param url 请求 URL
      * @param preferKernel 是否优先使用内核
      * @param timeoutMs 超时时间
@@ -162,7 +152,7 @@ object KernelHttpClient {
             Log.w(TAG, "smartFetch kernel failed, falling back to OkHttp: ${kernelResult.error}")
         }
 
-        // 回退到 OkHttp
+        // 回退�?OkHttp
         fetchWithOkHttp(url, timeoutMs)
     }
 
@@ -197,8 +187,7 @@ object KernelHttpClient {
     }
 
     /**
-     * 使用 OkHttp 发起带 Headers 的请求
-     */
+     * 使用 OkHttp 发起�?Headers 的请�?     */
     private fun fetchWithOkHttpAndHeaders(
         url: String,
         headers: Map<String, String>,
@@ -234,44 +223,20 @@ object KernelHttpClient {
     }
 
     /**
-     * 使用内核 HTTP 客户端发起请求
-     * 通过本地 SOCKS5 代理走 VPN 通道
+     * 使用内核 HTTP 客户端发起请�?     * 通过本地 SOCKS5 代理�?VPN 通道
      *
      * @param url 请求 URL
-     * @param headers 可选的请求头
-     * @return HttpResult
+     * @param headers 可选的请求�?     * @return HttpResult
      */
     private fun fetchViaKernel(
         url: String,
         headers: Map<String, String> = emptyMap()
     ): HttpResult {
-        var client: io.nekohasekai.libbox.HTTPClient? = null
         try {
-            // 创建 HTTP 客户端
-            client = Libbox.newHTTPClient()
-
-            // 配置通过本地 SOCKS5 代理
-            val proxyPort = cachedProxyPort
-            client.trySocks5(proxyPort)
-
-            // 启用现代 TLS 和 Keep-Alive
-            client.modernTLS()
-            client.keepAlive()
-
-            // 创建请求
-            val request = client.newRequest()
-            request.setURL(url)
-            request.setMethod("GET")
-            request.randomUserAgent()
-
-            // 设置自定义 Headers
-            headers.forEach { (key, value) ->
-                request.setHeader(key, value)
+            val content = OpenWorldCore.fetchUrl(url).orEmpty()
+            if (content.isBlank()) {
+                return HttpResult.error("Kernel returned empty response")
             }
-
-            // 执行请求
-            val response = request.execute()
-            val content = response.content?.value ?: ""
 
             Log.d(TAG, "Kernel fetch success: $url (${content.length} bytes)")
 
@@ -284,30 +249,29 @@ object KernelHttpClient {
         } catch (e: Exception) {
             Log.e(TAG, "Kernel fetch error: ${e.message}")
             return HttpResult.error("Kernel error: ${e.message}")
-        } finally {
-            try {
-                client?.close()
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to close HTTP client: ${e.message}")
-            }
         }
     }
 
     /**
-     * 检查内核 Fetch 是否可用
-     * v1.12.20: 当 VPN 运行时返回 true
+     * 检查内�?Fetch 是否可用
+     * v1.12.20: �?VPN 运行时返�?true
      */
     fun isKernelFetchAvailable(): Boolean {
-        // 检查 VPN 是否运行中
-        val vpnActive = VpnStateStore.getActive()
+        // 检�?VPN 是否运行�?        val vpnActive = VpnStateStore.getActive()
         val boxAvailable = BoxWrapperManager.isAvailable()
         return vpnActive && boxAvailable
     }
 
     /**
-     * 检查 VPN 是否运行中
-     */
+     * 检�?VPN 是否运行�?     */
     fun isVpnRunning(): Boolean {
         return BoxWrapperManager.isAvailable()
     }
 }
+
+
+
+
+
+
+

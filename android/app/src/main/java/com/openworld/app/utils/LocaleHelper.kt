@@ -35,8 +35,7 @@ object LocaleHelper {
     }
 
     /**
-     * 更新 Context 的资源配置
-     */
+     * 更新 Context 的资源配�?     */
     private fun updateResources(context: Context, locale: Locale): Context {
         Locale.setDefault(locale)
 
@@ -56,16 +55,22 @@ object LocaleHelper {
     fun getLanguageDisplayName(language: AppLanguage): String {
         return when (language) {
             AppLanguage.SYSTEM -> "跟随系统"
-            AppLanguage.CHINESE -> "简体中文"
+            AppLanguage.CHINESE -> "简体中�?
             AppLanguage.ENGLISH -> "English"
         }
     }
 
     /**
-     * 包装 Activity 的 Context
-     * 在 Activity 的 attachBaseContext 中调用
-     */
+     * 包装 Activity �?Context
+     * �?Activity �?attachBaseContext 中调�?     */
     fun wrap(context: Context, language: AppLanguage): Context {
         return setLocale(context, language)
     }
 }
+
+
+
+
+
+
+

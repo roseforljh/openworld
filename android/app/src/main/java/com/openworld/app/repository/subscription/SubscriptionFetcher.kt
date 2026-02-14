@@ -1,7 +1,7 @@
 package com.openworld.app.repository.subscription
 
 import android.util.Log
-import com.openworld.app.model.SingBoxConfig
+import com.openworld.app.model.OpenWorldConfig
 import com.openworld.app.utils.parser.SubscriptionManager
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -20,10 +20,9 @@ data class SubscriptionUserInfo(
  * 订阅服务 - 负责订阅的获取和解析
  *
  * 功能:
- * - 从 URL 获取订阅内容
+ * - �?URL 获取订阅内容
  * - 解析订阅配置（支持多种格式）
- * - 提取用户信息（流量、到期时间等）
- */
+ * - 提取用户信息（流量、到期时间等�? */
 class SubscriptionFetcher(
     private val client: OkHttpClient,
     private val subscriptionManager: SubscriptionManager
@@ -31,7 +30,7 @@ class SubscriptionFetcher(
     companion object {
         private const val TAG = "SubscriptionFetcher"
 
-        // 多 User-Agent 轮询策略
+        // �?User-Agent 轮询策略
         private val USER_AGENTS = listOf(
             "clash-verge/v1.3.8",
             "ClashforWindows/0.20.39",
@@ -40,15 +39,13 @@ class SubscriptionFetcher(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         )
 
-        // 预编译的正则表达式
-        private val REGEX_SANITIZE_UUID = Regex("(?i)uuid\\s*[:=]\\s*[^\\\\n]+")
+        // 预编译的正则表达�?        private val REGEX_SANITIZE_UUID = Regex("(?i)uuid\\s*[:=]\\s*[^\\\\n]+")
         private val REGEX_SANITIZE_PASSWORD = Regex("(?i)password\\s*[:=]\\s*[^\\\\n]+")
         private val REGEX_SANITIZE_TOKEN = Regex("(?i)token\\s*[:=]\\s*[^\\\\n]+")
     }
 
     /**
-     * 获取并解析订阅
-     *
+     * 获取并解析订�?     *
      * @param url 订阅 URL
      * @param onProgress 进度回调
      * @return 解析结果，包含配置和用户信息
@@ -69,7 +66,7 @@ class SubscriptionFetcher(
                     .header("Accept", "application/yaml,text/yaml,text/plain,application/json,*/*")
                     .build()
 
-                var parsedConfig: SingBoxConfig? = null
+                var parsedConfig: OpenWorldConfig? = null
                 var userInfo: SubscriptionUserInfo? = null
 
                 client.newCall(request).execute().use { response ->
@@ -125,18 +122,18 @@ class SubscriptionFetcher(
      * 解析用户信息
      */
     private fun parseUserInfo(header: String?, body: String): SubscriptionUserInfo? {
-        // 从 Header 解析
+        // �?Header 解析
         if (!header.isNullOrBlank()) {
             val info = parseUserInfoHeader(header)
             if (info != null) return info
         }
 
-        // 从 Body 解析
+        // �?Body 解析
         return parseUserInfoFromBody(body)
     }
 
     /**
-     * 从 Header 解析用户信息
+     * �?Header 解析用户信息
      * 格式: upload=xxx; download=xxx; total=xxx; expire=xxx
      */
     private fun parseUserInfoHeader(header: String): SubscriptionUserInfo? {
@@ -170,10 +167,10 @@ class SubscriptionFetcher(
     }
 
     /**
-     * 从 Body 解析用户信息
+     * �?Body 解析用户信息
      */
     private fun parseUserInfoFromBody(body: String): SubscriptionUserInfo? {
-        // 简化实现，实际逻辑在 ConfigRepository 中更复杂
+        // 简化实现，实际逻辑�?ConfigRepository 中更复杂
         return null
     }
 
@@ -197,7 +194,14 @@ class SubscriptionFetcher(
      * 获取结果
      */
     data class FetchResult(
-        val config: SingBoxConfig,
+        val config: OpenWorldConfig,
         val userInfo: SubscriptionUserInfo?
     )
 }
+
+
+
+
+
+
+

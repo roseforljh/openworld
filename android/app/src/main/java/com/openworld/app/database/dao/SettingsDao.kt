@@ -8,13 +8,11 @@ import com.openworld.app.database.entity.SettingsEntity
 import kotlinx.coroutines.flow.Flow
 
 /**
- * 设置 DAO - 高效的单行设置存储
- *
+ * 设置 DAO - 高效的单行设置存�? *
  * 特点:
  * - Flow 实时观察设置变化
  * - 单次读写整个设置对象
- * - 异步操作，不阻塞主线程
- */
+ * - 异步操作，不阻塞主线�? */
 @Dao
 interface SettingsDao {
 
@@ -43,7 +41,7 @@ interface SettingsDao {
     suspend fun saveSettings(settings: SettingsEntity)
 
     /**
-     * 同步保存设置 (仅用于迁移)
+     * 同步保存设置 (仅用于迁�?
      */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun saveSettingsSync(settings: SettingsEntity)
@@ -55,14 +53,19 @@ interface SettingsDao {
     suspend fun deleteSettings()
 
     /**
-     * 检查设置是否存在
-     */
+     * 检查设置是否存�?     */
     @Query("SELECT EXISTS(SELECT 1 FROM settings WHERE id = 1)")
     suspend fun hasSettings(): Boolean
 
     /**
-     * 同步检查设置是否存在
-     */
+     * 同步检查设置是否存�?     */
     @Query("SELECT EXISTS(SELECT 1 FROM settings WHERE id = 1)")
     fun hasSettingsSync(): Boolean
 }
+
+
+
+
+
+
+

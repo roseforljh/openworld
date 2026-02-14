@@ -7,32 +7,21 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import com.openworld.app.MainActivity
-import com.openworld.app.core.SingBoxCore
-import com.openworld.app.ipc.SingBoxIpcHub
+import com.openworld.app.core.BoxWrapperManager
+import com.openworld.app.ipc.OpenWorldIpcHub
 import com.openworld.app.ipc.VpnStateStore
 import com.openworld.app.repository.ConfigRepository
 import com.openworld.app.repository.LogRepository
+import com.openworld.app.repository.SettingsRepository
+import com.openworld.app.repository.RuleSetRepository
 import com.openworld.app.utils.NetworkClient
 import com.openworld.app.utils.KernelHttpClient
-import com.openworld.app.repository.RuleSetRepository
-import io.nekohasekai.libbox.CommandServer
-import io.nekohasekai.libbox.CommandServerHandler
-import io.nekohasekai.libbox.BoxService
-import io.nekohasekai.libbox.InterfaceUpdateListener
-import io.nekohasekai.libbox.NetworkInterfaceIterator
-import io.nekohasekai.libbox.PlatformInterface
-import io.nekohasekai.libbox.StringIterator
-import io.nekohasekai.libbox.TunOptions
-import io.nekohasekai.libbox.WIFIState
-import io.nekohasekai.libbox.Libbox
+import com.openworld.core.OpenWorldCore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,9 +35,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.net.NetworkInterface
 import java.net.ServerSocket
 
 class ProxyOnlyService : Service() {
@@ -56,17 +43,16 @@ class ProxyOnlyService : Service() {
     companion object {
         private const val TAG = "ProxyOnlyService"
         private const val NOTIFICATION_ID = 11
-        private const val CHANNEL_ID = "singbox_proxy_silent"
+        private const val CHANNEL_ID = "openworld_proxy_silent"
         private const val LEGACY_CHANNEL_ID = "singbox_proxy"
-        // 启动时的端口等待作为兜底，主要等待在关闭流程中完成
-        private const val PORT_WAIT_TIMEOUT_MS = 5000L
+        // 启动时的端口等待作为兜底，主要等待在关闭流程中完�?        private const val PORT_WAIT_TIMEOUT_MS = 5000L
         private const val PORT_CHECK_INTERVAL_MS = 100L
 
-        const val ACTION_START = SingBoxService.ACTION_START
-        const val ACTION_STOP = SingBoxService.ACTION_STOP
-        const val ACTION_SWITCH_NODE = SingBoxService.ACTION_SWITCH_NODE
-        const val ACTION_PREPARE_RESTART = SingBoxService.ACTION_PREPARE_RESTART
-        const val EXTRA_CONFIG_PATH = SingBoxService.EXTRA_CONFIG_PATH
+        const val ACTION_START = OpenWorldService.ACTION_START
+        const val ACTION_STOP = OpenWorldService.ACTION_STOP
+        const val ACTION_SWITCH_NODE = OpenWorldService.ACTION_SWITCH_NODE
+        const val ACTION_PREPARE_RESTART = OpenWorldService.ACTION_PREPARE_RESTART
+        const val EXTRA_CONFIG_PATH = OpenWorldService.EXTRA_CONFIG_PATH
 
         @Volatile
         var isRunning = false
@@ -89,20 +75,16 @@ class ProxyOnlyService : Service() {
         }
     }
 
-    private var commandServer: CommandServer? = null
-    private var boxService: BoxService? = null
-
     private val notificationUpdateDebounceMs: Long = 900L
     private val lastNotificationUpdateAtMs = java.util.concurrent.atomic.AtomicLong(0L)
     @Volatile private var notificationUpdateJob: Job? = null
     @Volatile private var suppressNotificationUpdates = false
 
-    // ACTION_PREPARE_RESTART 防抖：避免短时间内重复 resetAllConnections()
+    // ACTION_PREPARE_RESTART 防抖：避免短时间内重�?resetAllConnections()
     private val lastPrepareRestartAtMs = java.util.concurrent.atomic.AtomicLong(0L)
     private val prepareRestartDebounceMs: Long = 1500L
 
-    // 华为设备修复: 追踪是否已经调用过 startForeground(),避免重复调用触发提示音
-    private val hasForegroundStarted = java.util.concurrent.atomic.AtomicBoolean(false)
+    // 华为设备修复: 追踪是否已经调用�?startForeground(),避免重复调用触发提示�?    private val hasForegroundStarted = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private val serviceSupervisorJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceSupervisorJob)
@@ -115,222 +97,6 @@ class ProxyOnlyService : Service() {
     @Volatile private var cleanupJob: Job? = null
 
     private var connectivityManager: ConnectivityManager? = null
-    private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private var currentInterfaceListener: InterfaceUpdateListener? = null
-
-    private val platformInterface = object : PlatformInterface {
-        override fun localDNSTransport(): io.nekohasekai.libbox.LocalDNSTransport {
-            return com.openworld.app.core.LocalResolverImpl
-        }
-
-        override fun autoDetectInterfaceControl(fd: Int) {
-        }
-
-        override fun openTun(options: TunOptions?): Int {
-            setLastError("Proxy-only mode: TUN is disabled")
-            return -1
-        }
-
-        override fun usePlatformAutoDetectInterfaceControl(): Boolean = true
-
-        override fun useProcFS(): Boolean {
-            val procPaths = listOf(
-                "/proc/net/tcp",
-                "/proc/net/tcp6",
-                "/proc/net/udp",
-                "/proc/net/udp6"
-            )
-
-            fun hasUidHeader(path: String): Boolean {
-                return try {
-                    val file = File(path)
-                    if (!file.exists() || !file.canRead()) return false
-                    val header = file.bufferedReader().use { it.readLine() } ?: return false
-                    header.contains("uid")
-                } catch (_: Exception) {
-                    false
-                }
-            }
-
-            return procPaths.all { path -> hasUidHeader(path) }
-        }
-
-        // v1.12.20: findConnectionOwner 返回 Int (UID) 而不是 ConnectionOwner
-        override fun findConnectionOwner(
-            ipProtocol: Int,
-            sourceAddress: String?,
-            sourcePort: Int,
-            destinationAddress: String?,
-            destinationPort: Int
-        ): Int {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return -1
-
-            fun parseAddress(value: String?): InetAddress? {
-                if (value.isNullOrBlank()) return null
-                val cleaned = value.trim().replace("[", "").replace("]", "").substringBefore("%")
-                return try {
-                    InetAddress.getByName(cleaned)
-                } catch (_: Exception) {
-                    null
-                }
-            }
-
-            val sourceIp = parseAddress(sourceAddress)
-            val destinationIp = parseAddress(destinationAddress)
-            if (sourceIp == null || sourcePort <= 0 || destinationIp == null || destinationPort <= 0) {
-                return -1
-            }
-
-            return try {
-                val cm = connectivityManager
-                    ?: getSystemService(ConnectivityManager::class.java)
-                    ?: return -1
-                val protocol = ipProtocol
-                cm.getConnectionOwnerUid(
-                    protocol,
-                    InetSocketAddress(sourceIp, sourcePort),
-                    InetSocketAddress(destinationIp, destinationPort)
-                )
-            } catch (_: Exception) {
-                -1
-            }
-        }
-
-        // v1.12.20: 新增 packageNameByUid 方法
-        override fun packageNameByUid(uid: Int): String {
-            return try {
-                val pm = packageManager
-                pm.getPackagesForUid(uid)?.firstOrNull() ?: ""
-            } catch (e: Exception) {
-                Log.w(TAG, "packageNameByUid failed for uid=$uid: ${e.message}")
-                ""
-            }
-        }
-
-        // v1.12.20: 新增 uidByPackageName 方法
-        override fun uidByPackageName(packageName: String): Int {
-            return try {
-                val pm = packageManager
-                val appInfo = pm.getApplicationInfo(packageName, 0)
-                appInfo.uid
-            } catch (e: Exception) {
-                Log.w(TAG, "uidByPackageName failed for $packageName: ${e.message}")
-                -1
-            }
-        }
-
-        override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {
-            currentInterfaceListener = listener
-            connectivityManager = getSystemService(ConnectivityManager::class.java)
-
-            networkCallback = object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) {
-                    updateDefaultInterface(network)
-                }
-
-                override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                    updateDefaultInterface(network)
-                }
-
-                override fun onLost(network: Network) {
-                    currentInterfaceListener?.updateDefaultInterface("", 0, false, false)
-                }
-            }
-
-            val request = NetworkRequest.Builder()
-                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
-                .build()
-
-            runCatching {
-                connectivityManager?.registerNetworkCallback(request, networkCallback!!)
-            }
-
-            val activeNet = connectivityManager?.activeNetwork
-            if (activeNet != null) {
-                updateDefaultInterface(activeNet)
-            }
-        }
-
-        override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {
-            networkCallback?.let {
-                runCatching {
-                    connectivityManager?.unregisterNetworkCallback(it)
-                }
-            }
-            networkCallback = null
-            currentInterfaceListener = null
-        }
-
-        override fun getInterfaces(): NetworkInterfaceIterator? {
-            return try {
-                val interfaces = java.util.Collections.list(NetworkInterface.getNetworkInterfaces())
-                object : NetworkInterfaceIterator {
-                    private val iterator = interfaces.filter { it.isUp && !it.isLoopback }.iterator()
-
-                    override fun hasNext(): Boolean = iterator.hasNext()
-
-                    override fun next(): io.nekohasekai.libbox.NetworkInterface {
-                        val iface = iterator.next()
-                        return io.nekohasekai.libbox.NetworkInterface().apply {
-                            name = iface.name
-                            index = iface.index
-                            mtu = iface.mtu
-
-                            var flagsStr = 0
-                            if (iface.isUp) flagsStr = flagsStr or 1
-                            if (iface.isLoopback) flagsStr = flagsStr or 4
-                            if (iface.isPointToPoint) flagsStr = flagsStr or 8
-                            if (iface.supportsMulticast()) flagsStr = flagsStr or 16
-                            flags = flagsStr
-
-                            val addrList = ArrayList<String>()
-                            for (addr in iface.interfaceAddresses) {
-                                val ip = addr.address.hostAddress
-                                val cleanIp = if (ip != null && ip.contains("%")) ip.substring(0, ip.indexOf("%")) else ip
-                                if (cleanIp != null) {
-                                    addrList.add("$cleanIp/${addr.networkPrefixLength}")
-                                }
-                            }
-                            addresses = StringIteratorImpl(addrList)
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to get interfaces", e)
-                null
-            }
-        }
-
-        override fun underNetworkExtension(): Boolean = false
-
-        override fun includeAllNetworks(): Boolean = false
-
-        override fun readWIFIState(): WIFIState? = null
-
-        override fun clearDNSCache() {
-        }
-
-        override fun sendNotification(notification: io.nekohasekai.libbox.Notification?) {
-        }
-
-        override fun systemCertificates(): StringIterator? = null
-
-        // v1.12.20: 新增 writeLog 方法
-        override fun writeLog(message: String?) {
-            if (message.isNullOrBlank()) return
-            runCatching {
-                LogRepository.getInstance().addLog(message)
-            }
-        }
-    }
-
-    private class StringIteratorImpl(private val list: List<String>) : StringIterator {
-        private var index = 0
-        override fun hasNext(): Boolean = index < list.size
-        override fun next(): String = list[index++]
-        override fun len(): Int = list.size
-    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -425,8 +191,7 @@ class ProxyOnlyService : Service() {
             ACTION_PREPARE_RESTART -> {
                 // 跨配置切换预清理机制
                 // ProxyOnlyService 模式下：唤醒核心 + 重置网络 + 关闭连接
-                // 2025-fix: 简化流程，减少过度的重置次数
-                val reason = intent.getStringExtra(SingBoxService.EXTRA_PREPARE_RESTART_REASON).orEmpty()
+                // 2025-fix: 简化流程，减少过度的重置次�?                val reason = intent.getStringExtra(OpenWorldService.EXTRA_PREPARE_RESTART_REASON).orEmpty()
                 Log.i(TAG, "Received ACTION_PREPARE_RESTART (reason='$reason') -> preparing for restart")
 
                 val now = SystemClock.elapsedRealtime()
@@ -440,17 +205,16 @@ class ProxyOnlyService : Service() {
 
                 serviceScope.launch {
                     try {
-                        // Step 1: 唤醒核心 (如果已暂停)
-                        if (Libbox.isPaused()) {
-                            Libbox.resumeService()
+                        // Step 1: 唤醒核心 (如果已暂�?
+                        if (OpenWorldCore.isPaused()) {
+                            OpenWorldCore.resume()
                         }
                         Log.i(TAG, "[PrepareRestart] Step 1/2: Ensured core is awake")
 
-                        // Step 2: 关闭所有连接
-                        Log.i(TAG, "[PrepareRestart] Step 2/2: Close connections")
+                        // Step 2: 关闭所有连�?                        Log.i(TAG, "[PrepareRestart] Step 2/2: Close connections")
                         delay(50)
                         try {
-                            Libbox.resetAllConnections(false)
+                            OpenWorldCore.resetAllConnections(false)
                         } catch (e: Exception) {
                             Log.w(TAG, "resetAllConnections failed: ${e.message}")
                         }
@@ -506,13 +270,9 @@ class ProxyOnlyService : Service() {
 
                 val configContent = configFile.readText()
 
-                runCatching {
-                    SingBoxCore.ensureLibboxSetup(this@ProxyOnlyService)
-                }
-
                 // 等待代理端口可用（解决跨服务切换时端口未释放的问题）
                 val proxyPort = runCatching {
-                    com.openworld.app.repository.SettingsRepository
+                    SettingsRepository
                         .getInstance(this@ProxyOnlyService)
                         .settings.first().proxyPort
                 }.getOrDefault(2080)
@@ -536,34 +296,19 @@ class ProxyOnlyService : Service() {
                     }
                 }
 
-                // v1.12.20: 使用 postServiceClose 替代 serviceStop，移除 writeDebugMessage
-                val serverHandler = object : CommandServerHandler {
-                    override fun postServiceClose() {
-                        Log.i(TAG, "postServiceClose requested")
-                    }
-                    override fun serviceReload() {
-                        Log.i(TAG, "serviceReload requested")
-                    }
-                    override fun getSystemProxyStatus(): io.nekohasekai.libbox.SystemProxyStatus? = null
-                    override fun setSystemProxyEnabled(isEnabled: Boolean) {}
+                // 使用 OpenWorldCore 启动代理服务
+                val startResult = OpenWorldCore.start(configContent)
+                if (startResult != 0) {
+                    throw IllegalStateException("OpenWorldCore.start failed with code: $startResult")
                 }
 
-                // v1.12.20: newCommandServer(handler, maxLines) 签名
-                val server = Libbox.newCommandServer(serverHandler, 100)
-                commandServer = server
-                server.start()
-
-                // v1.12.20: 使用 BoxService 模式
-                val service = Libbox.newService(configContent, platformInterface)
-                service.start()
-                boxService = service
-                server.setService(service)
+                // 初始�?BoxWrapperManager
+                BoxWrapperManager.init()
 
                 isRunning = true
                 NetworkClient.onVpnStateChanged(true)
 
-                // 初始化 KernelHttpClient 的代理端口
-                KernelHttpClient.updateProxyPortFromSettings(this@ProxyOnlyService)
+                // 初始�?KernelHttpClient 的代理端�?                KernelHttpClient.updateProxyPortFromSettings(this@ProxyOnlyService)
 
                 VpnTileService.persistVpnState(applicationContext, true)
                 VpnStateStore.setMode(VpnStateStore.CoreMode.PROXY)
@@ -591,9 +336,8 @@ class ProxyOnlyService : Service() {
     }
 
     /**
-     * 停止核心服务，返回 Job 以便调用方等待关闭完成
-     * @param stopService 是否同时停止 Service 本身
-     * @return 清理任务的 Job，调用方可通过 job.join() 等待关闭完成
+     * 停止核心服务，返�?Job 以便调用方等待关闭完�?     * @param stopService 是否同时停止 Service 本身
+     * @return 清理任务�?Job，调用方可通过 job.join() 等待关闭完成
      */
     @Suppress("CognitiveComplexMethod", "LongMethod")
     private fun stopCore(stopService: Boolean): Job? {
@@ -612,10 +356,8 @@ class ProxyOnlyService : Service() {
         startJob = null
         jobToJoin?.cancel()
 
-        val serverToClose = commandServer
-        val serviceToClose = boxService
-        commandServer = null
-        boxService = null
+        // 释放 BoxWrapperManager
+        BoxWrapperManager.release()
 
         notificationUpdateJob?.cancel()
         notificationUpdateJob = null
@@ -623,7 +365,7 @@ class ProxyOnlyService : Service() {
 
         // 获取代理端口用于等待释放
         val proxyPort = runCatching {
-            com.openworld.app.repository.SettingsRepository
+            SettingsRepository
                 .getInstance(this@ProxyOnlyService)
                 .settings.value.proxyPort
         }.getOrDefault(2080)
@@ -635,21 +377,21 @@ class ProxyOnlyService : Service() {
                 Log.w(TAG, "Failed to join start job", e)
             }
 
-            // 关闭 BoxService 和 CommandServer，释放端口
-            if (serviceToClose != null || serverToClose != null) {
-                Log.i(TAG, "Closing BoxService and CommandServer...")
+            // 停止 OpenWorldCore
+            if (OpenWorldCore.isRunning()) {
+                Log.i(TAG, "Stopping OpenWorldCore...")
                 val closeStart = SystemClock.elapsedRealtime()
                 try {
-                    // v1.12.20: 先关闭 BoxService，再关闭 CommandServer
-                    serviceToClose?.close()
-                    serverToClose?.close()
+                    val stopResult = OpenWorldCore.stop()
+                    if (stopResult != 0) {
+                        Log.w(TAG, "OpenWorldCore.stop returned: $stopResult")
+                    }
 
-                    // 关键修复：主动等待端口释放
-                    if (proxyPort > 0) {
+                    // 关键修复：主动等待端口释�?                    if (proxyPort > 0) {
                         val portReleased = waitForPortAvailable(proxyPort, PORT_WAIT_TIMEOUT_MS)
                         val elapsed = SystemClock.elapsedRealtime() - closeStart
                         if (portReleased) {
-                            Log.i(TAG, "BoxService/CommandServer closed, port $proxyPort released in ${elapsed}ms")
+                            Log.i(TAG, "OpenWorldCore stopped, port $proxyPort released in ${elapsed}ms")
                         } else {
                             // 端口释放失败，强制杀死进程让系统回收端口
                             Log.e(TAG, "Port $proxyPort NOT released after ${elapsed}ms, " +
@@ -663,10 +405,10 @@ class ProxyOnlyService : Service() {
                             android.os.Process.killProcess(android.os.Process.myPid())
                         }
                     } else {
-                        Log.i(TAG, "BoxService/CommandServer closed in ${SystemClock.elapsedRealtime() - closeStart}ms")
+                        Log.i(TAG, "OpenWorldCore stopped in ${SystemClock.elapsedRealtime() - closeStart}ms")
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to close BoxService/CommandServer: ${e.message}", e)
+                    Log.w(TAG, "Failed to stop OpenWorldCore: ${e.message}", e)
                 }
             }
 
@@ -693,8 +435,7 @@ class ProxyOnlyService : Service() {
     }
 
     /**
-     * 等待上一次清理任务完成
-     */
+     * 等待上一次清理任务完�?     */
     private suspend fun waitForCleanupJob() {
         val job = cleanupJob
         if (job != null && job.isActive) {
@@ -706,8 +447,7 @@ class ProxyOnlyService : Service() {
     }
 
     /**
-     * 检测端口是否可用
-     */
+     * 检测端口是否可�?     */
     private fun isPortAvailable(port: Int): Boolean {
         if (port <= 0) return true
         return try {
@@ -737,35 +477,17 @@ class ProxyOnlyService : Service() {
         return false
     }
 
-    private fun updateDefaultInterface(network: Network) {
-        val cm = connectivityManager ?: return
-        val caps = cm.getNetworkCapabilities(network) ?: return
-        if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) return
-        if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) return
-
-        val ifaceName = try {
-            val linkProperties = cm.getLinkProperties(network)
-            linkProperties?.interfaceName.orEmpty()
-        } catch (_: Exception) {
-            ""
-        }
-
-        val isExpensive = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == false
-        val isConstrained = false
-        currentInterfaceListener?.updateDefaultInterface(ifaceName, 0, isExpensive, isConstrained)
-    }
-
     private fun notifyRemoteState(state: ServiceState? = null) {
         val st = state ?: if (isRunning) ServiceState.RUNNING else ServiceState.STOPPED
         val repo = runCatching { ConfigRepository.getInstance(applicationContext) }.getOrNull()
         val activeId = repo?.activeNodeId?.value
-        // 2025-fix: 优先使用 VpnStateStore.getActiveLabel()，然后回退到 configRepository
+        // 2025-fix: 优先使用 VpnStateStore.getActiveLabel()，然后回退�?configRepository
         val activeLabel = runCatching {
             VpnStateStore.getActiveLabel().takeIf { it.isNotBlank() }
                 ?: if (repo != null && activeId != null) repo.nodes.value.find { it.id == activeId }?.name else ""
         }.getOrNull().orEmpty()
 
-        SingBoxIpcHub.update(
+        OpenWorldIpcHub.update(
             state = st,
             activeLabel = activeLabel,
             lastError = lastErrorFlow.value.orEmpty(),
@@ -792,7 +514,7 @@ class ProxyOnlyService : Service() {
 
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "SingBox Proxy",
+                "OpenWorld Proxy",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 setShowBadge(false)
@@ -902,3 +624,10 @@ class ProxyOnlyService : Service() {
         }
     }
 }
+
+
+
+
+
+
+

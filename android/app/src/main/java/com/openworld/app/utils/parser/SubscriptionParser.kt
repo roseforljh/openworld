@@ -2,7 +2,7 @@ package com.openworld.app.utils.parser
 
 import android.util.Log
 import com.openworld.app.model.Outbound
-import com.openworld.app.model.SingBoxConfig
+import com.openworld.app.model.OpenWorldConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -20,37 +20,34 @@ interface SubscriptionParser {
     fun canParse(content: String): Boolean
 
     /**
-     * 解析内容并返回 SingBoxConfig
+     * 解析内容并返�?OpenWorldConfig
      */
-    fun parse(content: String): SingBoxConfig?
+    fun parse(content: String): OpenWorldConfig?
 }
 
 /**
- * DNS 预解析缓存
- * 用于加速节点连接，避免 DNS 污染
+ * DNS 预解析缓�? * 用于加速节点连接，避免 DNS 污染
  */
 object DnsResolveCache {
     private const val TAG = "DnsResolveCache"
 
     /**
-     * 缓存条目，包含 IP 和时间戳
+     * 缓存条目，包�?IP 和时间戳
      */
     private data class CacheEntry(val ip: String, val timestamp: Long)
 
-    // 域名 -> 缓存条目（包含 IP 和时间戳）
-    private val cache = ConcurrentHashMap<String, CacheEntry>()
+    // 域名 -> 缓存条目（包�?IP 和时间戳�?    private val cache = ConcurrentHashMap<String, CacheEntry>()
 
-    // 解析失败的域名（避免重复尝试）
-    private val failedDomains = ConcurrentHashMap<String, Long>()
+    // 解析失败的域名（避免重复尝试�?    private val failedDomains = ConcurrentHashMap<String, Long>()
 
-    // 缓存有效期 (30 分钟) - DNS 记录通常有较长的 TTL
+    // 缓存有效�?(30 分钟) - DNS 记录通常有较长的 TTL
     private const val CACHE_TTL_MS = 30 * 60 * 1000L
 
     // 失败重试间隔 (5 分钟)
     private const val RETRY_INTERVAL_MS = 5 * 60 * 1000L
 
     /**
-     * 获取缓存的 IP 地址
+     * 获取缓存�?IP 地址
      * 如果缓存已过期，返回 null
      */
     fun getResolvedIp(domain: String): String? {
@@ -66,10 +63,8 @@ object DnsResolveCache {
     }
 
     /**
-     * 预解析域名列表
-     * @param domains 需要解析的域名列表
-     * @return 解析成功的数量
-     */
+     * 预解析域名列�?     * @param domains 需要解析的域名列表
+     * @return 解析成功的数�?     */
     suspend fun preResolve(domains: List<String>): Int = withContext(Dispatchers.IO) {
         val currentTime = System.currentTimeMillis()
 
@@ -77,8 +72,7 @@ object DnsResolveCache {
         failedDomains.entries.removeIf { currentTime - it.value >= RETRY_INTERVAL_MS }
 
         val toResolve = domains.filter { domain ->
-            // 跳过有效缓存的
-            val entry = cache[domain]
+            // 跳过有效缓存�?            val entry = cache[domain]
             if (entry != null && currentTime - entry.timestamp < CACHE_TTL_MS) {
                 return@filter false
             }
@@ -87,8 +81,7 @@ object DnsResolveCache {
             if (failedTime != null && currentTime - failedTime < RETRY_INTERVAL_MS) {
                 return@filter false
             }
-            // 跳过已经是 IP 地址的
-            if (isIpAddress(domain)) return@filter false
+            // 跳过已经�?IP 地址�?            if (isIpAddress(domain)) return@filter false
             true
         }.distinct()
 
@@ -135,11 +128,10 @@ object DnsResolveCache {
     }
 
     /**
-     * 判断是否为 IP 地址
+     * 判断是否�?IP 地址
      */
     private fun isIpAddress(host: String): Boolean {
-        // IPv4 简单判断
-        if (host.matches(Regex("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$"))) {
+        // IPv4 简单判�?        if (host.matches(Regex("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$"))) {
             return true
         }
         // IPv6 判断
@@ -164,8 +156,7 @@ object DnsResolveCache {
 }
 
 /**
- * 订阅解析管理器
- */
+ * 订阅解析管理�? */
 class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
 
     companion object {
@@ -173,8 +164,7 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
 
         /**
          * 生成节点去重 key
-         * 基于 type://server:port + 认证信息，相同组合视为重复节点
-         */
+         * 基于 type://server:port + 认证信息，相同组合视为重复节�?         */
         private fun getDeduplicationKey(outbound: Outbound): String? {
             val server = outbound.server ?: return null
             val port = outbound.serverPort ?: return null
@@ -185,14 +175,12 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
                 return null
             }
 
-            // 加入认证信息区分同服务器不同账号的节点
-            val credential = outbound.password ?: outbound.uuid ?: ""
+            // 加入认证信息区分同服务器不同账号的节�?            val credential = outbound.password ?: outbound.uuid ?: ""
             return "$type://$credential@$server:$port"
         }
 
         /**
-         * 对节点列表进行去重
-         * 保留第一个出现的节点，后续重复节点被忽略
+         * 对节点列表进行去�?         * 保留第一个出现的节点，后续重复节点被忽略
          */
         fun deduplicateOutbounds(outbounds: List<Outbound>): List<Outbound> {
             val seen = mutableSetOf<String>()
@@ -202,14 +190,11 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
             for (outbound in outbounds) {
                 val key = getDeduplicationKey(outbound)
                 if (key == null) {
-                    // 非代理节点（selector/urltest/direct 等），直接保留
-                    result.add(outbound)
+                    // 非代理节点（selector/urltest/direct 等），直接保�?                    result.add(outbound)
                 } else if (seen.add(key)) {
-                    // 第一次见到这个 key，保留
-                    result.add(outbound)
+                    // 第一次见到这�?key，保�?                    result.add(outbound)
                 } else {
-                    // 重复节点，跳过
-                    duplicateCount++
+                    // 重复节点，跳�?                    duplicateCount++
                 }
             }
 
@@ -224,14 +209,13 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
     /**
      * 解析订阅内容
      */
-    fun parse(content: String): SingBoxConfig? {
+    fun parse(content: String): OpenWorldConfig? {
         for (parser in parsers) {
             if (parser.canParse(content)) {
                 try {
                     val config = parser.parse(content)
                     if (config != null && !config.outbounds.isNullOrEmpty()) {
-                        // 对节点进行去重
-                        val deduplicatedOutbounds = deduplicateOutbounds(config.outbounds)
+                        // 对节点进行去�?                        val deduplicatedOutbounds = deduplicateOutbounds(config.outbounds)
                         return config.copy(outbounds = deduplicatedOutbounds)
                     }
                 } catch (e: Exception) {
@@ -245,10 +229,10 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
     /**
      * 解析订阅内容并预解析 DNS
      * @param content 订阅内容
-     * @param preResolveDns 是否预解析 DNS
-     * @return 解析结果和 DNS 解析数量
+     * @param preResolveDns 是否预解�?DNS
+     * @return 解析结果�?DNS 解析数量
      */
-    suspend fun parseWithDnsPreResolve(content: String, preResolveDns: Boolean = true): Pair<SingBoxConfig?, Int> {
+    suspend fun parseWithDnsPreResolve(content: String, preResolveDns: Boolean = true): Pair<OpenWorldConfig?, Int> {
         val config = parse(content)
         if (config == null || config.outbounds.isNullOrEmpty()) {
             return Pair(null, 0)
@@ -265,3 +249,10 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
         return Pair(config, resolvedCount)
     }
 }
+
+
+
+
+
+
+

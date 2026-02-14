@@ -11,10 +11,10 @@ import android.os.SystemClock
 import android.util.Log
 import com.openworld.app.MainActivity
 import com.openworld.app.R
-import com.openworld.app.service.SingBoxService
-import com.openworld.app.service.SingBoxService.Companion.ACTION_STOP
-import com.openworld.app.service.SingBoxService.Companion.ACTION_SWITCH_NODE
-import com.openworld.app.service.SingBoxService.Companion.ACTION_RESET_CONNECTIONS
+import com.openworld.app.service.OpenWorldService
+import com.openworld.app.service.OpenWorldService.Companion.ACTION_STOP
+import com.openworld.app.service.OpenWorldService.Companion.ACTION_SWITCH_NODE
+import com.openworld.app.service.OpenWorldService.Companion.ACTION_RESET_CONNECTIONS
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,8 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * VPN 通知管理器
- * 负责 VPN 服务通知的创建、更新和生命周期管理
+ * VPN 通知管理�? * 负责 VPN 服务通知的创建、更新和生命周期管理
  */
 class VpnNotificationManager(
     private val context: Context,
@@ -55,8 +54,7 @@ class VpnNotificationManager(
     private var lastTextLogged: String? = null
 
     /**
-     * 通知状态数据
-     */
+     * 通知状态数�?     */
     data class NotificationState(
         val isRunning: Boolean = false,
         val isStopping: Boolean = false,
@@ -71,8 +69,7 @@ class VpnNotificationManager(
      */
     fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // 清理旧渠道
-            runCatching { notificationManager.deleteNotificationChannel("singbox_vpn") }
+            // 清理旧渠�?            runCatching { notificationManager.deleteNotificationChannel("singbox_vpn") }
             runCatching { notificationManager.deleteNotificationChannel(LEGACY_CHANNEL_ID) }
 
             val channel = NotificationChannel(
@@ -93,10 +90,9 @@ class VpnNotificationManager(
 
     /**
      * 更新通知
-     * @param state 当前通知状态
-     * @param service VPN 服务实例 (用于 startForeground)
+     * @param state 当前通知状�?     * @param service VPN 服务实例 (用于 startForeground)
      */
-    fun updateNotification(state: NotificationState, service: SingBoxService) {
+    fun updateNotification(state: NotificationState, service: OpenWorldService) {
         val notification = createNotification(state)
 
         val text = runCatching {
@@ -108,7 +104,7 @@ class VpnNotificationManager(
             Log.i(TAG, "Notification content: $text")
         }
 
-        // 修复华为设备提示音问题: 只在首次调用 startForeground, 后续使用 notify
+        // 修复华为设备提示音问�? 只在首次调用 startForeground, 后续使用 notify
         if (!hasForegroundStarted.get()) {
             runCatching {
                 service.startForeground(NOTIFICATION_ID, notification)
@@ -127,14 +123,13 @@ class VpnNotificationManager(
     }
 
     /**
-     * 请求更新通知 (带防抖)
-     * @param state 当前通知状态
-     * @param service VPN 服务实例
+     * 请求更新通知 (带防�?
+     * @param state 当前通知状�?     * @param service VPN 服务实例
      * @param force 是否强制立即更新
      */
     fun requestNotificationUpdate(
         state: NotificationState,
-        service: SingBoxService,
+        service: OpenWorldService,
         force: Boolean = false
     ) {
         if (suppressUpdates) return
@@ -182,7 +177,7 @@ class VpnNotificationManager(
                 .build()
         }
 
-        // 主界面 PendingIntent
+        // 主界�?PendingIntent
         val mainIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
@@ -192,7 +187,7 @@ class VpnNotificationManager(
         )
 
         // 切换节点按钮
-        val switchIntent = Intent(context, SingBoxService::class.java).apply {
+        val switchIntent = Intent(context, OpenWorldService::class.java).apply {
             action = ACTION_SWITCH_NODE
         }
         val switchPendingIntent = PendingIntent.getService(
@@ -201,7 +196,7 @@ class VpnNotificationManager(
         )
 
         // 断开连接按钮
-        val stopIntent = Intent(context, SingBoxService::class.java).apply {
+        val stopIntent = Intent(context, OpenWorldService::class.java).apply {
             action = ACTION_STOP
         }
         val stopPendingIntent = PendingIntent.getService(
@@ -210,7 +205,7 @@ class VpnNotificationManager(
         )
 
         // 重置连接按钮
-        val resetIntent = Intent(context, SingBoxService::class.java).apply {
+        val resetIntent = Intent(context, OpenWorldService::class.java).apply {
             action = ACTION_RESET_CONNECTIONS
         }
         val resetPendingIntent = PendingIntent.getService(
@@ -294,9 +289,7 @@ class VpnNotificationManager(
     }
 
     /**
-     * 重置状态
-     * 在 VPN 停止时调用
-     */
+     * 重置状�?     * �?VPN 停止时调�?     */
     fun resetState() {
         updateJob?.cancel()
         updateJob = null
@@ -306,13 +299,12 @@ class VpnNotificationManager(
     }
 
     /**
-     * 检查是否已调用过 startForeground
+     * 检查是否已调用�?startForeground
      */
     fun hasForegroundStarted(): Boolean = hasForegroundStarted.get()
 
     /**
-     * 设置已启动前台服务
-     */
+     * 设置已启动前台服�?     */
     fun markForegroundStarted() {
         hasForegroundStarted.set(true)
     }
@@ -330,3 +322,10 @@ class VpnNotificationManager(
         return android.text.format.Formatter.formatFileSize(context, bytesPerSecond) + "/s"
     }
 }
+
+
+
+
+
+
+

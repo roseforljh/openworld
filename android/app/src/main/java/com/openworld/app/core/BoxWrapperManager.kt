@@ -1,36 +1,71 @@
 package com.openworld.app.core
 
 import android.util.Log
-import io.nekohasekai.libbox.CommandServer
-import io.nekohasekai.libbox.Libbox
+import com.openworld.core.OpenWorldCore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * BoxWrapper 管理器 - 统一管理 libbox 的生命周期
- *
+ * OpenWorld 内核管理�?- 管理 OpenWorld Rust 内核的生命周�? *
  * 功能:
  * - 节点切换: selectOutbound()
  * - 电源管理: pause() / resume()
  * - 流量统计: getUploadTotal() / getDownloadTotal()
- * - 全局访问: 通过 Libbox 静态方法跨组件共享
+ * - 连接管理: resetAllConnections(), closeIdleConnections()
  *
- * 新版 libbox API (基于 CommandServer):
- * - 不再使用 BoxService 和 BoxWrapper
- * - 使用 Libbox.xxxxx() 静态方法
- * - CommandServer 作为主入口点管理服务生命周期
+ * 完全基于 OpenWorldCore (libopenworld.so) 实现
  */
 object BoxWrapperManager {
     private const val TAG = "BoxWrapperManager"
+
+    /**
+     * OpenWorld 内核是否可用
+     */
+    @Volatile
+    var useOpenWorldKernel: Boolean = false
+        private set
+
+    /**
+     * OpenWorld 内核是否可用（别名）
+     */
+    val isOpenWorldAvailable: Boolean
+        get() = useOpenWorldKernel
+
+    /**
+     * 检测并初始�?OpenWorld 内核
+     * 在应用启动时调用
+     */
+    fun detectOpenWorldKernel(): Boolean {
+        return try {
+            val version = OpenWorldCore.version()
+            if (version.isNotBlank()) {
+                useOpenWorldKernel = true
+                Log.i(TAG, "OpenWorld kernel detected: $version")
+                true
+            } else {
+                useOpenWorldKernel = false
+                Log.w(TAG, "OpenWorld kernel version is blank")
+                false
+            }
+        } catch (e: UnsatisfiedLinkError) {
+            useOpenWorldKernel = false
+            Log.e(TAG, "OpenWorld kernel not available: ${e.message}")
+            false
+        } catch (e: Exception) {
+            useOpenWorldKernel = false
+            Log.w(TAG, "OpenWorld kernel detection failed: ${e.message}")
+            false
+        }
+    }
 
     enum class RecoveryMode {
         SOFT,
         HARD
     }
 
-    @Volatile
-    private var commandServer: CommandServer? = null
+    // 服务运行状�?    @Volatile
+    private var isRunning: Boolean = false
 
     private val _isPaused = MutableStateFlow(false)
     val isPaused: StateFlow<Boolean> = _isPaused.asStateFlow()
@@ -38,63 +73,57 @@ object BoxWrapperManager {
     private val _hasSelector = MutableStateFlow(false)
     val hasSelector: StateFlow<Boolean> = _hasSelector.asStateFlow()
 
-    // 2025-fix-v22: 暂停历史跟踪，用于判断是否需要强制关闭连接
+    // 暂停历史跟踪
     @Volatile
     private var lastResumeTimestamp: Long = 0L
 
-    // 2025-fix-v18: resetNetwork 防抖，防止多个恢复触发点同时调用
-    // 2025-fix-v26: 降低防抖时间从 2 秒到 500 毫秒，避免正常恢复被跳过
+    // resetNetwork 防抖
     @Volatile
     private var lastResetNetworkTimestamp: Long = 0L
     private const val RESET_NETWORK_DEBOUNCE_MS = 500L
 
     /**
-     * 初始化 - 绑定 CommandServer
-     * 在 CommandServer 创建后调用
+     * 初始�?- 在服务启动后调用
+     * @param server 兼容参数（忽略）
      */
-    fun init(server: CommandServer): Boolean {
+    fun init(server: Any? = null): Boolean {
         return try {
-            commandServer = server
+            isRunning = true
             _isPaused.value = false
-            _hasSelector.value = runCatching { Libbox.hasSelector() }.getOrDefault(false)
+            _hasSelector.value = runCatching { OpenWorldCore.hasSelector() }.getOrDefault(false)
             Log.i(TAG, "BoxWrapperManager initialized, hasSelector=${_hasSelector.value}")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to init BoxWrapperManager", e)
-            commandServer = null
+            isRunning = false
             false
         }
     }
 
     /**
-     * 释放 - 清理状态
-     * 在 CommandServer 关闭时调用
+     * 释放 - 在服务关闭时调用
      */
     fun release() {
-        commandServer = null
+        isRunning = false
         _isPaused.value = false
         _hasSelector.value = false
         Log.i(TAG, "BoxWrapperManager released")
     }
 
     /**
-     * 检查服务是否可用
-     * v1.12.20: Libbox.isRunning() 已移除，改为检查 commandServer 是否存在
-     */
+     * 检查服务是否可�?     */
     fun isAvailable(): Boolean {
-        return commandServer != null
+        return isRunning && useOpenWorldKernel
     }
 
     // ==================== 节点切换 ====================
 
     /**
      * 切换出站节点
-     * @param nodeTag 节点标签
-     * @return true 如果切换成功
      */
     fun selectOutbound(nodeTag: String): Boolean {
         return try {
-            val result = Libbox.selectOutboundByTag(nodeTag)
+            val result = OpenWorldCore.selectOutbound(nodeTag)
             if (result) {
                 Log.i(TAG, "selectOutbound($nodeTag) success")
             } else {
@@ -108,11 +137,10 @@ object BoxWrapperManager {
     }
 
     /**
-     * 获取当前选中的出站节点
-     */
+     * 获取当前选中的出站节�?     */
     fun getSelectedOutbound(): String? {
         return try {
-            Libbox.getSelectedOutbound().takeIf { it.isNotBlank() }
+            OpenWorldCore.getSelectedOutbound()?.takeIf { it.isNotBlank() }
         } catch (e: Exception) {
             Log.w(TAG, "getSelectedOutbound failed: ${e.message}")
             null
@@ -120,12 +148,10 @@ object BoxWrapperManager {
     }
 
     /**
-     * 获取所有出站节点列表
-     * @return 节点标签列表
-     */
+     * 获取所有出站节点列�?     */
     fun listOutbounds(): List<String> {
         return try {
-            Libbox.listOutboundsString()
+            OpenWorldCore.listOutbounds()
                 ?.split("\n")
                 ?.filter { it.isNotBlank() }
                 ?: emptyList()
@@ -136,11 +162,10 @@ object BoxWrapperManager {
     }
 
     /**
-     * 检查是否有 selector 类型的出站
-     */
+     * 检查是否有 selector 类型的出�?     */
     fun hasSelector(): Boolean {
         return try {
-            Libbox.hasSelector()
+            OpenWorldCore.hasSelector()
         } catch (e: Exception) {
             false
         }
@@ -149,15 +174,13 @@ object BoxWrapperManager {
     // ==================== 电源管理 ====================
 
     /**
-     * 暂停 - 设备休眠时调用
-     * 通知 sing-box 内核进入省电模式
-     */
+     * 暂停 - 设备休眠时调�?     */
     fun pause(): Boolean {
         return try {
-            Libbox.pauseService()
+            val result = OpenWorldCore.pause()
             _isPaused.value = true
             Log.i(TAG, "pause() success")
-            true
+            result
         } catch (e: Exception) {
             Log.w(TAG, "pause() failed: ${e.message}")
             false
@@ -165,16 +188,14 @@ object BoxWrapperManager {
     }
 
     /**
-     * 恢复 - 设备唤醒时调用
-     * 通知 sing-box 内核恢复正常模式
-     */
+     * 恢复 - 设备唤醒时调�?     */
     fun resume(): Boolean {
         return try {
-            Libbox.resumeService()
+            val result = OpenWorldCore.resume()
             _isPaused.value = false
             lastResumeTimestamp = System.currentTimeMillis()
             Log.i(TAG, "resume() success")
-            true
+            result
         } catch (e: Exception) {
             Log.w(TAG, "resume() failed: ${e.message}")
             false
@@ -182,23 +203,17 @@ object BoxWrapperManager {
     }
 
     /**
-     * 检查是否处于暂停状态
-     */
+     * 检查是否处于暂停状�?     */
     fun isPausedNow(): Boolean {
         return try {
-            Libbox.isPaused()
+            OpenWorldCore.isPaused()
         } catch (e: Exception) {
             _isPaused.value
         }
     }
 
     /**
-     * 检查是否最近从暂停状态恢复
-     * 用于判断是否需要在 NetworkBump 时强制关闭连接 (发送 RST)
-     *
-     * @param thresholdMs 阈值毫秒数，默认 30 秒
-     * @return true 如果在阈值时间内从暂停状态恢复过
-     */
+     * 检查是否最近从暂停状态恢�?     */
     fun wasPausedRecently(thresholdMs: Long = 30_000L): Boolean {
         val timestamp = lastResumeTimestamp
         if (timestamp == 0L) return false
@@ -206,34 +221,17 @@ object BoxWrapperManager {
     }
 
     /**
-     * 进入睡眠模式 - 设备空闲 (Doze) 时调用
-     * 比 pause() 更激进
-     *
-     * @return true 如果成功
+     * 进入睡眠模式
      */
-    fun sleep(): Boolean {
-        return pause()
-    }
+    fun sleep(): Boolean = pause()
 
     /**
-     * 从睡眠中唤醒 - 设备退出空闲 (Doze) 模式时调用
-     * v1.12.20: CommandServer.wake() 已移除，使用 Libbox.resumeService() 替代
-     *
-     * @return true 如果成功
+     * 从睡眠中唤醒
      */
-    fun wake(): Boolean {
-        // v1.12.20: 直接使用 resume() 实现唤醒功能
-        return resume()
-    }
+    fun wake(): Boolean = resume()
 
-    /**
-     * 2025-fix-v19: 完整网络恢复 - 统一入口点
-     * 2025-fix-v26: 添加 force 参数，允许绕过防抖强制执行
-     *
-     * @param source 调用来源，用于日志追踪
-     * @param force 是否强制执行（绕过防抖），用于关键恢复场景如 Activity Resume
-     * @return true 如果成功执行
-     */
+    // ==================== 网络恢复 ====================
+
     fun wakeAndResetNetwork(source: String, force: Boolean = false): Boolean {
         return recoverNetwork(source = source, mode = RecoveryMode.SOFT, force = force)
     }
@@ -257,19 +255,11 @@ object BoxWrapperManager {
         val hasActiveState = connCount > 0 || needRecovery || isPausedNow()
         val bypassIdleGuard = shouldBypassIdleGuard(source)
         if (!force && !hasActiveState && !bypassIdleGuard) {
-            Log.d(
-                TAG,
-                "[$source] recoverNetwork skipped (no connections, " +
-                    "recovery not needed, bypass=$bypassIdleGuard)"
-            )
+            Log.d(TAG, "[$source] recoverNetwork skipped (no connections, recovery not needed, bypass=$bypassIdleGuard)")
             return true
         }
 
-        Log.d(
-            TAG,
-            "[$source] recoverNetwork proceed (mode=$mode force=$force " +
-                "hasActiveState=$hasActiveState bypass=$bypassIdleGuard)"
-        )
+        Log.d(TAG, "[$source] recoverNetwork proceed (mode=$mode force=$force hasActiveState=$hasActiveState bypass=$bypassIdleGuard)")
 
         lastResetNetworkTimestamp = now
         _isPaused.value = false
@@ -281,20 +271,8 @@ object BoxWrapperManager {
         }
     }
 
-    // ==================== 智能恢复 (Phase 1) ====================
+    // ==================== 智能恢复 ====================
 
-    /**
-     * 智能恢复 - 三级渐进式恢复策略
-     *
-     * Level 1 (PROBE): 探测 VPN 链路，如果正常则无需恢复
-     * Level 2 (SELECTIVE): 关闭所有连接 + resetNetwork
-     * Level 3 (NUCLEAR): 完整重置 (resetAllConnections + resetNetwork)
-     *
-     * @param context Android Context，用于探测
-     * @param source 调用来源，用于日志追踪
-     * @param skipProbe 是否跳过探测直接恢复（用于已知链路异常的场景）
-     * @return SmartRecoveryResult 恢复结果
-     */
     suspend fun smartRecover(
         context: android.content.Context,
         source: String,
@@ -307,19 +285,16 @@ object BoxWrapperManager {
 
         val startTime = System.currentTimeMillis()
 
-        // Level 1: PROBE
         if (!skipProbe) {
             val probeResult = executeProbeLevel(context, source, startTime)
             if (probeResult != null) return probeResult
         }
 
-        // Level 2: SELECTIVE
         val selectiveResult = executeSelectiveLevel(context, source, startTime)
         if (selectiveResult.success && selectiveResult.level == RecoveryLevel.SELECTIVE) {
             return selectiveResult
         }
 
-        // Level 3: NUCLEAR
         return executeNuclearLevel(source, startTime, selectiveResult.closedConnections)
     }
 
@@ -350,7 +325,6 @@ object BoxWrapperManager {
     ): SmartRecoveryResult {
         Log.i(TAG, "[$source] smartRecover: Level 2 (SELECTIVE)")
         wake()
-        // Phase 2: 优先关闭空闲连接，保留活跃连接
         val closedCount = closeIdleConnections(maxIdleSeconds = 30)
         resetNetwork()
         Log.i(TAG, "[$source] SELECTIVE closed=$closedCount")
@@ -379,10 +353,8 @@ object BoxWrapperManager {
         return SmartRecoveryResult(RecoveryLevel.NUCLEAR, true, "NUCLEAR completed", closedCount)
     }
 
-    /** 恢复级别 */
     enum class RecoveryLevel { NONE, PROBE, SELECTIVE, NUCLEAR }
 
-    /** 智能恢复结果 */
     data class SmartRecoveryResult(
         val level: RecoveryLevel,
         val success: Boolean,
@@ -393,36 +365,27 @@ object BoxWrapperManager {
 
     // ==================== 流量统计 ====================
 
-    /**
-     * 获取累计上传字节数
-     */
     fun getUploadTotal(): Long {
         return try {
-            Libbox.getTrafficTotalUplink()
+            OpenWorldCore.getTrafficTotalUplink()
         } catch (e: Exception) {
             Log.w(TAG, "getUploadTotal failed: ${e.message}")
             -1L
         }
     }
 
-    /**
-     * 获取累计下载字节数
-     */
     fun getDownloadTotal(): Long {
         return try {
-            Libbox.getTrafficTotalDownlink()
+            OpenWorldCore.getTrafficTotalDownlink()
         } catch (e: Exception) {
             Log.w(TAG, "getDownloadTotal failed: ${e.message}")
             -1L
         }
     }
 
-    /**
-     * 重置流量统计
-     */
     fun resetTraffic(): Boolean {
         return try {
-            val result = Libbox.resetTrafficStats()
+            val result = OpenWorldCore.resetTrafficStats()
             Log.i(TAG, "resetTraffic() result=$result")
             result
         } catch (e: Exception) {
@@ -431,57 +394,41 @@ object BoxWrapperManager {
         }
     }
 
-    /**
-     * 获取连接数
-     */
     fun getConnectionCount(): Int {
         return try {
-            Libbox.getConnectionCount().toInt()
+            OpenWorldCore.getConnectionCount().toInt()
         } catch (e: Exception) {
             0
         }
     }
 
-    // ==================== 工具函数 ====================
+    // ==================== 连接管理 ====================
 
-    /**
-     * 重置所有连接
-     * @param system true=重置系统级连接表
-     */
     fun resetAllConnections(system: Boolean = true): Boolean {
         return try {
-            Libbox.resetAllConnections(system)
-            Log.i(TAG, "resetAllConnections($system) success")
-            true
+            val result = OpenWorldCore.resetAllConnections(system)
+            Log.i(TAG, "resetAllConnections($system) success: $result")
+            result
         } catch (e: Exception) {
             Log.w(TAG, "resetAllConnections failed: ${e.message}")
-            // 回退到 LibboxCompat
-            LibboxCompat.resetAllConnections(system)
+            false
         }
     }
 
-    /**
-     * 重置网络
-     * v1.12.20: CommandServer.resetNetwork() 已移除，使用 Libbox.resetAllConnections() 替代
-     */
     fun resetNetwork(): Boolean {
-        // v1.12.20: 使用 resetAllConnections 作为替代方案
         return try {
-            Libbox.resetAllConnections(false)
-            Log.i(TAG, "resetNetwork() success (via resetAllConnections)")
-            true
+            val result = OpenWorldCore.resetAllConnections(false)
+            Log.i(TAG, "resetNetwork() success")
+            result
         } catch (e: Exception) {
             Log.w(TAG, "resetNetwork() failed: ${e.message}")
             false
         }
     }
 
-    /**
-     * 关闭所有跟踪连接
-     */
     fun closeAllTrackedConnections(): Int {
         return try {
-            val count = Libbox.closeAllTrackedConnections().toInt()
+            val count = OpenWorldCore.closeAllTrackedConnections()
             if (count > 0) {
                 Log.i(TAG, "closeAllTrackedConnections: closed $count connections")
             }
@@ -492,163 +439,92 @@ object BoxWrapperManager {
         }
     }
 
-    /**
-     * 关闭空闲连接 (Phase 2)
-     * 关闭空闲超过指定时间的连接
-     *
-     * @param maxIdleSeconds 最大空闲时间(秒)
-     * @return 关闭的连接数
-     */
     fun closeIdleConnections(maxIdleSeconds: Int = 30): Int {
-        // 尝试通过反射调用内核扩展 API (避免编译时依赖)
         return try {
-            val method = Libbox::class.java.getMethod("closeIdleConnections", Long::class.javaPrimitiveType)
-            val count = (method.invoke(null, maxIdleSeconds.toLong()) as Number).toInt()
+            val count = OpenWorldCore.closeIdleConnections(maxIdleSeconds.toLong()).toInt()
             if (count > 0) {
                 Log.i(TAG, "closeIdleConnections($maxIdleSeconds): closed $count connections")
             }
             count
-        } catch (e: NoSuchMethodException) {
-            // 内核不支持此 API，回退到关闭所有连接
-            Log.w(TAG, "closeIdleConnections not available in kernel: ${e.message}, fallback")
-            closeAllTrackedConnections()
         } catch (e: Exception) {
             Log.w(TAG, "closeIdleConnections failed: ${e.message}, fallback to closeAllTrackedConnections")
             closeAllTrackedConnections()
         }
     }
 
-    /**
-     * 获取扩展版本
-     */
     fun getExtensionVersion(): String {
         return try {
-            Libbox.getOpenWorldVersion()
+            OpenWorldCore.version()
         } catch (e: Exception) {
             "unknown"
         }
     }
 
-    /**
-     * 获取 CommandServer 实例
-     * 仅在 VPN 运行时可用
-     */
-    fun getCommandServer(): CommandServer? {
-        return commandServer
-    }
+    // ==================== 网络恢复 (Network Recovery) ====================
 
-    // ==================== Network Recovery (Fix loading issue after background resume) ====================
-
-    /**
-     * Auto network recovery - Recommended entry point
-     * Automatically selects recovery strategy based on current state
-     * @return true if recovery succeeded
-     */
     fun recoverNetworkAuto(): Boolean {
         return try {
-            Libbox.recoverNetworkAuto()
+            OpenWorldCore.recoverNetworkAuto()
         } catch (e: Exception) {
-            Log.w(TAG, "recoverNetworkAuto kernel call failed, fallback to SOFT", e)
+            Log.w(TAG, "recoverNetworkAuto failed, fallback to SOFT", e)
             recoverNetwork(source = "recoverNetworkAuto-fallback", mode = RecoveryMode.SOFT, force = true)
         }
     }
 
-    /**
-     * Check if network recovery is needed
-     */
     fun isNetworkRecoveryNeeded(): Boolean {
-        return try {
-            Libbox.checkNetworkRecoveryNeeded()
-        } catch (e: Exception) {
-            isPausedNow()
-        }
+        return isPausedNow()
     }
 
     private fun shouldBypassIdleGuard(source: String): Boolean {
         return when (source) {
-            "app_foreground",
-            "screen_on",
-            "doze_exit",
-            "network_type_changed" -> true
-
+            "app_foreground", "screen_on", "doze_exit", "network_type_changed" -> true
             else -> false
         }
     }
 
     private fun recoverNetworkSoft(source: String): Boolean {
-        val forceTag = "[SOFT][$source]"
-        return try {
-            val wakeOk = wake()
-            val resetOk = resetNetwork()
-            val ok = wakeOk && resetOk
-            Log.i(TAG, "$forceTag wake=$wakeOk resetNetwork=$resetOk")
-            ok
-        } catch (e: Exception) {
-            Log.w(TAG, "$forceTag failed", e)
-            false
-        }
+        val wakeOk = wake()
+        val resetOk = resetNetwork()
+        val ok = wakeOk && resetOk
+        Log.i(TAG, "[SOFT][$source] wake=$wakeOk resetNetwork=$resetOk")
+        return ok
     }
 
     private fun recoverNetworkHard(source: String): Boolean {
-        val forceTag = "[HARD][$source]"
+        val wakeOk = wake()
+        val closed = closeAllTrackedConnections()
+        val resetConnOk = resetAllConnections(true)
+        val resetOk = resetNetwork()
+        val ok = wakeOk && resetConnOk && resetOk
+        Log.i(TAG, "[HARD][$source] wake=$wakeOk closed=$closed resetAllConnections=$resetConnOk resetNetwork=$resetOk")
+        return ok
+    }
+
+    // ==================== URL 测试 ====================
+
+    fun urlTestOutbound(outboundTag: String, url: String, timeoutMs: Int): Int {
+        Log.d(TAG, "urlTestOutbound: using OpenWorld kernel")
         return try {
-            val wakeOk = wake()
-            val closed = closeAllTrackedConnections()
-            val resetConnOk = resetAllConnections(true)
-            val resetOk = resetNetwork()
-            val ok = wakeOk && resetConnOk && resetOk
-            Log.i(
-                TAG,
-                "$forceTag wake=$wakeOk closed=$closed resetAllConnections=$resetConnOk resetNetwork=$resetOk"
-            )
-            ok
+            OpenWorldCore.urlTest(outboundTag, url, timeoutMs).toInt()
         } catch (e: Exception) {
-            Log.e(TAG, "$forceTag failed", e)
-            false
+            Log.w(TAG, "urlTestOutbound failed: ${e.message}")
+            -1
         }
     }
 
-    /**
-     * URL 测试单个节点
-     * v1.12.20: Libbox.urlTestOutbound() 已移除，返回 -1 表示不支持
-     * 注意: 单节点测试需要使用 OkHttp 回退方案，因为 CommandClient.urlTest() 是针对整个 group 的
-     */
-    @Suppress("UNUSED_PARAMETER")
-    fun urlTestOutbound(outboundTag: String, url: String, timeoutMs: Int): Int {
-        // v1.12.20: urlTestOutbound API 已移除，返回 -1 触发回退到本地测试
-        // CommandClient.urlTest() 是针对整个 group 的，不支持单节点测试
-        Log.d(TAG, "urlTestOutbound: using fallback for single node test")
-        return -1
-    }
-
-    /**
-     * 批量 URL 测试 (同步版本)
-     * v1.12.20: 使用 CommandClient.urlTest(groupTag) 实现
-     * 注意: 这是同步方法，如果需要异步测试请使用 urlTestGroupAsync()
-     */
-    @Suppress("UNUSED_PARAMETER")
     fun urlTestBatch(
         outboundTags: List<String>,
         url: String,
         timeoutMs: Int,
         concurrency: Int
     ): Map<String, Int> {
-        // v1.12.20: 同步方法无法使用异步的 CommandClient.urlTest()
-        // 返回空 Map 触发回退到 OkHttp 方案
-        Log.d(TAG, "urlTestBatch: sync method, returning empty map to trigger fallback")
+        // 使用 OpenWorld 内置�?group 测试
+        Log.d(TAG, "urlTestBatch: returning empty map")
         return emptyMap()
     }
 
-    /**
-     * 异步 URL 测试整个 group
-     * v1.12.20: 使用 CommandClient.urlTest(groupTag) API
-     *
-     * @param groupTag 要测试的 group 标签 (如 "PROXY")
-     * @param timeoutMs 等待结果的超时时间
-     * @return 节点延迟映射 (tag -> delay ms)，失败返回空 Map
-     */
     suspend fun urlTestGroupAsync(groupTag: String, timeoutMs: Long = 10000L): Map<String, Int> {
-        val service = com.openworld.app.service.SingBoxService.instance
+        val service = com.openworld.app.service.OpenWorldService.instance
         if (service == null) {
             Log.w(TAG, "urlTestGroupAsync: service not available")
             return emptyMap()
@@ -661,61 +537,49 @@ object BoxWrapperManager {
         }
     }
 
-    /**
-     * 获取缓存的 URL 测试延迟
-     * @param tag 节点标签
-     * @return 延迟值 (ms)，未测试返回 null
-     */
     fun getCachedUrlTestDelay(tag: String): Int? {
-        val service = com.openworld.app.service.SingBoxService.instance
+        val service = com.openworld.app.service.OpenWorldService.instance
         return service?.getCachedUrlTestDelay(tag)
     }
 
-    // ==================== Main Traffic Protection ====================
+    // ==================== 主流量保�?====================
 
-    /**
-     * 通知内核主流量正在活跃
-     * v1.12.20: Libbox.notifyMainTrafficActive() 已移除，空实现
-     */
     fun notifyMainTrafficActive() {
-        // v1.12.20: notifyMainTrafficActive API 已移除，空实现
-        Log.d(TAG, "notifyMainTrafficActive not available in v1.12.20")
+        Log.d(TAG, "notifyMainTrafficActive")
     }
 
-    // ==================== Per-Outbound Traffic ====================
+    // ==================== 按出站流量统�?====================
 
-    /**
-     * 获取按出站分组的流量统计
-     * 用于准确记录分流场景下各节点的流量
-     *
-     * @return Map<节点标签, Pair<上传字节, 下载字节>>
-     */
     fun getTrafficByOutbound(): Map<String, Pair<Long, Long>> {
         return try {
-            val iterator = Libbox.getTrafficByOutbound() ?: return emptyMap()
-            val result = mutableMapOf<String, Pair<Long, Long>>()
-            while (iterator.hasNext()) {
-                val item = iterator.next() ?: continue
-                val tag = item.tag
-                if (!tag.isNullOrBlank()) {
-                    result[tag] = Pair(item.upload, item.download)
-                }
-            }
-            result
+            val json = OpenWorldCore.getTrafficSnapshot() ?: return emptyMap()
+            // 解析 JSON 格式的流量快�?            parseTrafficSnapshot(json)
         } catch (e: Exception) {
             Log.w(TAG, "getTrafficByOutbound failed: ${e.message}")
             emptyMap()
         }
     }
 
-    /**
-     * 关闭指定应用的连接
-     * v1.12.20: Libbox.closeConnectionsForApp() 已移除，返回 0
-     */
-    @Suppress("UNUSED_PARAMETER")
+    private fun parseTrafficSnapshot(json: String): Map<String, Pair<Long, Long>> {
+        // 简单解�?- 实际应该�?Gson
+        return try {
+            val result = mutableMapOf<String, Pair<Long, Long>>()
+            // TODO: 完善 JSON 解析
+            result
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
     fun closeConnectionsForApp(packageName: String): Int {
-        // v1.12.20: closeConnectionsForApp API 已移除
-        Log.d(TAG, "closeConnectionsForApp not available in v1.12.20")
+        Log.d(TAG, "closeConnectionsForApp not available")
         return 0
     }
 }
+
+
+
+
+
+
+

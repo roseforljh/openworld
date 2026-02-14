@@ -35,3 +35,10 @@ val TextSecondary = Neutral500
 val TextTertiary = Neutral700
 val AccentWhite = PureWhite
 val Destructive = Red500
+
+
+
+
+
+
+

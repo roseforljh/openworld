@@ -129,8 +129,7 @@ fun ProfilesScreen(
                 url = data.url,
                 autoUpdateInterval = data.autoUpdateInterval
             )
-            // 清除待处理数据
-            DeepLinkHandler.clearPendingSubscriptionImport()
+            // 清除待处理数�?            DeepLinkHandler.clearPendingSubscriptionImport()
         }
     }
 
@@ -170,11 +169,9 @@ fun ProfilesScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    // FAB显隐逻辑：上滑隐藏，下滑显示（即使列表不可滚动也生效）
-    var isFabVisible by remember { mutableStateOf(true) }
+    // FAB显隐逻辑：上滑隐藏，下滑显示（即使列表不可滚动也生效�?    var isFabVisible by remember { mutableStateOf(true) }
 
-    // nestedScroll 处理列表可滚动时的情况
-    val nestedScrollConnection = remember {
+    // nestedScroll 处理列表可滚动时的情�?    val nestedScrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (available.y < -10f) {
@@ -187,10 +184,9 @@ fun ProfilesScreen(
         }
     }
 
-    // pointerInput 处理列表不可滚动时的手势检测
-    var lastY by remember { mutableStateOf(0f) }
+    // pointerInput 处理列表不可滚动时的手势检�?    var lastY by remember { mutableStateOf(0f) }
 
-    // 文件选择器 Launcher
+    // 文件选择�?Launcher
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
@@ -206,7 +202,7 @@ fun ProfilesScreen(
                     }
 
                     if (content.isNotBlank()) {
-                        // 从 URI 中提取文件名作为配置名称
+                        // �?URI 中提取文件名作为配置名称
                         val fileName = uri.lastPathSegment?.let { segment ->
                             // 清理文件名，移除路径和扩展名
                             segment.substringAfterLast("/")
@@ -226,7 +222,7 @@ fun ProfilesScreen(
         }
     }
 
-    // 二维码扫描 Launcher
+    // 二维码扫�?Launcher
     val qrCodeLauncher = rememberLauncherForActivityResult(
         contract = ScanContract()
     ) { result ->
@@ -247,15 +243,14 @@ fun ProfilesScreen(
 
             when {
                 isNodeLink -> {
-                    // 单节点链接，使用剪贴板导入方式
-                    viewModel.importFromContent(context.getString(R.string.profiles_qrcode_import), scannedContent)
+                    // 单节点链接，使用剪贴板导入方�?                    viewModel.importFromContent(context.getString(R.string.profiles_qrcode_import), scannedContent)
                 }
                 isSubscriptionUrl -> {
                     // 订阅链接，导入为订阅
                     viewModel.importSubscription(context.getString(R.string.profiles_qrcode_subscription), scannedContent, 0)
                 }
                 scannedContent.trim().startsWith("{") || scannedContent.trim().startsWith("proxies:") -> {
-                    // 看起来像 JSON 或 YAML 配置
+                    // 看起来像 JSON �?YAML 配置
                     viewModel.importFromContent(context.getString(R.string.profiles_qrcode_import), scannedContent)
                 }
                 else -> {
@@ -266,17 +261,14 @@ fun ProfilesScreen(
         }
     }
 
-    // 创建扫描选项的辅助函数
-    fun createScanOptions(): ScanOptions {
+    // 创建扫描选项的辅助函�?    fun createScanOptions(): ScanOptions {
         return ScanOptions().apply {
             setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-            setPrompt("") // 我们在自定义布局中显示提示
-            setCameraId(0)
+            setPrompt("") // 我们在自定义布局中显示提�?            setCameraId(0)
             setBeepEnabled(true)
             setBarcodeImageEnabled(false)
             setOrientationLocked(false)
-            setCaptureActivity(QrScannerActivity::class.java) // 使用自定义正方形扫描框
-        }
+            setCaptureActivity(QrScannerActivity::class.java) // 使用自定义正方形扫描�?        }
     }
 
     // 相机权限请求 Launcher
@@ -300,8 +292,7 @@ fun ProfilesScreen(
                     ProfileImportType.Subscription -> showSubscriptionInput = true
                     ProfileImportType.Clipboard -> showClipboardInput = true
                     ProfileImportType.File -> {
-                        // 启动文件选择器
-                        filePickerLauncher.launch(arrayOf(
+                        // 启动文件选择�?                        filePickerLauncher.launch(arrayOf(
                             "application/json",
                             "text/plain",
                             "application/x-yaml",
@@ -310,14 +301,12 @@ fun ProfilesScreen(
                         ))
                     }
                     ProfileImportType.QRCode -> {
-                        // 检查相机权限
-                        when {
+                        // 检查相机权�?                        when {
                             ContextCompat.checkSelfPermission(
                                 context,
                                 Manifest.permission.CAMERA
                             ) == PackageManager.PERMISSION_GRANTED -> {
-                                // 已有权限，直接启动扫描
-                                qrCodeLauncher.launch(createScanOptions())
+                                // 已有权限，直接启动扫�?                                qrCodeLauncher.launch(createScanOptions())
                             }
                             else -> {
                                 // 请求权限
@@ -743,8 +732,7 @@ private fun SubscriptionInputDialog(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 自动更新开关
-            Row(
+            // 自动更新开�?            Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -764,8 +752,7 @@ private fun SubscriptionInputDialog(
                 )
             }
 
-            // 自动更新间隔输入框（带动画显示/隐藏）
-            AnimatedVisibility(
+            // 自动更新间隔输入框（带动画显�?隐藏�?            AnimatedVisibility(
                 visible = autoUpdateEnabled,
                 enter = expandVertically(
                     animationSpec = tween(durationMillis = 300)
@@ -784,8 +771,7 @@ private fun SubscriptionInputDialog(
                     androidx.compose.material3.OutlinedTextField(
                         value = autoUpdateMinutes,
                         onValueChange = { newValue ->
-                            // 只允许输入数字
-                            if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
+                            // 只允许输入数�?                            if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
                                 autoUpdateMinutes = newValue
                             }
                         },
@@ -817,8 +803,7 @@ private fun SubscriptionInputDialog(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // DNS 预解析开关
-            Row(
+            // DNS 预解析开�?            Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -845,8 +830,7 @@ private fun SubscriptionInputDialog(
                 )
             }
 
-            // DNS 服务器选择（带动画显示/隐藏）
-            AnimatedVisibility(
+            // DNS 服务器选择（带动画显示/隐藏�?            AnimatedVisibility(
                 visible = dnsPreResolveEnabled,
                 enter = expandVertically(
                     animationSpec = tween(durationMillis = 300)
@@ -1021,3 +1005,10 @@ private fun SubscriptionInputDialog(
         }
     }
 }
+
+
+
+
+
+
+

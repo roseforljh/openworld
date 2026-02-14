@@ -62,8 +62,7 @@ fun AppRoutingScreen(
         }
     }
 
-    // 仅显示在 allowlist 中的应用，直接根据包名获取应用信息
-    val installedApps = remember(settings.vpnAllowlist) {
+    // 仅显示在 allowlist 中的应用，直接根据包名获取应用信�?    val installedApps = remember(settings.vpnAllowlist) {
         val pm = context.packageManager
         settings.vpnAllowlist
             .split("\n", "\r", ",", ";", " ", "\t")
@@ -318,3 +317,10 @@ private fun resolveOutboundText(
         RuleSetOutboundMode.PROFILE -> profiles.find { it.id == value }?.name ?: stringResource(R.string.app_rules_unknown_profile)
     }
 }
+
+
+
+
+
+
+

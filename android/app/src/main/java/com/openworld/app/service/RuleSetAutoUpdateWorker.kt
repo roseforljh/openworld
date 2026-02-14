@@ -12,7 +12,7 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 /**
- * 规则集自动更新 Worker
+ * 规则集自动更�?Worker
  * 使用 WorkManager 在后台定期更新所有远程规则集
  */
 class RuleSetAutoUpdateWorker(
@@ -25,21 +25,18 @@ class RuleSetAutoUpdateWorker(
         private const val WORK_NAME = "ruleset_global_auto_update"
 
         /**
-         * 调度全局规则集自动更新任务
-         * @param context Context
-         * @param intervalMinutes 更新间隔（分钟），0 表示禁用
+         * 调度全局规则集自动更新任�?         * @param context Context
+         * @param intervalMinutes 更新间隔（分钟）�? 表示禁用
          */
         fun schedule(context: Context, intervalMinutes: Int) {
             val workManager = WorkManager.getInstance(context)
 
             if (intervalMinutes <= 0) {
-                // 禁用自动更新，取消现有任务
-                workManager.cancelUniqueWork(WORK_NAME)
+                // 禁用自动更新，取消现有任�?                workManager.cancelUniqueWork(WORK_NAME)
                 return
             }
 
-            // 创建周期性工作请求
-            val constraints = Constraints.Builder()
+            // 创建周期性工作请�?            val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
 
@@ -55,8 +52,7 @@ class RuleSetAutoUpdateWorker(
                 )
                 .build()
 
-            // 使用 REPLACE 策略，如果已有相同名称的任务则替换
-            workManager.enqueueUniquePeriodicWork(
+            // 使用 REPLACE 策略，如果已有相同名称的任务则替�?            workManager.enqueueUniquePeriodicWork(
                 WORK_NAME,
                 ExistingPeriodicWorkPolicy.REPLACE,
                 workRequest
@@ -64,8 +60,7 @@ class RuleSetAutoUpdateWorker(
         }
 
         /**
-         * 取消全局规则集自动更新任务
-         */
+         * 取消全局规则集自动更新任�?         */
         fun cancel(context: Context) {
             val workManager = WorkManager.getInstance(context)
             workManager.cancelUniqueWork(WORK_NAME)
@@ -97,16 +92,14 @@ class RuleSetAutoUpdateWorker(
             val settingsRepository = SettingsRepository.getInstance(applicationContext)
             val ruleSetRepository = RuleSetRepository.getInstance(applicationContext)
 
-            // 检查是否仍然启用自动更新
-            val settings = settingsRepository.settings.first()
+            // 检查是否仍然启用自动更�?            val settings = settingsRepository.settings.first()
 
             if (!settings.ruleSetAutoUpdateEnabled) {
                 cancel(applicationContext)
                 return@withContext Result.success()
             }
 
-            // 获取所有远程规则集并更新
-            val remoteRuleSets = settings.ruleSets.filter {
+            // 获取所有远程规则集并更�?            val remoteRuleSets = settings.ruleSets.filter {
                 it.type == RuleSetType.REMOTE && it.enabled
             }
 
@@ -140,8 +133,14 @@ class RuleSetAutoUpdateWorker(
         } catch (e: Exception) {
             Log.e(TAG, "Auto-update failed", e)
 
-            // 如果失败，返回 retry 让 WorkManager 根据退避策略重试
-            Result.retry()
+            // 如果失败，返�?retry �?WorkManager 根据退避策略重�?            Result.retry()
         }
     }
 }
+
+
+
+
+
+
+

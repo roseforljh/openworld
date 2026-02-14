@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.Flow
 /**
  * Profile 数据访问对象
  *
- * 提供 Profile 的 CRUD 操作和 Flow 查询
+ * 提供 Profile �?CRUD 操作�?Flow 查询
  */
 @Dao
 interface ProfileDao {
@@ -102,3 +102,10 @@ interface ProfileDao {
     @Query("UPDATE profiles SET sortOrder = :order WHERE id = :id")
     suspend fun setSortOrder(id: String, order: Int)
 }
+
+
+
+
+
+
+

@@ -3,13 +3,9 @@ package com.openworld.app.repository
 import com.tencent.mmkv.MMKV
 
 /**
- * 节点延迟缓存 - 使用 MMKV 持久化存储
- *
+ * 节点延迟缓存 - 使用 MMKV 持久化存�? *
  * 功能:
- * - 持久化存储节点延迟测试结果
- * - App 重启后保留测速数据
- * - 24 小时缓存有效期
- */
+ * - 持久化存储节点延迟测试结�? * - App 重启后保留测速数�? * - 24 小时缓存有效�? */
 object LatencyCache {
     private const val MMKV_ID = "latency_cache"
     private const val KEY_PREFIX = "lat_"
@@ -23,14 +19,13 @@ object LatencyCache {
     /**
      * 获取节点延迟
      * @param nodeId 节点 ID
-     * @return 延迟值 (ms)，null 表示无缓存或已过期，-1 表示测试失败/超时
+     * @return 延迟�?(ms)，null 表示无缓存或已过期，-1 表示测试失败/超时
      */
     fun get(nodeId: String): Long? {
         val timestamp = mmkv.decodeLong(KEY_TIMESTAMP_PREFIX + nodeId, 0L)
         if (timestamp == 0L) return null
 
-        // 检查缓存是否过期
-        if (System.currentTimeMillis() - timestamp > CACHE_VALIDITY_MS) {
+        // 检查缓存是否过�?        if (System.currentTimeMillis() - timestamp > CACHE_VALIDITY_MS) {
             remove(nodeId)
             return null
         }
@@ -42,7 +37,7 @@ object LatencyCache {
     /**
      * 设置节点延迟
      * @param nodeId 节点 ID
-     * @param latency 延迟值 (ms)，-1 表示测试失败/超时
+     * @param latency 延迟�?(ms)�?1 表示测试失败/超时
      */
     fun set(nodeId: String, latency: Long) {
         mmkv.encode(KEY_PREFIX + nodeId, latency)
@@ -58,8 +53,7 @@ object LatencyCache {
     }
 
     /**
-     * 清除所有缓存
-     */
+     * 清除所有缓�?     */
     fun clear() {
         mmkv.clearAll()
     }
@@ -100,3 +94,10 @@ object LatencyCache {
         return allKeys.count { it.startsWith(KEY_PREFIX) && !it.startsWith(KEY_TIMESTAMP_PREFIX) }
     }
 }
+
+
+
+
+
+
+

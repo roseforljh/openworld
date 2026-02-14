@@ -5,21 +5,17 @@ import com.openworld.app.model.Inbound
 import com.openworld.app.model.TunStack
 
 /**
- * 入站配置构建器
- */
+ * 入站配置构建�? */
 object InboundBuilder {
 
     /**
-     * 构建运行时入站配置
-     */
+     * 构建运行时入站配�?     */
     fun build(settings: AppSettings, effectiveTunStack: TunStack): List<Inbound> {
         val inbounds = mutableListOf<Inbound>()
 
         // 1. 添加混合入站 (Mixed Port)
-        // 在 inbound 层启用 sniff + sniff_override_destination，
-        // 确保 FakeIP 场景下目标地址被嗅探到的真实域名覆盖，
-        // 避免非 TLS 协议（如 MTProto）因 sniff 失败导致连接超时。
-        if (settings.proxyPort > 0) {
+        // �?inbound 层启�?sniff + sniff_override_destination�?        // 确保 FakeIP 场景下目标地址被嗅探到的真实域名覆盖，
+        // 避免�?TLS 协议（如 MTProto）因 sniff 失败导致连接超时�?        if (settings.proxyPort > 0) {
             inbounds.add(
                 Inbound(
                     type = "mixed",
@@ -68,3 +64,10 @@ object InboundBuilder {
         return inbounds
     }
 }
+
+
+
+
+
+
+

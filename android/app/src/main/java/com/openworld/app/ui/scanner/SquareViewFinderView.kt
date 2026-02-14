@@ -11,9 +11,8 @@ import com.openworld.app.R
 import kotlin.math.min
 
 /**
- * 自定义正方形扫描框 ViewFinder
- * 确保扫描框始终为正方形，适合二维码扫描
- */
+ * 自定义正方形扫描�?ViewFinder
+ * 确保扫描框始终为正方形，适合二维码扫�? */
 class SquareViewFinderView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
@@ -56,8 +55,7 @@ class SquareViewFinderView @JvmOverloads constructor(
         val width = canvas.width
         val height = canvas.height
 
-        // 绘制遮罩层（扫描框外的半透明区域）
-        canvas.drawRect(0f, 0f, width.toFloat(), frame.top.toFloat(), maskPaint)
+        // 绘制遮罩层（扫描框外的半透明区域�?        canvas.drawRect(0f, 0f, width.toFloat(), frame.top.toFloat(), maskPaint)
         canvas.drawRect(0f, frame.top.toFloat(), frame.left.toFloat(), (frame.bottom + 1).toFloat(), maskPaint)
         canvas.drawRect((frame.right + 1).toFloat(), frame.top.toFloat(), width.toFloat(), (frame.bottom + 1).toFloat(), maskPaint)
         canvas.drawRect(0f, (frame.bottom + 1).toFloat(), width.toFloat(), height.toFloat(), maskPaint)
@@ -71,14 +69,12 @@ class SquareViewFinderView @JvmOverloads constructor(
             borderPaint
         )
 
-        // 绘制四个角
-        drawCorners(canvas, frame)
+        // 绘制四个�?        drawCorners(canvas, frame)
 
         // 绘制激光线（扫描动画）
         drawLaser(canvas, frame)
 
-        // 请求重绘以实现动画效果
-        postInvalidateDelayed(
+        // 请求重绘以实现动画效�?        postInvalidateDelayed(
             ANIMATION_DELAY,
             frame.left,
             frame.top,
@@ -95,17 +91,14 @@ class SquareViewFinderView @JvmOverloads constructor(
         // 如果已经计算过，直接返回
         squareFrameRect?.let { return it }
 
-        // 计算正方形扫描框的大小
-        // 取屏幕宽度和高度中较小的一个，再乘以一个比例
-        val minDimension = min(width, height)
+        // 计算正方形扫描框的大�?        // 取屏幕宽度和高度中较小的一个，再乘以一个比�?        val minDimension = min(width, height)
         val frameSize = (minDimension * 0.7f).toInt()
 
         // 确保扫描框在屏幕中央
         val leftOffset = (width - frameSize) / 2
         val topOffset = (height - frameSize) / 2
 
-        // 设置正方形的扫描框
-        val rect = Rect(
+        // 设置正方形的扫描�?        val rect = Rect(
             leftOffset,
             topOffset,
             leftOffset + frameSize,
@@ -121,20 +114,16 @@ class SquareViewFinderView @JvmOverloads constructor(
         val right = frame.right.toFloat()
         val bottom = frame.bottom.toFloat()
 
-        // 左上角
-        canvas.drawLine(left, top + cornerLength, left, top, cornerPaint)
+        // 左上�?        canvas.drawLine(left, top + cornerLength, left, top, cornerPaint)
         canvas.drawLine(left, top, left + cornerLength, top, cornerPaint)
 
-        // 右上角
-        canvas.drawLine(right, top + cornerLength, right, top, cornerPaint)
+        // 右上�?        canvas.drawLine(right, top + cornerLength, right, top, cornerPaint)
         canvas.drawLine(right, top, right - cornerLength, top, cornerPaint)
 
-        // 左下角
-        canvas.drawLine(left, bottom - cornerLength, left, bottom, cornerPaint)
+        // 左下�?        canvas.drawLine(left, bottom - cornerLength, left, bottom, cornerPaint)
         canvas.drawLine(left, bottom, left + cornerLength, bottom, cornerPaint)
 
-        // 右下角
-        canvas.drawLine(right, bottom - cornerLength, right, bottom, cornerPaint)
+        // 右下�?        canvas.drawLine(right, bottom - cornerLength, right, bottom, cornerPaint)
         canvas.drawLine(right, bottom, right - cornerLength, bottom, cornerPaint)
     }
 
@@ -173,3 +162,10 @@ class SquareViewFinderView @JvmOverloads constructor(
         private const val ANIMATION_DELAY = 30L
     }
 }
+
+
+
+
+
+
+

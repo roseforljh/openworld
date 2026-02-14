@@ -83,7 +83,7 @@ fun ProfileCard(
             unitIndex++
         }
         val formatted = String.format(Locale.US, "%.2f", value)
-        // 去除末尾的 0 和 . (例如: 100.00 -> 100, 25.50 -> 25.5)
+        // 去除末尾�?0 �?. (例如: 100.00 -> 100, 25.50 -> 25.5)
         val stripped = formatted.dropLastWhile { it == '0' }.dropLastWhile { it == '.' }
         return "$stripped ${units[unitIndex]}"
     }
@@ -183,8 +183,7 @@ fun ProfileCard(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // 显示最后更新时间（替换原来的 Type 显示）
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // 显示最后更新时间（替换原来�?Type 显示�?                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = stringResource(R.string.profile_card_updated_at) + " ",
                         style = MaterialTheme.typography.bodySmall,
@@ -196,8 +195,7 @@ fun ProfileCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    // DNS 预解析标签
-                    if (dnsPreResolve) {
+                    // DNS 预解析标�?                    if (dnsPreResolve) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "DNS",
@@ -343,3 +341,10 @@ fun ProfileCard(
         }
     }
 }
+
+
+
+
+
+
+

@@ -11,13 +11,12 @@ import android.util.Log
 import com.google.gson.Gson
 
 /**
- * 各种节点链接解析器集合
- */
+ * 各种节点链接解析器集�? */
 class NodeLinkParser(private val gson: Gson) {
 
     /**
-     * 预处理 URI 字符串，清理常见格式问题
-     * - 对 fragment 和 query 中的空格进行 URL 编码
+     * 预处�?URI 字符串，清理常见格式问题
+     * - �?fragment �?query 中的空格进行 URL 编码
      * - 移除参数名和值周围的空格 (security =tls -> security=tls)
      */
     private fun sanitizeUri(link: String): String {
@@ -31,13 +30,11 @@ class NodeLinkParser(private val gson: Gson) {
             result = result.substring(0, hashIndex)
         }
 
-        // 清理 query 部分的空格
-        val questionIndex = result.indexOf('?')
+        // 清理 query 部分的空�?        val questionIndex = result.indexOf('?')
         if (questionIndex != -1) {
             val base = result.substring(0, questionIndex)
             val query = result.substring(questionIndex + 1)
-            // 移除参数中 = 和 & 周围的空格
-            val cleanedQuery = query
+            // 移除参数�?= �?& 周围的空�?            val cleanedQuery = query
                 .replace(Regex("\\s*=\\s*"), "=")
                 .replace(Regex("\\s*&\\s*"), "&")
                 .replace(" ", "%20")
@@ -228,12 +225,11 @@ class NodeLinkParser(private val gson: Gson) {
             .replace("\r", "")
             .replace(" ", "")
 
-        // 首先尝试 java.util.Base64 (在 JVM 单元测试和 Android API 26+ 上可用)
+        // 首先尝试 java.util.Base64 (�?JVM 单元测试�?Android API 26+ 上可�?
         try {
-            // 尝试 URL-safe 解码 (处理 - 和 _ 字符)
+            // 尝试 URL-safe 解码 (处理 - �?_ 字符)
             val urlSafeDecoder = java.util.Base64.getUrlDecoder()
-            // 添加 padding 如果需要
-            val padded = when (cleaned.length % 4) {
+            // 添加 padding 如果需�?            val padded = when (cleaned.length % 4) {
                 2 -> cleaned + "=="
                 3 -> cleaned + "="
                 else -> cleaned
@@ -262,7 +258,7 @@ class NodeLinkParser(private val gson: Gson) {
             // 继续尝试 Android Base64
         }
 
-        // 回退到 android.util.Base64 (兼容 Android API 24-25)
+        // 回退�?android.util.Base64 (兼容 Android API 24-25)
         val candidates = arrayOf(
             android.util.Base64.DEFAULT,
             android.util.Base64.NO_WRAP,
@@ -313,7 +309,7 @@ class NodeLinkParser(private val gson: Gson) {
                 return null
             }
             Log.d("NodeLinkParser", "VMess decoded successfully, JSON length: ${decoded.length}")
-            // 这里需要一个简单的内部类来映射 VMess 链接的 JSON
+            // 这里需要一个简单的内部类来映射 VMess 链接�?JSON
             val json = gson.fromJson(decoded, Map::class.java)
 
             val add = json["add"] as? String ?: ""
@@ -632,7 +628,7 @@ class NodeLinkParser(private val gson: Gson) {
             val server = uri.host
             val port = if (uri.port > 0) uri.port else 443
 
-            // 解析 userInfo: 可能是 uuid:password 或只有 uuid
+            // 解析 userInfo: 可能�?uuid:password 或只�?uuid
             val userInfo = uri.userInfo ?: ""
             val colonIndex = userInfo.indexOf(':')
             val uuid = if (colonIndex > 0) userInfo.substring(0, colonIndex) else userInfo
@@ -651,7 +647,7 @@ class NodeLinkParser(private val gson: Gson) {
                 }
             }
 
-            // 如果 password 为空，尝试从 query 参数中获取，或使用 UUID 作为密码
+            // 如果 password 为空，尝试从 query 参数中获取，或使�?UUID 作为密码
             if (password.isBlank()) {
                 password = params["password"] ?: params["token"] ?: uuid
             }
@@ -793,7 +789,7 @@ class NodeLinkParser(private val gson: Gson) {
      */
     private fun parseSocks5Link(link: String): Outbound? {
         try {
-            // 统一转换为标准 URI 格式
+            // 统一转换为标�?URI 格式
             val normalizedLink = link
                 .replace("socks5://", "socks://")
             val uri = java.net.URI(sanitizeUri(normalizedLink))
@@ -826,3 +822,10 @@ class NodeLinkParser(private val gson: Gson) {
         return null
     }
 }
+
+
+
+
+
+
+

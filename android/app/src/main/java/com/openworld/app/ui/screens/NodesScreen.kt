@@ -112,11 +112,9 @@ fun NodesScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    // FAB显隐逻辑：上滑隐藏，下滑显示（即使列表不可滚动也生效）
-    var isFabVisible by remember { mutableStateOf(true) }
+    // FAB显隐逻辑：上滑隐藏，下滑显示（即使列表不可滚动也生效�?    var isFabVisible by remember { mutableStateOf(true) }
 
-    // nestedScroll 处理列表可滚动时的情况
-    val nestedScrollConnection = remember {
+    // nestedScroll 处理列表可滚动时的情�?    val nestedScrollConnection = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (available.y < -10f) {
@@ -129,8 +127,7 @@ fun NodesScreen(
         }
     }
 
-    // pointerInput 处理列表不可滚动时的手势检测
-    var lastY by remember { mutableStateOf(0f) }
+    // pointerInput 处理列表不可滚动时的手势检�?    var lastY by remember { mutableStateOf(0f) }
 
     val nodes by viewModel.nodes.collectAsState()
     val activeNodeId by viewModel.activeNodeId.collectAsState()
@@ -225,8 +222,7 @@ fun NodesScreen(
         )
     }
 
-    // 协议选择对话框（手动创建节点）
-    if (showProtocolSelectDialog) {
+    // 协议选择对话框（手动创建节点�?    if (showProtocolSelectDialog) {
         val protocolOptions = listOf(
             "VMess", "VLESS", "Trojan", "Shadowsocks", "Hysteria2", "Hysteria",
             "TUIC", "WireGuard", "SSH", "AnyTLS", "SOCKS", "HTTP"
@@ -427,8 +423,7 @@ fun NodesScreen(
                 )
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // 筛选按钮
-                    IconButton(onClick = { showFilterDialog = true }) {
+                    // 筛选按�?                    IconButton(onClick = { showFilterDialog = true }) {
                         val hasFilter = nodeFilter.filterMode != FilterMode.NONE
                         Icon(
                             imageVector = Icons.Rounded.FilterAlt,
@@ -442,7 +437,7 @@ fun NodesScreen(
                 }
             }
 
-            // 2. Search Bar (在标题下方)
+            // 2. Search Bar (在标题下�?
             NodeSearchBar(
                 query = searchQuery,
                 onQueryChange = { searchQuery = it },
@@ -598,8 +593,7 @@ private fun NodeSearchBar(
             )
         }
 
-        // 未展开时显示统计信息
-        AnimatedVisibility(
+        // 未展开时显示统计信�?        AnimatedVisibility(
             visible = !isExpanded,
             enter = fadeIn(),
             exit = fadeOut(),
@@ -651,7 +645,7 @@ private fun NodeSearchBar(
             }
         }
 
-        // 右侧胶囊搜索框(仅展开时显示,从左侧按钮右边开始)
+        // 右侧胶囊搜索�?仅展开时显�?从左侧按钮右边开�?
         AnimatedVisibility(
             visible = isExpanded,
             enter = expandHorizontally(expandFrom = Alignment.Start) + fadeIn(),
@@ -734,3 +728,10 @@ private fun NodeSearchBar(
         }
     }
 }
+
+
+
+
+
+
+

@@ -274,7 +274,7 @@ fun AppMultiSelectDialog(
     onDismiss: () -> Unit
 ) {
 
-    // 内部数据类，用于增强应用信息（添加 hasLauncher 属性）
+    // 内部数据类，用于增强应用信息（添�?hasLauncher 属性）
     data class EnhancedApp(
         val label: String,
         val packageName: String,
@@ -285,8 +285,7 @@ fun AppMultiSelectDialog(
     val context = LocalContext.current
     val pm = context.packageManager
 
-    // 使用 Repository 获取缓存的应用列表
-    val repository = remember { InstalledAppsRepository.getInstance(context) }
+    // 使用 Repository 获取缓存的应用列�?    val repository = remember { InstalledAppsRepository.getInstance(context) }
     val installedApps by repository.installedApps.collectAsState()
     val loadingState by repository.loadingState.collectAsState()
 
@@ -295,7 +294,7 @@ fun AppMultiSelectDialog(
         repository.loadApps()
     }
 
-    // 增强应用信息（添加 hasLauncher 属性）
+    // 增强应用信息（添�?hasLauncher 属性）
     val allApps = remember(installedApps) {
         installedApps.map { app: InstalledApp ->
             val hasLauncher = pm.getLaunchIntentForPackage(app.packageName) != null
@@ -1015,11 +1014,9 @@ fun AboutDialog(onDismiss: () -> Unit) {
     LaunchedEffect(Unit) {
         singBoxVersion = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                // 确保 libbox 已初始化
-                com.openworld.app.core.SingBoxCore.ensureLibboxSetup(context)
-                val version = io.nekohasekai.libbox.Libbox.version()
-                // 如果版本是 "unknown"，显示更友好的信息
-                when {
+                com.openworld.app.core.OpenWorldCore.ensureLibboxSetup(context)
+                val version = com.openworld.core.OpenWorldCore.version()
+                // 如果版本�?"unknown"，显示更友好的信�?                when {
                     version.isNullOrBlank() -> kernelBuiltinMsg
                     version.equals("unknown", ignoreCase = true) -> kernelBuiltinMsg
                     else -> version
@@ -1110,7 +1107,7 @@ fun NodeFilterDialog(
     onDismiss: () -> Unit
 ) {
     var filterMode by remember { mutableStateOf(currentFilter.filterMode) }
-    // 分别保存 INCLUDE 和 EXCLUDE 的关键字，切换模式时不会丢失
+    // 分别保存 INCLUDE �?EXCLUDE 的关键字，切换模式时不会丢失
     var includeKeywordsText by remember {
         mutableStateOf(currentFilter.effectiveIncludeKeywords.joinToString(", "))
     }
@@ -1304,17 +1301,15 @@ fun NodeFilterDialog(
                 // 确定按钮
                 Button(
                     onClick = {
-                        // 解析两个关键字列表
-                        val includeKeywords = includeKeywordsText
-                            .split(",", "，")
+                        // 解析两个关键字列�?                        val includeKeywords = includeKeywordsText
+                            .split(",", "�?)
                             .map { it.trim() }
                             .filter { it.isNotEmpty() }
                         val excludeKeywords = excludeKeywordsText
-                            .split(",", "，")
+                            .split(",", "�?)
                             .map { it.trim() }
                             .filter { it.isNotEmpty() }
-                        // 保存两个独立的关键字列表，切换模式不会丢失
-                        onConfirm(NodeFilter(
+                        // 保存两个独立的关键字列表，切换模式不会丢�?                        onConfirm(NodeFilter(
                             filterMode = filterMode,
                             includeKeywords = includeKeywords,
                             excludeKeywords = excludeKeywords
@@ -1522,3 +1517,10 @@ private fun NodeSelectorItem(
         }
     }
 }
+
+
+
+
+
+
+

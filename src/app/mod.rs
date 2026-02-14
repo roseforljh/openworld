@@ -7,6 +7,7 @@ pub mod clash_mode;
 pub mod dispatcher;
 pub mod ffi;
 pub mod inbound_manager;
+pub mod latency_test;
 pub mod ops;
 pub mod outbound_manager;
 pub mod platform;

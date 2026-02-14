@@ -192,6 +192,14 @@ mod jni_exports {
     }
 
     #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_closeAllTrackedConnections(
+        _e: JNIEnv,
+        _c: JClass,
+    ) -> jint {
+        ffi::openworld_close_all_tracked_connections()
+    }
+
+    #[no_mangle]
     pub extern "system" fn Java_com_openworld_core_OpenWorldCore_closeIdleConnections(
         _e: JNIEnv,
         _c: JClass,
@@ -998,9 +1006,81 @@ mod jni_exports {
             Ok(s) => s,
             Err(_) => return std::ptr::null_mut(),
         };
+        ffi_str_to_jstring(&env, unsafe { ffi::openworld_fetch_url(cs.as_ptr()) })
+    }
+
+    // ─── 独立延迟测试（不依赖核心启动） ─────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_latencyTesterInit(
+        mut env: JNIEnv,
+        _c: JClass,
+        outbounds_json: JString,
+    ) -> jint {
+        let s: String = match env.get_string(&outbounds_json) {
+            Ok(s) => s.into(),
+            Err(_) => return -1,
+        };
+        let cs = match std::ffi::CString::new(s) {
+            Ok(s) => s,
+            Err(_) => return -1,
+        };
+        unsafe { ffi::openworld_latency_tester_init(cs.as_ptr()) }
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_latencyTestAll(
+        mut env: JNIEnv,
+        _c: JClass,
+        url: JString,
+        timeout_ms: jint,
+    ) -> jstring {
+        let u: String = match env.get_string(&url) {
+            Ok(s) => s.into(),
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let cu = match std::ffi::CString::new(u) {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
         ffi_str_to_jstring(&env, unsafe {
-            ffi::openworld_fetch_url(cs.as_ptr())
+            ffi::openworld_latency_test_all(cu.as_ptr(), timeout_ms)
         })
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_latencyTestOne(
+        mut env: JNIEnv,
+        _c: JClass,
+        tag: JString,
+        url: JString,
+        timeout_ms: jint,
+    ) -> jint {
+        let t: String = match env.get_string(&tag) {
+            Ok(s) => s.into(),
+            Err(_) => return -1,
+        };
+        let u: String = match env.get_string(&url) {
+            Ok(s) => s.into(),
+            Err(_) => return -2,
+        };
+        let ct = match std::ffi::CString::new(t) {
+            Ok(s) => s,
+            Err(_) => return -1,
+        };
+        let cu = match std::ffi::CString::new(u) {
+            Ok(s) => s,
+            Err(_) => return -2,
+        };
+        unsafe { ffi::openworld_latency_test_one(ct.as_ptr(), cu.as_ptr(), timeout_ms) }
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_latencyTesterFree(
+        _e: JNIEnv,
+        _c: JClass,
+    ) {
+        ffi::openworld_latency_tester_free();
     }
 }
 
@@ -1074,6 +1154,7 @@ pub fn core_jni_methods() -> Vec<JniMethodSignature> {
         JniMethodSignature::new(c, "resetTrafficStats", "()Z", true),
         JniMethodSignature::new(c, "getConnectionCount", "()J", true),
         JniMethodSignature::new(c, "resetAllConnections", "(Z)Z", true),
+        JniMethodSignature::new(c, "closeAllTrackedConnections", "()I", true),
         JniMethodSignature::new(c, "closeIdleConnections", "(J)J", true),
         JniMethodSignature::new(c, "recoverNetworkAuto", "()Z", true),
         JniMethodSignature::new(c, "setTunFd", "(I)I", true),

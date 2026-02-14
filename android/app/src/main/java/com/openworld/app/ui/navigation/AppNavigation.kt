@@ -64,8 +64,7 @@ sealed class Screen(val route: String) {
 const val NAV_ANIMATION_DURATION = 450
 
 private fun tabIndex(route: String?): Int {
-    // 先获取该路由所属的 Tab，再返回 Tab 的索引
-    val tab = getTabForRoute(route)
+    // 先获取该路由所属的 Tab，再返回 Tab 的索�?    val tab = getTabForRoute(route)
     return when (tab) {
         Screen.Dashboard.route -> 0
         Screen.Nodes.route -> 1
@@ -147,7 +146,7 @@ fun AppNavigation(navController: NavHostController) {
         val toRoute = targetState.destination.route
         val fromTab = getTabForRoute(fromRoute)
         val toTab = getTabForRoute(toRoute)
-        // 如果是同一个 Tab 内的导航（进入子页面），底层页面不动
+        // 如果是同一�?Tab 内的导航（进入子页面），底层页面不动
         if (fromTab == toTab) {
             ExitTransition.None
         } else {
@@ -161,13 +160,12 @@ fun AppNavigation(navController: NavHostController) {
         }
     }
 
-    // 从子页面返回时，父级页面不需要动画
-    val tabPopEnterTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+    // 从子页面返回时，父级页面不需要动�?    val tabPopEnterTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
         val fromRoute = initialState.destination.route
         val toRoute = targetState.destination.route
         val fromTab = getTabForRoute(fromRoute)
         val toTab = getTabForRoute(toRoute)
-        // 如果是同一个 Tab 内返回（从子页面返回），父级页面不动
+        // 如果是同一�?Tab 内返回（从子页面返回），父级页面不动
         if (fromTab == toTab) {
             EnterTransition.None
         } else {
@@ -336,3 +334,10 @@ fun AppNavigation(navController: NavHostController) {
         ) { TrafficStatsScreen(navController) }
     }
 }
+
+
+
+
+
+
+

@@ -99,3 +99,10 @@ data class InstalledApp(
     val appName: String,
     val isSystemApp: Boolean = false
 )
+
+
+
+
+
+
+

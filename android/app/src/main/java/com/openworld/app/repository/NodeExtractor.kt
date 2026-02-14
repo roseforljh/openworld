@@ -4,7 +4,7 @@ import android.content.Context
 import com.openworld.app.R
 import com.openworld.app.model.NodeUi
 import com.openworld.app.model.Outbound
-import com.openworld.app.model.SingBoxConfig
+import com.openworld.app.model.OpenWorldConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -15,24 +15,22 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * 节点提取器 - 从配置中提取代理节点
+ * 节点提取�?- 从配置中提取代理节点
  *
- * 设计原则: 只提取实际的代理节点 (ss/vmess/vless/trojan 等)
+ * 设计原则: 只提取实际的代理节点 (ss/vmess/vless/trojan �?
  * 忽略 selector/urltest 等节点组
  */
 object NodeExtractor {
 
     private const val PARALLEL_CONCURRENCY = 8
 
-    // 支持的代理类型
-    private val PROXY_TYPES = setOf(
+    // 支持的代理类�?    private val PROXY_TYPES = setOf(
         "shadowsocks", "vmess", "vless", "trojan",
         "hysteria", "hysteria2", "tuic", "wireguard",
         "shadowtls", "ssh", "anytls", "http", "socks"
     )
 
-    // 预编译的地区检测规则
-    private data class RegionRule(
+    // 预编译的地区检测规�?    private data class RegionRule(
         val flag: String,
         val chineseKeywords: List<String>,
         val englishKeywords: List<String>,
@@ -43,24 +41,24 @@ object NodeExtractor {
         RegionRule("🇭🇰", listOf("香港"), listOf("hong kong"), listOf("hk")),
         RegionRule("🇹🇼", listOf("台湾"), listOf("taiwan"), listOf("tw")),
         RegionRule("🇯🇵", listOf("日本"), listOf("japan", "tokyo"), listOf("jp")),
-        RegionRule("🇸🇬", listOf("新加坡"), listOf("singapore"), listOf("sg")),
+        RegionRule("🇸🇬", listOf("新加�?), listOf("singapore"), listOf("sg")),
         RegionRule("🇺🇸", listOf("美国"), listOf("united states", "america"), listOf("us", "usa")),
         RegionRule("🇰🇷", listOf("韩国"), listOf("korea"), listOf("kr")),
         RegionRule("🇬🇧", listOf("英国"), listOf("britain", "england"), listOf("uk", "gb")),
         RegionRule("🇩🇪", listOf("德国"), listOf("germany"), listOf("de")),
         RegionRule("🇫🇷", listOf("法国"), listOf("france"), listOf("fr")),
-        RegionRule("🇨🇦", listOf("加拿大"), listOf("canada"), listOf("ca")),
+        RegionRule("🇨🇦", listOf("加拿�?), listOf("canada"), listOf("ca")),
         RegionRule("🇦🇺", listOf("澳大利亚"), listOf("australia"), listOf("au")),
-        RegionRule("🇷🇺", listOf("俄罗斯"), listOf("russia"), listOf("ru")),
+        RegionRule("🇷🇺", listOf("俄罗�?), listOf("russia"), listOf("ru")),
         RegionRule("🇮🇳", listOf("印度"), listOf("india"), listOf("in")),
         RegionRule("🇧🇷", listOf("巴西"), listOf("brazil"), listOf("br")),
         RegionRule("🇳🇱", listOf("荷兰"), listOf("netherlands"), listOf("nl")),
         RegionRule("🇹🇷", listOf("土耳其"), listOf("turkey"), listOf("tr")),
-        RegionRule("🇦🇷", listOf("阿根廷"), listOf("argentina"), listOf("ar")),
+        RegionRule("🇦🇷", listOf("阿根�?), listOf("argentina"), listOf("ar")),
         RegionRule("🇲🇾", listOf("马来西亚"), listOf("malaysia"), listOf("my")),
         RegionRule("🇹🇭", listOf("泰国"), listOf("thailand"), listOf("th")),
         RegionRule("🇻🇳", listOf("越南"), listOf("vietnam"), listOf("vn")),
-        RegionRule("🇵🇭", listOf("菲律宾"), listOf("philippines"), listOf("ph")),
+        RegionRule("🇵🇭", listOf("菲律�?), listOf("philippines"), listOf("ph")),
         RegionRule("🇮🇩", listOf("印尼"), listOf("indonesia"), listOf("id"))
     )
 
@@ -69,8 +67,7 @@ object NodeExtractor {
         .flatMap { it.wordBoundaryKeywords }
         .associateWith { word -> Regex("(^|[^a-z])${Regex.escape(word)}([^a-z]|$)") }
 
-    // 地区检测缓存
-    private val regionFlagCache = ConcurrentHashMap<String, String>()
+    // 地区检测缓�?    private val regionFlagCache = ConcurrentHashMap<String, String>()
 
     // stableNodeId 缓存
     private val nodeIdCache = ConcurrentHashMap<String, String>()
@@ -88,7 +85,7 @@ object NodeExtractor {
      * @param onProgress 进度回调
      */
     suspend fun extract(
-        config: SingBoxConfig,
+        config: OpenWorldConfig,
         profileId: String,
         trafficRepo: TrafficRepository,
         context: Context,
@@ -96,7 +93,7 @@ object NodeExtractor {
     ): List<NodeUi> = withContext(Dispatchers.Default) {
         val outbounds = config.outbounds ?: return@withContext emptyList()
 
-        // 收集所有 selector 和 urltest 的 outbounds 作为分组
+        // 收集所�?selector �?urltest �?outbounds 作为分组
         val groupOutbounds = outbounds.filter {
             it.type == "selector" || it.type == "urltest"
         }
@@ -109,8 +106,7 @@ object NodeExtractor {
             }
         }
 
-        // 过滤出代理节点
-        val validOutbounds = outbounds.filter { it.type in PROXY_TYPES }
+        // 过滤出代理节�?        val validOutbounds = outbounds.filter { it.type in PROXY_TYPES }
         if (validOutbounds.isEmpty()) return@withContext emptyList()
 
         val total = validOutbounds.size
@@ -148,13 +144,12 @@ object NodeExtractor {
 
         // 校验分组名是否为有效名称 (避免链接被当作分组名)
         if (group.contains("://") || group.length > 50) {
-            group = "未分组"
+            group = "未分�?
         }
 
         var regionFlag = detectRegionFlag(outbound.tag)
 
-        // 如果从名称无法识别地区，尝试更深层次的信息挖掘
-        if (regionFlag == "🌐" || regionFlag.isBlank()) {
+        // 如果从名称无法识别地区，尝试更深层次的信息挖�?        if (regionFlag == "🌐" || regionFlag.isBlank()) {
             // 1. 尝试 SNI
             val sni = outbound.tls?.serverName
             if (!sni.isNullOrBlank()) {
@@ -202,7 +197,7 @@ object NodeExtractor {
     }
 
     /**
-     * 生成稳定的节点 ID
+     * 生成稳定的节�?ID
      */
     fun stableNodeId(profileId: String, outboundTag: String): String {
         val key = "$profileId|$outboundTag"
@@ -214,8 +209,7 @@ object NodeExtractor {
     }
 
     /**
-     * 根据节点名称检测地区标志
-     */
+     * 根据节点名称检测地区标�?     */
     fun detectRegionFlag(name: String): String {
         // 先查缓存
         regionFlagCache[name]?.let { return it }
@@ -273,3 +267,10 @@ object NodeExtractor {
         nodeIdCache.clear()
     }
 }
+
+
+
+
+
+
+

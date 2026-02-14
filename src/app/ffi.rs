@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::app::proxy_provider::ProxyProviderManager;
 use crate::app::tracker::ConnectionTracker;
+use crate::app::latency_test::LatencyTester;
 use crate::app::App;
 use crate::config::profile::ProfileManager;
 use crate::config::Config;
@@ -607,6 +608,145 @@ pub unsafe extern "C" fn openworld_url_test(
         }
         None => -1,
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 独立延迟测试（不依赖核心启动）
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 独立延迟测试器句柄
+static LATENCY_TESTER: once_cell::sync::Lazy<std::sync::Mutex<Option<LatencyTester>>> =
+    once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
+
+/// 初始化独立延迟测试器
+///
+/// 接收outbound配置的JSON数组，注册需要测试的节点
+/// 返回: 成功返回0，失败返回-1
+///
+/// # Safety
+/// `outbounds_json` 必须是合法的 C 字符串指针
+#[no_mangle]
+pub unsafe extern "C" fn openworld_latency_tester_init(
+    outbounds_json: *const c_char,
+) -> i32 {
+    let json_str = match from_c_str(outbounds_json) {
+        Some(s) => s.to_string(),
+        None => return -1,
+    };
+
+    // 解析outbounds JSON
+    let outbounds: Vec<crate::config::types::OutboundConfig> = match serde_json::from_str(&json_str) {
+        Ok(o) => o,
+        Err(e) => {
+            tracing::error!("failed to parse outbounds JSON: {}", e);
+            return -2;
+        }
+    };
+
+    if outbounds.is_empty() {
+        return -3;
+    }
+
+    // 创建延迟测试器并注册outbounds
+    let mut tester = match LatencyTester::new() {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("failed to create latency tester: {}", e);
+            return -4;
+        }
+    };
+
+    if let Err(e) = tester.register_outbounds(&outbounds) {
+        tracing::error!("failed to register outbounds: {}", e);
+        return -5;
+    }
+
+    // 保存到全局变量
+    let mut guard = LATENCY_TESTER.lock().unwrap();
+    *guard = Some(tester);
+
+    tracing::info!("latency tester initialized with {} outbounds", outbounds.len());
+    0
+}
+
+/// 测试所有已注册outbounds的延迟
+///
+/// 返回JSON格式: [{"tag": "node1", "latency_ms": 123, "error": null}, ...]
+/// 失败返回: "error": "xxx"
+///
+/// # Safety
+/// `url` 必须是合法的 C 字符串指针
+#[no_mangle]
+pub unsafe extern "C" fn openworld_latency_test_all(
+    url: *const c_char,
+    timeout_ms: i32,
+) -> *mut c_char {
+    let test_url = match from_c_str(url) {
+        Some(s) => s.to_string(),
+        None => return to_c_string(r#"{"error":"null url"}"#),
+    };
+
+    let guard = LATENCY_TESTER.lock().unwrap();
+    let tester = match guard.as_ref() {
+        Some(t) => t,
+        None => return to_c_string(r#"{"error":"tester not initialized"}"#),
+    };
+
+    let results = tester.test_all_latency(&test_url, timeout_ms as u64);
+
+    // 序列化为JSON
+    let results_json: Vec<serde_json::Value> = results
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "tag": r.tag,
+                "latency_ms": r.latency_ms,
+                "error": r.error
+            })
+        })
+        .collect();
+
+    match serde_json::to_string(&results_json) {
+        Ok(s) => to_c_string(&s),
+        Err(e) => to_c_string(&format!(r#"{{"error":"{}"}}"#, e)),
+    }
+}
+
+/// 测试单个outbound的延迟
+///
+/// # Safety
+/// `tag` 和 `url` 必须是合法的 C 字符串指针
+#[no_mangle]
+pub unsafe extern "C" fn openworld_latency_test_one(
+    tag: *const c_char,
+    url: *const c_char,
+    timeout_ms: i32,
+) -> i32 {
+    let tag_str = match from_c_str(tag) {
+        Some(s) => s.to_string(),
+        None => return -1,
+    };
+    let test_url = match from_c_str(url) {
+        Some(s) => s.to_string(),
+        None => return -2,
+    };
+
+    let guard = LATENCY_TESTER.lock().unwrap();
+    let tester = match guard.as_ref() {
+        Some(t) => t,
+        None => return -3,
+    };
+
+    let result = tester.test_latency(&tag_str, &test_url, timeout_ms as u64);
+    result.latency_ms as i32
+}
+
+/// 释放独立延迟测试器
+#[no_mangle]
+pub extern "C" fn openworld_latency_tester_free() {
+    let mut guard = LATENCY_TESTER.lock().unwrap();
+    *guard = None;
+    tracing::info!("latency tester released");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

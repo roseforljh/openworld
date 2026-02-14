@@ -72,6 +72,11 @@ pub fn zenone_to_config(doc: &ZenOneDoc, diags: &mut Diagnostics) -> cfg::Config
     }
 }
 
+/// ZenOneDoc -> OutboundConfig 列表（用于订阅解析）
+pub fn zenone_to_outbounds(doc: &ZenOneDoc, diags: &mut Diagnostics) -> Vec<cfg::OutboundConfig> {
+    convert_nodes_to_outbounds(&doc.nodes, diags)
+}
+
 fn convert_nodes_to_outbounds(
     nodes: &[ZenNode],
     diags: &mut Diagnostics,

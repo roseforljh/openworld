@@ -1,5 +1,7 @@
 # Changelog
 
+> Note: The Android client has migrated to OpenWorldCore. Mentions of the old core below are historical records from earlier versions.
+
 ## [2.8.1](https://github.com/roseforljh/OpenWorld/compare/v2.8.0...v2.8.1) (2026-02-13)
 
 
@@ -155,7 +157,7 @@
 * improve node link parsing and latency test settings ([3bf90af](https://github.com/roseforljh/OpenWorld/commit/3bf90af0a7b0a420a2e51827e0293446ba38e51e))
 * **ipc:** improve VPN state management and add kernel build docs ([ce8d5e9](https://github.com/roseforljh/OpenWorld/commit/ce8d5e972f2602596f2a1c28c89b46a8beccab94))
 * **kernel:** add kernel-level HTTP fetch and URLTest extensions ([fa6cd20](https://github.com/roseforljh/OpenWorld/commit/fa6cd20bc48f86b8a64b48da48185e073b621cf0))
-* **latency:** persist node latency data and optimize libbox build ([316ed9b](https://github.com/roseforljh/OpenWorld/commit/316ed9b24f1ef98bb0a4e5bdcbcfc70c2623c0f0))
+* **latency:** persist node latency data and optimize core build ([316ed9b](https://github.com/roseforljh/OpenWorld/commit/316ed9b24f1ef98bb0a4e5bdcbcfc70c2623c0f0))
 * **network:** add NetworkSwitchManager for WiFi/Cellular handoff ([a88a18f](https://github.com/roseforljh/OpenWorld/commit/a88a18fa0cd040b5b0d55d7c9b4385ca6cdc2610))
 * **nodes:** add latency test progress bar with success/timeout stats ([7d333a3](https://github.com/roseforljh/OpenWorld/commit/7d333a332536fb59f999c511ae99263c6f768cdb))
 * **nodes:** add profile selection for manual node creation ([4da7bef](https://github.com/roseforljh/OpenWorld/commit/4da7bef9ce9708ab0b4878ea8c7ebc525c6388d3))
@@ -202,7 +204,7 @@
 * **latency:** resolve SS+ShadowTLS dependency for latency testing ([451e29e](https://github.com/roseforljh/OpenWorld/commit/451e29eded484e531a0861faab0043fbeac0bfea))
 * **latency:** restore latency data when switching profiles ([67afd6f](https://github.com/roseforljh/OpenWorld/commit/67afd6f276d17574f5491fab5752a7fe33be3aaf))
 * **latency:** support latency testing for nodes from all profiles ([020f82b](https://github.com/roseforljh/OpenWorld/commit/020f82b1b6c755af1e2ae0a578c323f9051ffd7d))
-* **libbox:** adapt to new CommandServer API and fix service shutdown ([6b3df81](https://github.com/roseforljh/OpenWorld/commit/6b3df8176adfec224a03b180fb21880d8214237b))
+* **core:** adapt to new CommandServer API and fix service shutdown ([6b3df81](https://github.com/roseforljh/OpenWorld/commit/6b3df8176adfec224a03b180fb21880d8214237b))
 * **memory:** optimize memory usage with LRU caches and static TypeTokens ([f25fa5e](https://github.com/roseforljh/OpenWorld/commit/f25fa5eea01a9343fd4208448dd1bb731e622769))
 * **nav:** correct route mapping for Diagnostics and Logs pages ([cd18066](https://github.com/roseforljh/OpenWorld/commit/cd18066b55adcd8aae379e7e1438db7f85629ee1))
 * **network:** add idle connection cleanup for TG image loading issue ([b6c54ef](https://github.com/roseforljh/OpenWorld/commit/b6c54efe70dda696c0f3b5efc8d504dec6d9f32c))
@@ -244,7 +246,7 @@
 * **vpn:** 添加周期性健康检查防止 VPN 服务僵尸状态 ([843d4ec](https://github.com/roseforljh/OpenWorld/commit/843d4ecb413485663f72fd4c56a00c01f90cc2cb))
 * 主题适配 ([234924c](https://github.com/roseforljh/OpenWorld/commit/234924cc7d537167d50e091c5a70abff23e5b2a1))
 * 优化 ([567b554](https://github.com/roseforljh/OpenWorld/commit/567b5542ef48b785fb10fbf884f8474b8f19563f))
-* 优化 SingBoxCore 代码注释和错误处理 ([d69bd8d](https://github.com/roseforljh/OpenWorld/commit/d69bd8dc5b4849179e17e1170e049098d286c1ec))
+* 优化 OpenWorldCore 代码注释和错误处理 ([d69bd8d](https://github.com/roseforljh/OpenWorld/commit/d69bd8dc5b4849179e17e1170e049098d286c1ec))
 * 优化延迟测试 ([a1fdcb4](https://github.com/roseforljh/OpenWorld/commit/a1fdcb47f221edc69228f6af080e9453b8be0251))
 * 优化延迟测试 ([7b67a0a](https://github.com/roseforljh/OpenWorld/commit/7b67a0a26888099c0e06a66dae838cda10a3afb9))
 * 优化构建配置和 ProGuard 混淆规则 ([046362a](https://github.com/roseforljh/OpenWorld/commit/046362af725fb7d87bcd9ea3e93a6365a15b0aca))
@@ -256,7 +258,7 @@
 * 修复节点选择状态未正确保存和显示的问题 ([1cdf3f7](https://github.com/roseforljh/OpenWorld/commit/1cdf3f7f69ff23dff50cb18ee748725d595e21b7))
 * 修复跨配置切换节点时无法上网的问题 ([ab3ba67](https://github.com/roseforljh/OpenWorld/commit/ab3ba67ac8c0deea104f1ee2cde16d7250ec09da))
 * 全局禁用endpoint_independent_nat和auto_route ([2aa437e](https://github.com/roseforljh/OpenWorld/commit/2aa437ecba131769cb32b2f94a84bdcb4206a4a2))
-* 关于应用里加上app本体及singbox的版本号 ([2c6bd61](https://github.com/roseforljh/OpenWorld/commit/2c6bd61777b3f61d615ca4496ff6358539c9109b))
+* 关于应用里加上 app 本体及内核版本号 ([2c6bd61](https://github.com/roseforljh/OpenWorld/commit/2c6bd61777b3f61d615ca4496ff6358539c9109b))
 * 删除组逻辑 ([5aa7021](https://github.com/roseforljh/OpenWorld/commit/5aa702157adf0cfbb92aec1eb810105ca96e990b))
 * 只读节点信息 ([4c0976b](https://github.com/roseforljh/OpenWorld/commit/4c0976b9e2eb3f8305cb91a32bd2b97ecce55fd5))
 * 可能解决了一些闪退的问题 ([ef5e728](https://github.com/roseforljh/OpenWorld/commit/ef5e7283710ac2839548fe1bfe9a99303c8304f3))
@@ -276,7 +278,7 @@
 * 更新镜像、添加导入导出数据功能 ([a20a115](https://github.com/roseforljh/OpenWorld/commit/a20a115986e7d0ef646dca830a4788135a4c3433))
 * 清理不必要的临时文件和 planning-with-files ([04f9670](https://github.com/roseforljh/OpenWorld/commit/04f96701c1f8f8c4fee5422cdecb9f08aa459776))
 * 清理冗余调试日志以提升性能和可读性 ([dd3a404](https://github.com/roseforljh/OpenWorld/commit/dd3a404a0301ed2a8be4550a9b3ef196e34b4726))
-* 清理废弃的构建脚本并优化 libbox 构建流程 ([de78f57](https://github.com/roseforljh/OpenWorld/commit/de78f576f6e998a326cc9a0d3d55dbcbc84990c4))
+* 清理废弃的构建脚本并优化核心构建流程 ([de78f57](https://github.com/roseforljh/OpenWorld/commit/de78f576f6e998a326cc9a0d3d55dbcbc84990c4))
 * 移除内核版本管理功能并优化核心服务 ([931e169](https://github.com/roseforljh/OpenWorld/commit/931e1697574444ecf59c565b402aac169a5b7d93))
 * 移除已过时的 bugfix 文档 ([2e80582](https://github.com/roseforljh/OpenWorld/commit/2e8058272a2c113347d9a196c8af7c621734ee78))
 * 移除节点名称自动添加协议后缀 ([2bd0423](https://github.com/roseforljh/OpenWorld/commit/2bd0423a97ccb72c40b725c5df226b1fc98710f7))
@@ -309,7 +311,7 @@
 * improve node link parsing and latency test settings ([3bf90af](https://github.com/roseforljh/OpenWorld/commit/3bf90af0a7b0a420a2e51827e0293446ba38e51e))
 * **ipc:** improve VPN state management and add kernel build docs ([ce8d5e9](https://github.com/roseforljh/OpenWorld/commit/ce8d5e972f2602596f2a1c28c89b46a8beccab94))
 * **kernel:** add kernel-level HTTP fetch and URLTest extensions ([fa6cd20](https://github.com/roseforljh/OpenWorld/commit/fa6cd20bc48f86b8a64b48da48185e073b621cf0))
-* **latency:** persist node latency data and optimize libbox build ([316ed9b](https://github.com/roseforljh/OpenWorld/commit/316ed9b24f1ef98bb0a4e5bdcbcfc70c2623c0f0))
+* **latency:** persist node latency data and optimize core build ([316ed9b](https://github.com/roseforljh/OpenWorld/commit/316ed9b24f1ef98bb0a4e5bdcbcfc70c2623c0f0))
 * **network:** add NetworkSwitchManager for WiFi/Cellular handoff ([a88a18f](https://github.com/roseforljh/OpenWorld/commit/a88a18fa0cd040b5b0d55d7c9b4385ca6cdc2610))
 * **nodes:** add latency test progress bar with success/timeout stats ([7d333a3](https://github.com/roseforljh/OpenWorld/commit/7d333a332536fb59f999c511ae99263c6f768cdb))
 * **nodes:** add profile selection for manual node creation ([4da7bef](https://github.com/roseforljh/OpenWorld/commit/4da7bef9ce9708ab0b4878ea8c7ebc525c6388d3))
@@ -355,7 +357,7 @@
 * **latency:** resolve SS+ShadowTLS dependency for latency testing ([451e29e](https://github.com/roseforljh/OpenWorld/commit/451e29eded484e531a0861faab0043fbeac0bfea))
 * **latency:** restore latency data when switching profiles ([67afd6f](https://github.com/roseforljh/OpenWorld/commit/67afd6f276d17574f5491fab5752a7fe33be3aaf))
 * **latency:** support latency testing for nodes from all profiles ([020f82b](https://github.com/roseforljh/OpenWorld/commit/020f82b1b6c755af1e2ae0a578c323f9051ffd7d))
-* **libbox:** adapt to new CommandServer API and fix service shutdown ([6b3df81](https://github.com/roseforljh/OpenWorld/commit/6b3df8176adfec224a03b180fb21880d8214237b))
+* **core:** adapt to new CommandServer API and fix service shutdown ([6b3df81](https://github.com/roseforljh/OpenWorld/commit/6b3df8176adfec224a03b180fb21880d8214237b))
 * **memory:** optimize memory usage with LRU caches and static TypeTokens ([f25fa5e](https://github.com/roseforljh/OpenWorld/commit/f25fa5eea01a9343fd4208448dd1bb731e622769))
 * **nav:** correct route mapping for Diagnostics and Logs pages ([cd18066](https://github.com/roseforljh/OpenWorld/commit/cd18066b55adcd8aae379e7e1438db7f85629ee1))
 * **network:** add idle connection cleanup for TG image loading issue ([b6c54ef](https://github.com/roseforljh/OpenWorld/commit/b6c54efe70dda696c0f3b5efc8d504dec6d9f32c))
@@ -397,7 +399,7 @@
 * **vpn:** 添加周期性健康检查防止 VPN 服务僵尸状态 ([843d4ec](https://github.com/roseforljh/OpenWorld/commit/843d4ecb413485663f72fd4c56a00c01f90cc2cb))
 * 主题适配 ([234924c](https://github.com/roseforljh/OpenWorld/commit/234924cc7d537167d50e091c5a70abff23e5b2a1))
 * 优化 ([567b554](https://github.com/roseforljh/OpenWorld/commit/567b5542ef48b785fb10fbf884f8474b8f19563f))
-* 优化 SingBoxCore 代码注释和错误处理 ([d69bd8d](https://github.com/roseforljh/OpenWorld/commit/d69bd8dc5b4849179e17e1170e049098d286c1ec))
+* 优化 OpenWorldCore 代码注释和错误处理 ([d69bd8d](https://github.com/roseforljh/OpenWorld/commit/d69bd8dc5b4849179e17e1170e049098d286c1ec))
 * 优化延迟测试 ([a1fdcb4](https://github.com/roseforljh/OpenWorld/commit/a1fdcb47f221edc69228f6af080e9453b8be0251))
 * 优化延迟测试 ([7b67a0a](https://github.com/roseforljh/OpenWorld/commit/7b67a0a26888099c0e06a66dae838cda10a3afb9))
 * 优化构建配置和 ProGuard 混淆规则 ([046362a](https://github.com/roseforljh/OpenWorld/commit/046362af725fb7d87bcd9ea3e93a6365a15b0aca))
@@ -409,7 +411,7 @@
 * 修复节点选择状态未正确保存和显示的问题 ([1cdf3f7](https://github.com/roseforljh/OpenWorld/commit/1cdf3f7f69ff23dff50cb18ee748725d595e21b7))
 * 修复跨配置切换节点时无法上网的问题 ([ab3ba67](https://github.com/roseforljh/OpenWorld/commit/ab3ba67ac8c0deea104f1ee2cde16d7250ec09da))
 * 全局禁用endpoint_independent_nat和auto_route ([2aa437e](https://github.com/roseforljh/OpenWorld/commit/2aa437ecba131769cb32b2f94a84bdcb4206a4a2))
-* 关于应用里加上app本体及singbox的版本号 ([2c6bd61](https://github.com/roseforljh/OpenWorld/commit/2c6bd61777b3f61d615ca4496ff6358539c9109b))
+* 关于应用里加上 app 本体及内核版本号 ([2c6bd61](https://github.com/roseforljh/OpenWorld/commit/2c6bd61777b3f61d615ca4496ff6358539c9109b))
 * 删除组逻辑 ([5aa7021](https://github.com/roseforljh/OpenWorld/commit/5aa702157adf0cfbb92aec1eb810105ca96e990b))
 * 只读节点信息 ([4c0976b](https://github.com/roseforljh/OpenWorld/commit/4c0976b9e2eb3f8305cb91a32bd2b97ecce55fd5))
 * 可能解决了一些闪退的问题 ([ef5e728](https://github.com/roseforljh/OpenWorld/commit/ef5e7283710ac2839548fe1bfe9a99303c8304f3))
@@ -429,7 +431,7 @@
 * 更新镜像、添加导入导出数据功能 ([a20a115](https://github.com/roseforljh/OpenWorld/commit/a20a115986e7d0ef646dca830a4788135a4c3433))
 * 清理不必要的临时文件和 planning-with-files ([04f9670](https://github.com/roseforljh/OpenWorld/commit/04f96701c1f8f8c4fee5422cdecb9f08aa459776))
 * 清理冗余调试日志以提升性能和可读性 ([dd3a404](https://github.com/roseforljh/OpenWorld/commit/dd3a404a0301ed2a8be4550a9b3ef196e34b4726))
-* 清理废弃的构建脚本并优化 libbox 构建流程 ([de78f57](https://github.com/roseforljh/OpenWorld/commit/de78f576f6e998a326cc9a0d3d55dbcbc84990c4))
+* 清理废弃的构建脚本并优化核心构建流程 ([de78f57](https://github.com/roseforljh/OpenWorld/commit/de78f576f6e998a326cc9a0d3d55dbcbc84990c4))
 * 移除内核版本管理功能并优化核心服务 ([931e169](https://github.com/roseforljh/OpenWorld/commit/931e1697574444ecf59c565b402aac169a5b7d93))
 * 移除已过时的 bugfix 文档 ([2e80582](https://github.com/roseforljh/OpenWorld/commit/2e8058272a2c113347d9a196c8af7c621734ee78))
 * 移除节点名称自动添加协议后缀 ([2bd0423](https://github.com/roseforljh/OpenWorld/commit/2bd0423a97ccb72c40b725c5df226b1fc98710f7))
@@ -553,7 +555,7 @@
 
 * improve node link parsing and latency test settings ([b19c63e](https://github.com/roseforljh/OpenWorld/commit/b19c63e1574f141f1996583fddecd324bebf1850))
 * **ipc:** improve VPN state management and add kernel build docs ([0bae618](https://github.com/roseforljh/OpenWorld/commit/0bae6186598726bf04744d64f8ef84ea49729a40))
-* **latency:** persist node latency data and optimize libbox build ([c62c9c0](https://github.com/roseforljh/OpenWorld/commit/c62c9c01d592ea0a9354268ace1cbde05f54901c))
+* **latency:** persist node latency data and optimize core build ([c62c9c0](https://github.com/roseforljh/OpenWorld/commit/c62c9c01d592ea0a9354268ace1cbde05f54901c))
 * **nodes:** add latency test progress bar with success/timeout stats ([744eb33](https://github.com/roseforljh/OpenWorld/commit/744eb330dd2865cf5431cf0d6d1c2353c438e49c))
 * **nodes:** 优化搜索栏设计 ([c84a7e8](https://github.com/roseforljh/OpenWorld/commit/c84a7e87c469ae1b26e09179b2948d3a1cd258bf))
 * **nodes:** 搜索栏跟随滚动显隐 ([be8ae78](https://github.com/roseforljh/OpenWorld/commit/be8ae78b22265a893cc16419337f9422dfb06798))
@@ -601,17 +603,17 @@
 * 2 ([14dff9d](https://github.com/roseforljh/OpenWorld/commit/14dff9dfece056188d862bc683b54f2546d726ea))
 * bug ([daea0e7](https://github.com/roseforljh/OpenWorld/commit/daea0e7f8c845104114261e6aec5c91f834ecc7c))
 * huawei ([50e13fc](https://github.com/roseforljh/OpenWorld/commit/50e13fc67575c2392f13d38f4b9018e5cd178609))
-* 优化 SingBoxCore 代码注释和错误处理 ([9619b59](https://github.com/roseforljh/OpenWorld/commit/9619b59b1e9cb33fcda7ee75d8338f4a5658b372))
+* 优化 OpenWorldCore 代码注释和错误处理 ([9619b59](https://github.com/roseforljh/OpenWorld/commit/9619b59b1e9cb33fcda7ee75d8338f4a5658b372))
 * 优化构建配置和 ProGuard 混淆规则 ([217080d](https://github.com/roseforljh/OpenWorld/commit/217080d2679892361927977f542e196401cff229))
 * 修复从通知栏进入app后返回键需按两次才能退出的问题 ([814b4d3](https://github.com/roseforljh/OpenWorld/commit/814b4d37749f33266bb01c6d494f63cd23a70ecb))
 * 新增 URL Scheme 深度链接支持和问题修复文档 ([9b3f8b3](https://github.com/roseforljh/OpenWorld/commit/9b3f8b34bc9e27079c319864b1dd4679ca536f04))
 * 新增应用启动时清理遗留临时数据库文件的功能 ([eb21abb](https://github.com/roseforljh/OpenWorld/commit/eb21abb803f0031197f138d486ad3165a3dfe98c))
 * 新增项目文档索引和优化指南 ([d0c89c2](https://github.com/roseforljh/OpenWorld/commit/d0c89c240f259fea326d746c909042be52cd570c))
 * 更新 planning-with-files submodule 和临时修复代码 ([9bf826d](https://github.com/roseforljh/OpenWorld/commit/9bf826d907c96dab2d24aec38e1c30d89019e60e))
-* 更新优化后的 libbox.aar ([421de3b](https://github.com/roseforljh/OpenWorld/commit/421de3b22c6cd204b5f09cef74b4f6d6d4bc1a8f))
+* 更新优化后的内核构建产物 ([421de3b](https://github.com/roseforljh/OpenWorld/commit/421de3b22c6cd204b5f09cef74b4f6d6d4bc1a8f))
 * 清理不必要的临时文件和 planning-with-files ([372f471](https://github.com/roseforljh/OpenWorld/commit/372f471ebd6c8d9f5dc90e392facfa72e27c40fd))
 * 清理冗余调试日志以提升性能和可读性 ([2986e53](https://github.com/roseforljh/OpenWorld/commit/2986e5322a00e3e37dea860417b3b3b59cf439b5))
-* 清理废弃的构建脚本并优化 libbox 构建流程 ([8d87215](https://github.com/roseforljh/OpenWorld/commit/8d8721557717d3aff3fb4f643ebe15d2d97756f4))
+* 清理废弃的构建脚本并优化核心构建流程 ([8d87215](https://github.com/roseforljh/OpenWorld/commit/8d8721557717d3aff3fb4f643ebe15d2d97756f4))
 * 移除内核版本管理功能并优化核心服务 ([c661d71](https://github.com/roseforljh/OpenWorld/commit/c661d718cff1630d9700d1fcd54a5afdefcb887d))
 * 移除已过时的 bugfix 文档 ([df0dc64](https://github.com/roseforljh/OpenWorld/commit/df0dc643c75b8e6588e7429fe50cb5b9c6911196))
 * 统一 TUN MTU 默认值并移除冗余日志 ([3ea5b7b](https://github.com/roseforljh/OpenWorld/commit/3ea5b7b9200bc9969dbdc0ed1f3c9d779a259d9a))
@@ -652,7 +654,7 @@
 
 * Add English;随便修了一些bug ([24d58a3](https://github.com/roseforljh/OpenWorld/commit/24d58a3542b62281edc2398c9937f8c1ffbd554d))
 * 优化网络稳定 ([5dbe537](https://github.com/roseforljh/OpenWorld/commit/5dbe53795435cf29e1488c0ee883fa014e0c2fd1))
-* 关于应用里加上app本体及singbox的版本号 ([520f158](https://github.com/roseforljh/OpenWorld/commit/520f1583d301f30cb82b184d2e1f737f8ca774fc))
+* 关于应用里加上 app 本体及内核版本号 ([520f158](https://github.com/roseforljh/OpenWorld/commit/520f1583d301f30cb82b184d2e1f737f8ca774fc))
 * 实现配置管理，加号按钮里面本地文件和扫描二维码 ([24e41ee](https://github.com/roseforljh/OpenWorld/commit/24e41ee59a6fe44793f4695f1936ce5267d695b6))
 * 性能优化 ([0f271df](https://github.com/roseforljh/OpenWorld/commit/0f271dfe88f0052ec0ef7b02253417f1a54f7f25))
 * 更新镜像、添加导入导出数据功能 ([1c2c39d](https://github.com/roseforljh/OpenWorld/commit/1c2c39de187f4cb5788f82fe3c8281999c977ebe))
@@ -686,22 +688,22 @@
 * 解析器识别 anytls 节点 ([63d0c1b](https://github.com/roseforljh/OpenWorld/commit/63d0c1b93a790020f7b2d1dd40705f905524e092))
 * 首页设计 ([3d31cf9](https://github.com/roseforljh/OpenWorld/commit/3d31cf9c76c209761c25b0e1511624254453621f))
 
-## [2.1.1](https://github.com/roseforljh/singboxforandriod/compare/v2.1.0...v2.1.1) (2025-12-30)
+## [2.1.1](https://github.com/roseforljh/OpenWorld/compare/v2.1.0...v2.1.1) (2025-12-30)
 
 
 ### Bug Fixes
 
-* force release pr generation ([ffcdc99](https://github.com/roseforljh/singboxforandriod/commit/ffcdc99ef13e6b3c3dd0aabc4050db3b33349e78))
+* force release pr generation ([ffcdc99](https://github.com/roseforljh/OpenWorld/commit/ffcdc99ef13e6b3c3dd0aabc4050db3b33349e78))
 
-## [2.1.0](https://github.com/roseforljh/singboxforandriod/compare/v2.0.7...v2.1.0) (2025-12-30)
+## [2.1.0](https://github.com/roseforljh/OpenWorld/compare/v2.0.7...v2.1.0) (2025-12-30)
 
 
 ### Features
 
-* add release-please workflow to auto-create release PRs ([c0bb4e7](https://github.com/roseforljh/singboxforandriod/commit/c0bb4e7f7f48b8ebfda83ad4c9942accd8ec67f0))
-* update workflow logic and dynamic versioning ([0fef687](https://github.com/roseforljh/singboxforandriod/commit/0fef68710ad0c4e62b2ffbd489ae48bd6e089b62))
+* add release-please workflow to auto-create release PRs ([c0bb4e7](https://github.com/roseforljh/OpenWorld/commit/c0bb4e7f7f48b8ebfda83ad4c9942accd8ec67f0))
+* update workflow logic and dynamic versioning ([0fef687](https://github.com/roseforljh/OpenWorld/commit/0fef68710ad0c4e62b2ffbd489ae48bd6e089b62))
 
 
 ### Bug Fixes
 
-* 多节点闪退 ([a434516](https://github.com/roseforljh/singboxforandriod/commit/a4345164701d540912c112de744eeaf6d03f8803))
+* 多节点闪退 ([a434516](https://github.com/roseforljh/OpenWorld/commit/a4345164701d540912c112de744eeaf6d03f8803))

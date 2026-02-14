@@ -17,14 +17,13 @@ import com.openworld.app.model.TunStack
 import com.openworld.app.model.VpnAppMode
 import com.openworld.app.model.VpnRouteMode
 import com.openworld.app.repository.LogRepository
-import io.nekohasekai.libbox.TunOptions
+import com.openworld.app.core.bridge.TunOptions
 import java.net.InetAddress
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * VPN TUN 接口管理器
- * 负责 TUN 接口的配置、创建和生命周期管理
+ * VPN TUN 接口管理�? * 负责 TUN 接口的配置、创建和生命周期管理
  */
 class VpnTunManager(
     private val context: Context,
@@ -45,8 +44,8 @@ class VpnTunManager(
     private val mtuLogDebounceMs: Long = 10_000L
 
     /**
-     * 预分配 TUN Builder
-     * 在收到 ACTION_START 时调用，减少 openTun 时的延迟
+     * 预分�?TUN Builder
+     * 在收�?ACTION_START 时调用，减少 openTun 时的延迟
      */
     fun preallocateBuilder() {
         if (preallocatedBuilder != null) return
@@ -62,8 +61,7 @@ class VpnTunManager(
     }
 
     /**
-     * 获取预分配的 Builder（如果有）
-     */
+     * 获取预分配的 Builder（如果有�?     */
     fun consumePreallocatedBuilder(): VpnService.Builder? {
         return preallocatedBuilder?.also {
             preallocatedBuilder = null
@@ -98,11 +96,9 @@ class VpnTunManager(
         // 添加 DNS
         configureDns(builder, settings)
 
-        // 分应用配置
-        configurePerAppVpn(builder, settings)
+        // 分应用配�?        configurePerAppVpn(builder, settings)
 
-        // 保存分流设置用于热重载检测
-        val appModeName = (settings?.vpnAppMode ?: VpnAppMode.ALL).name
+        // 保存分流设置用于热重载检�?        val appModeName = (settings?.vpnAppMode ?: VpnAppMode.ALL).name
         val allowlist = settings?.vpnAllowlist
         val blocklist = settings?.vpnBlocklist
         Log.d(
@@ -116,8 +112,7 @@ class VpnTunManager(
             blocklist = blocklist
         )
 
-        // 保存用户设置的 MTU 而不是 effectiveMtu，因为 effectiveMtu 是运行时根据网络类型计算的
-        // 如果保存 effectiveMtu，会导致 hasTunSettingsChanged 误判（用户没改设置但 hash 不匹配）
+        // 保存用户设置�?MTU 而不�?effectiveMtu，因�?effectiveMtu 是运行时根据网络类型计算�?        // 如果保存 effectiveMtu，会导致 hasTunSettingsChanged 误判（用户没改设置但 hash 不匹配）
         VpnStateStore.saveTunSettings(
             tunStack = (settings?.tunStack ?: TunStack.MIXED).name,
             tunMtu = settings?.tunMtu ?: 1500,
@@ -332,8 +327,7 @@ class VpnTunManager(
     }
 
     /**
-     * 检查 Always-On VPN 状态
-     * @return Pair<packageName, isLockdown>
+     * 检�?Always-On VPN 状�?     * @return Pair<packageName, isLockdown>
      */
     fun checkAlwaysOnVpn(): Pair<String?, Boolean> {
         val alwaysOnPkg = runCatching {
@@ -375,7 +369,7 @@ class VpnTunManager(
 
     /**
      * 使用重试建立 TUN 接口
-     * @return ParcelFileDescriptor 或 null
+     * @return ParcelFileDescriptor �?null
      */
     fun establishWithRetry(
         builder: VpnService.Builder,
@@ -422,7 +416,7 @@ class VpnTunManager(
     private fun isNumericAddress(address: String): Boolean {
         if (address.isBlank()) return false
 
-        // 跳过 URL 格式 (DoH/DoT)，避免 DNS 解析超时
+        // 跳过 URL 格式 (DoH/DoT)，避�?DNS 解析超时
         val hasUrlFormat = address.contains("://") || address.contains("/")
         val hasNonIpv6Colon = address.contains(":") && !isIpv6Literal(address)
         if (hasUrlFormat || hasNonIpv6Colon) {
@@ -439,12 +433,17 @@ class VpnTunManager(
 
     private fun isIpv6Literal(address: String): Boolean {
         // IPv6 地址格式: xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx
-        // 或简写格式如 ::1, fe80::1 等
-        // 不包含 http/https 协议前缀
+        // 或简写格式如 ::1, fe80::1 �?        // 不包�?http/https 协议前缀
         if (address.startsWith("[") || address.startsWith("::")) return true
         val colonCount = address.count { it == ':' }
         val dotCount = address.count { it == '.' }
-        // IPv6 至少有 2 个冒号，且没有点（除非是 IPv4-mapped IPv6）
-        return colonCount >= 2 && dotCount == 0
+        // IPv6 至少�?2 个冒号，且没有点（除非是 IPv4-mapped IPv6�?        return colonCount >= 2 && dotCount == 0
     }
 }
+
+
+
+
+
+
+

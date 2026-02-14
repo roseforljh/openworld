@@ -18,10 +18,10 @@
 -keep class go.** { *; }
 -dontwarn go.**
 
-# sing-box (libbox) - 核心 VPN 库
+# OpenWorldCore - 核心 VPN 库
 # 必须保留所有成员,JNI 调用需要完整的类/方法签名
--keep class io.nekohasekai.libbox.** { *; }
--dontwarn io.nekohasekai.libbox.**
+-keep class com.openworld.core.** { *; }
+-dontwarn com.openworld.core.**
 
 # ====================================================================
 # Android Components (必须保留,系统通过反射调用)

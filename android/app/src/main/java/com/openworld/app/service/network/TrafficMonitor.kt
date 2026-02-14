@@ -15,13 +15,10 @@ class TrafficMonitor(
     companion object {
         private const val TAG = "TrafficMonitor"
         private const val SAMPLE_INTERVAL_MS = 3000L
-        // 2025-fix-v32: 大幅提高流量停滞检测间隔和阈值
-        // 原来的检测太敏感，会在分流切换时误报
-        private const val STALL_CHECK_INTERVAL_MS = 60_000L // 从 15 秒提高到 60 秒
-        private const val STALL_MIN_BYTES_DELTA = 5120L // 从 1024 提高到 5120
-        private const val STALL_MIN_SAMPLES = 5 // 从 3 提高到 5
-        private const val PROXY_IDLE_THRESHOLD_MS = 120_000L // 从 60 秒提高到 120 秒
-    }
+        // 2025-fix-v32: 大幅提高流量停滞检测间隔和阈�?        // 原来的检测太敏感，会在分流切换时误报
+        private const val STALL_CHECK_INTERVAL_MS = 60_000L // �?15 秒提高到 60 �?        private const val STALL_MIN_BYTES_DELTA = 5120L // �?1024 提高�?5120
+        private const val STALL_MIN_SAMPLES = 5 // �?3 提高�?5
+        private const val PROXY_IDLE_THRESHOLD_MS = 120_000L // �?60 秒提高到 120 �?    }
 
     data class TrafficSnapshot(
         val uploadSpeed: Long,
@@ -78,8 +75,7 @@ class TrafficMonitor(
         Log.i(TAG, "Traffic monitor started for uid=$uid")
     }
 
-    // start() 传 resetBase=true 重置累计流量基准，resume() 传 false 保留累计值
-    private fun initializeTrafficState(uid: Int, resetBase: Boolean) {
+    // start() �?resetBase=true 重置累计流量基准，resume() �?false 保留累计�?    private fun initializeTrafficState(uid: Int, resetBase: Boolean) {
         val tx0 = TrafficStats.getUidTxBytes(uid).coerceAtLeast(0L)
         val rx0 = TrafficStats.getUidRxBytes(uid).coerceAtLeast(0L)
 
@@ -97,7 +93,7 @@ class TrafficMonitor(
         proxyIdleNotified = false
     }
 
-    // 提取监控循环，start() 和 resume() 共用
+    // 提取监控循环，start() �?resume() 共用
     private fun startMonitorLoop(uid: Int, listener: Listener) {
         monitorJob = scope.launch(Dispatchers.IO) {
             while (true) {
@@ -237,3 +233,10 @@ class TrafficMonitor(
     val isMonitoringPaused: Boolean
         get() = isPaused
 }
+
+
+
+
+
+
+

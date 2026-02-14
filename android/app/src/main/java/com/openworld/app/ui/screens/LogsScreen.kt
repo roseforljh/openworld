@@ -151,3 +151,10 @@ fun LogsScreen(navController: NavController, viewModel: LogViewModel = viewModel
         }
     }
 }
+
+
+
+
+
+
+

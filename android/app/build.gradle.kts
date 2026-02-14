@@ -1,6 +1,5 @@
-import java.util.Properties
-import java.util.zip.ZipFile
 import com.android.build.api.dsl.ApplicationExtension
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -9,232 +8,33 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val libboxInputAar = file("libs/libbox.aar")
-val libboxStrippedAar = layout.buildDirectory.file("stripped-libs/libbox-stripped.aar")
-
-val enableSfaLibboxReplacement = providers.gradleProperty("enableSfaLibboxReplacement")
-    .orNull
-    ?.toBoolean()
-    ?: false
-
-val isBundleBuild = gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }
-
 val abiOnly = providers.gradleProperty("abiOnly").orNull
     ?.trim()
     ?.takeIf { it.isNotBlank() }
 
-fun detectLibboxAbis(libboxAar: File): Set<String> {
-    if (!libboxAar.isFile) {
-        return emptySet()
-    }
-    val abiRegex = Regex("^jni/([^/]+)/libbox\\.so$")
-    ZipFile(libboxAar).use { zip ->
-        return zip.entries().asSequence()
-            .mapNotNull { entry -> abiRegex.matchEntire(entry.name)?.groupValues?.get(1) }
-            .toSet()
-    }
+val isBundleBuild = gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }
+
+val preferredDefaultAbis = listOf("arm64-v8a", "armeabi-v7a")
+val availableCoreAbis = preferredDefaultAbis.filter { abi ->
+    file("src/main/jniLibs/$abi/libopenworld.so").isFile
 }
 
-val availableLibboxAbis = detectLibboxAbis(libboxInputAar)
-if (!abiOnly.isNullOrBlank() && abiOnly !in availableLibboxAbis) {
+if (!abiOnly.isNullOrBlank() && abiOnly !in availableCoreAbis) {
     throw GradleException(
-        "Requested abiOnly=$abiOnly, but app/libs/libbox.aar does not contain it. " +
-            "Available: ${availableLibboxAbis.sorted()}. " +
-            "Rebuild libbox.aar with android/arm platform support first."
+        "Requested abiOnly=$abiOnly, but src/main/jniLibs/$abiOnly/libopenworld.so is missing. " +
+            "Available core ABIs: ${availableCoreAbis.ifEmpty { listOf("none") }}"
     )
 }
 
-val preferredDefaultAbis = listOf("arm64-v8a", "armeabi-v7a")
-val defaultAbis = preferredDefaultAbis.filter { it in availableLibboxAbis }.ifEmpty {
-    if (availableLibboxAbis.isEmpty()) listOf("arm64-v8a") else availableLibboxAbis.sorted()
+val defaultAbis = preferredDefaultAbis.filter { it in availableCoreAbis }
+if (defaultAbis.isEmpty()) {
+    throw GradleException(
+        "No libopenworld.so found under src/main/jniLibs/<abi>/. " +
+            "Run ./scripts/build_android.ps1 -Release first."
+    )
 }
+
 val apkAbis = abiOnly?.let { listOf(it) } ?: defaultAbis
-
-val sfaApkArm64Path = providers.gradleProperty("sfaApkArm64").orNull?.takeIf { it.isNotBlank() }
-val sfaApkArmPath = providers.gradleProperty("sfaApkArm").orNull?.takeIf { it.isNotBlank() }
-
-val autoSfaUniversalDir = rootProject.projectDir
-    .listFiles()
-    ?.filter { it.isDirectory && it.name.startsWith("SFA-") && it.name.endsWith("-universal") }
-    ?.sortedByDescending { it.name }
-    ?.firstOrNull()
-
-val stripLibboxAar = tasks.register("stripLibboxAar") {
-    inputs.file(libboxInputAar)
-    inputs.property("stripLibboxAarVersion", "3")
-    inputs.property("enableSfaLibboxReplacement", enableSfaLibboxReplacement.toString())
-    inputs.property("abiOnly", abiOnly ?: "")
-    inputs.property("sfaApkArm64", providers.gradleProperty("sfaApkArm64").orNull ?: "")
-    inputs.property("sfaApkArm", providers.gradleProperty("sfaApkArm").orNull ?: "")
-    inputs.property("autoSfaUniversalDir", autoSfaUniversalDir?.absolutePath ?: "")
-    outputs.file(libboxStrippedAar)
-
-    doLast {
-        if (!libboxInputAar.exists()) {
-            throw GradleException("Missing libbox AAR: ${libboxInputAar.absolutePath}")
-        }
-
-        val props = Properties()
-        val localPropsFile = rootProject.file("local.properties")
-        if (localPropsFile.exists()) {
-            props.load(localPropsFile.inputStream())
-        }
-
-        fun findNdkDir(): File? {
-            val envNdk = System.getenv("ANDROID_NDK_HOME")
-                ?: System.getenv("ANDROID_NDK_ROOT")
-                ?: System.getenv("NDK_HOME")
-            if (!envNdk.isNullOrBlank()) {
-                val f = File(envNdk)
-                if (f.isDirectory) return f
-            }
-
-            val ndkDirProp = props.getProperty("ndk.dir")
-            if (!ndkDirProp.isNullOrBlank()) {
-                val f = File(ndkDirProp)
-                if (f.isDirectory) return f
-            }
-
-            val sdkDirProp = props.getProperty("sdk.dir")
-            if (!sdkDirProp.isNullOrBlank()) {
-                val ndkBundle = File(sdkDirProp, "ndk-bundle")
-                if (ndkBundle.isDirectory) return ndkBundle
-
-                val ndkRoot = File(sdkDirProp, "ndk")
-                if (ndkRoot.isDirectory) {
-                    val candidates = ndkRoot.listFiles()?.filter { it.isDirectory }?.sortedByDescending { it.name }
-                    return candidates?.firstOrNull()
-                }
-            }
-            return null
-        }
-
-        val ndkDir = findNdkDir() ?: throw GradleException(
-            "NDK not found. Set ANDROID_NDK_HOME (or ndk.dir in local.properties)."
-        )
-
-        fun findLlvmStripExe(): File {
-            val prebuiltRoot = File(ndkDir, "toolchains/llvm/prebuilt")
-            if (prebuiltRoot.isDirectory) {
-                val candidates = prebuiltRoot
-                    .listFiles()
-                    ?.asSequence()
-                    ?.filter { it.isDirectory }
-                    ?.flatMap { prebuiltDir ->
-                        sequenceOf(
-                            File(prebuiltDir, "bin/llvm-strip.exe"),
-                            File(prebuiltDir, "bin/llvm-strip")
-                        )
-                    }
-                    ?.toList()
-                    .orEmpty()
-                candidates.firstOrNull { it.isFile }?.let { return it }
-            }
-
-            val recursive = ndkDir.walkTopDown()
-                .firstOrNull { it.isFile && (it.name == "llvm-strip.exe" || it.name == "llvm-strip") }
-            return recursive ?: throw GradleException(
-                "llvm-strip not found under NDK: ${ndkDir.absolutePath}"
-            )
-        }
-
-        val stripExe = findLlvmStripExe()
-
-        val workDir = layout.buildDirectory.dir("stripped-libs/tmp/libbox").get().asFile
-        workDir.deleteRecursively()
-        workDir.mkdirs()
-
-        copy {
-            from(zipTree(libboxInputAar))
-            into(workDir)
-        }
-
-        fun replaceLibboxSoFromSfaSource(source: File, abi: String) {
-            val dstDir = File(workDir, "jni/$abi")
-            dstDir.mkdirs()
-
-            if (source.isDirectory) {
-                val srcSo = File(source, "lib/$abi/libbox.so")
-                if (!srcSo.isFile) {
-                    throw GradleException("libbox.so not found in SFA directory for abi=$abi: ${srcSo.absolutePath}")
-                }
-                copy {
-                    from(srcSo)
-                    into(dstDir)
-                    includeEmptyDirs = false
-                }
-            } else {
-                if (!source.isFile) {
-                    throw GradleException("SFA source not found: ${source.absolutePath}")
-                }
-                copy {
-                    from(zipTree(source)) {
-                        include("lib/$abi/libbox.so")
-                    }
-                    into(dstDir)
-                    includeEmptyDirs = false
-                    eachFile {
-                        path = name
-                    }
-                }
-            }
-
-            val replaced = File(dstDir, "libbox.so")
-            if (!replaced.isFile) {
-                throw GradleException("libbox.so replacement failed for abi=$abi from: ${source.absolutePath}")
-            }
-        }
-
-        val sfaArm64Source = if (enableSfaLibboxReplacement) (sfaApkArm64Path?.let(::File) ?: autoSfaUniversalDir) else null
-        val sfaArmSource = if (enableSfaLibboxReplacement) (sfaApkArmPath?.let(::File) ?: autoSfaUniversalDir) else null
-
-        val keepAbis = mutableSetOf<String>()
-
-        if (sfaArm64Source != null) {
-            replaceLibboxSoFromSfaSource(sfaArm64Source, "arm64-v8a")
-            keepAbis.add("arm64-v8a")
-        }
-        if (sfaArmSource != null) {
-            val v7aSo = if (sfaArmSource.isDirectory) File(sfaArmSource, "lib/armeabi-v7a/libbox.so") else null
-            if (v7aSo == null || v7aSo.isFile) {
-                replaceLibboxSoFromSfaSource(sfaArmSource, "armeabi-v7a")
-                keepAbis.add("armeabi-v7a")
-            }
-        }
-
-        val targetAbis = when {
-            !abiOnly.isNullOrBlank() -> setOf(abiOnly)
-            keepAbis.isNotEmpty() -> keepAbis
-            else -> defaultAbis.toSet()
-        }
-
-        val jniDir = File(workDir, "jni")
-        if (jniDir.isDirectory) {
-            jniDir.walkTopDown()
-                .filter { it.isFile && it.name == "libbox.so" }
-                .forEach { so ->
-                    providers.exec {
-                        commandLine(stripExe.absolutePath, "--strip-unneeded", so.absolutePath)
-                    }.result.get()
-                }
-
-            jniDir.listFiles()
-                ?.filter { it.isDirectory && it.name !in targetAbis }
-                ?.forEach { it.deleteRecursively() }
-        }
-
-        val outAarFile = libboxStrippedAar.get().asFile
-        outAarFile.parentFile.mkdirs()
-        if (outAarFile.exists()) outAarFile.delete()
-        ant.invokeMethod(
-            "zip",
-            mapOf(
-                "destfile" to outAarFile.absolutePath,
-                "basedir" to workDir.absolutePath
-            )
-        )
-    }
-}
 
 configure<ApplicationExtension> {
     namespace = "com.openworld.app"
@@ -382,22 +182,11 @@ ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
 
-// 如果 libbox.aar 已经是精简版（只包含目标架构），可以跳过 strip 任务
-val skipLibboxStrip = providers.gradleProperty("skipLibboxStrip").orNull?.toBoolean() ?: true
-
-if (!skipLibboxStrip) {
-    tasks.named("preBuild") {
-        dependsOn(stripLibboxAar)
-    }
-}
-
 dependencies {
-    // 核心库 (libbox) - 本地 AAR 文件
-    if (skipLibboxStrip) {
-        implementation(files(libboxInputAar))
-    } else {
-        implementation(files(libboxStrippedAar))
-    }
+    // OpenWorld 内核 - 使用本地 jniLibs 目录
+    // 核心功能由 com.openworld.core.OpenWorldCore 提供
+    // libopenworld.so 需要通过 Rust 编译生成
+
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
 
     implementation("androidx.core:core-ktx:1.13.1")

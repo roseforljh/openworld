@@ -136,14 +136,14 @@ fun ConnectionSettingsScreen(
                     }
                 )
                 SettingSwitchItem(
-                    title = "允许来自局域网的连接",
-                    subtitle = "开启后，局域网内的其他设备可以通过该端口使用代理",
+                    title = "允许来自局域网的连�?,
+                    subtitle = "开启后，局域网内的其他设备可以通过该端口使用代�?,
                     checked = settings.allowLan,
                     onCheckedChange = { settingsViewModel.updateAllowLan(it) }
                 )
                 SettingSwitchItem(
-                    title = "追加 HTTP 代理至 VPN",
-                    subtitle = "将本地 HTTP 代理设置为系统代理 (Android 10+)",
+                    title = "追加 HTTP 代理�?VPN",
+                    subtitle = "将本�?HTTP 代理设置为系统代�?(Android 10+)",
                     checked = settings.appendHttpProxy,
                     onCheckedChange = { settingsViewModel.updateAppendHttpProxy(it) }
                 )
@@ -154,15 +154,15 @@ fun ConnectionSettingsScreen(
             StandardCard {
                 EditableTextItem(
                     title = "测速并发数",
-                    subtitle = "批量测试延迟时的并发连接数 (默认: 10)",
+                    subtitle = "批量测试延迟时的并发连接�?(默认: 10)",
                     value = settings.latencyTestConcurrency.toString(),
                     onValueChange = {
                         it.toIntOrNull()?.let { count -> settingsViewModel.updateLatencyTestConcurrency(count) }
                     }
                 )
                 EditableTextItem(
-                    title = "测速超时时间 (ms)",
-                    subtitle = "单次延迟测试的超时时间 (默认: 2000ms)",
+                    title = "测速超时时�?(ms)",
+                    subtitle = "单次延迟测试的超时时�?(默认: 2000ms)",
                     value = settings.latencyTestTimeout.toString(),
                     onValueChange = {
                         it.toIntOrNull()?.let { ms -> settingsViewModel.updateLatencyTestTimeout(ms) }
@@ -174,3 +174,10 @@ fun ConnectionSettingsScreen(
         }
     }
 }
+
+
+
+
+
+
+

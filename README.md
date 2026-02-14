@@ -1,6 +1,6 @@
 # OpenWorld
 
-A high-performance proxy kernel written in Rust, designed as a modern alternative to sing-box / Clash / Xray.
+A high-performance proxy kernel written in Rust, designed as a modern alternative to mainstream proxy cores.
 
 > **52,000+ lines Rust · 1050+ tests · Zero-copy relay · Three-platform native**
 

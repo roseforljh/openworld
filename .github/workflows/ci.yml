@@ -58,6 +58,14 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
+  docs-terminology:
+    name: Docs Terminology
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check markdown terminology drift
+        run: python3 scripts/check_docs_terminology.py
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -165,7 +173,7 @@ jobs:
 
   quality-gate:
     name: Quality Gate
-    needs: [check, test, clippy, fmt]
+    needs: [check, test, clippy, fmt, docs-terminology]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -185,6 +193,10 @@ jobs:
           fi
           if [ "${{ needs.fmt.result }}" != "success" ]; then
             echo "Format check failed"
+            exit 1
+          fi
+          if [ "${{ needs.docs-terminology.result }}" != "success" ]; then
+            echo "Docs terminology check failed"
             exit 1
           fi
           echo "All quality gates passed"

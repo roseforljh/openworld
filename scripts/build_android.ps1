@@ -36,20 +36,22 @@ Write-Host "Building libopenworld.so for $target ($profile)..." -ForegroundColor
 $buildCmd = "cargo build --target $target --lib --no-default-features --features android $buildType"
 Invoke-Expression $buildCmd
 
-$soFile = "target\$target\$profile\libopenworld.so"
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$soFile = Join-Path $repoRoot "target\$target\$profile\libopenworld.so"
 if (Test-Path $soFile) {
     $size = [math]::Round((Get-Item $soFile).Length / 1MB, 2)
     Write-Host "`n✅ Build successful: $soFile ($size MB)" -ForegroundColor Green
 
-    # 复制到 KunBox jniLibs
-    $jniDest = "..\..\KunBox\app\src\main\jniLibs\arm64-v8a"
-    if (Test-Path (Split-Path $jniDest -Parent -ErrorAction SilentlyContinue)) {
+    # 复制到 OpenWorld Android jniLibs
+    $jniDest = Join-Path $repoRoot "android\app\src\main\jniLibs\arm64-v8a"
+    $jniRoot = Split-Path $jniDest -Parent
+    if (Test-Path $jniRoot) {
         New-Item -ItemType Directory -Path $jniDest -Force | Out-Null
-        Copy-Item $soFile $jniDest -Force
+        Copy-Item $soFile (Join-Path $jniDest "libopenworld.so") -Force
         Write-Host "Copied to $jniDest" -ForegroundColor Green
     }
     else {
-        Write-Host "KunBox jniLibs dir not found, skipping copy" -ForegroundColor Yellow
+        Write-Host "Android jniLibs root not found, skipping copy: $jniRoot" -ForegroundColor Yellow
     }
 }
 else {

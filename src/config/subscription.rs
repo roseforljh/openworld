@@ -1,6 +1,7 @@
 //! 订阅链接解析器
 //!
 //! 支持以下订阅格式：
+//! - **ZenOne**: `zen-version:` 开头的 YAML/JSON（自研格式）
 //! - **URI 列表** (Base64 编码): `vmess://`, `vless://`, `ss://`, `trojan://`, `hy2://`, `hysteria2://`
 //! - **Clash / mihomo YAML** : `proxies:` 列表
 //! - **sing-box JSON**: `outbounds:` 列表（转换为 OutboundConfig）
@@ -11,6 +12,8 @@ use base64::Engine;
 use tracing::debug;
 
 use crate::config::types::{OutboundConfig, OutboundSettings, TlsConfig, TransportConfig};
+use crate::config::zenone::parser::is_zenone;
+use crate::config::zenone::bridge::zenone_to_outbounds;
 
 // ─── 公共接口 ───
 
@@ -18,7 +21,17 @@ use crate::config::types::{OutboundConfig, OutboundSettings, TlsConfig, Transpor
 pub fn parse_subscription(content: &str) -> Result<Vec<OutboundConfig>> {
     let content = content.trim();
 
-    // 1. 尝试 JSON
+    // 1. 尝试 ZenOne 格式（自研格式，优先级最高）
+    if is_zenone(content) {
+        if let Ok(configs) = parse_zenone_subscription(content) {
+            if !configs.is_empty() {
+                debug!(count = configs.len(), "parsed as ZenOne format");
+                return Ok(configs);
+            }
+        }
+    }
+
+    // 2. 尝试 JSON
     if content.starts_with('{') || content.starts_with('[') {
         if let Ok(configs) = parse_sip008_json(content) {
             if !configs.is_empty() {
@@ -1015,6 +1028,25 @@ fn parse_query_params(s: &str) -> std::collections::HashMap<String, String> {
     map
 }
 
+// ─── ZenOne 格式解析 ───
+
+/// 解析 ZenOne 订阅内容为 OutboundConfig 列表
+fn parse_zenone_subscription(content: &str) -> Result<Vec<OutboundConfig>> {
+    use crate::config::zenone::parser::parse_and_validate;
+
+    let (doc, diags) = parse_and_validate(content, None)?;
+
+    if diags.has_errors() {
+        anyhow::bail!("ZenOne 解析错误: {:?}", diags.errors());
+    }
+
+    let outbounds = zenone_to_outbounds(&doc, &mut Diagnostics::new());
+    Ok(outbounds)
+}
+
+/// ZenOne 内部诊断类型别名（避免与本模块冲突）
+type Diagnostics = crate::config::zenone::Diagnostics;
+
 // ─── 兼容层 (proxy_provider.rs 使用) ───
 
 /// 格式枚举（兼容旧 API）
@@ -1376,5 +1408,73 @@ proxies:
         let transport = cfg.settings.transport.as_ref().unwrap();
         assert_eq!(transport.transport_type, "grpc");
         assert_eq!(transport.service_name.as_deref(), Some("grpc_svc"));
+    }
+
+    #[test]
+    fn parse_zenone_yaml_subscription() {
+        let zenone_yaml = r#"
+zen-version: 1
+metadata:
+  name: "Test ZenOne Sub"
+nodes:
+  - name: "HK-VLESS"
+    type: vless
+    address: hk.example.com
+    port: 443
+    uuid: "550e8400-e29b-41d4-a716-446655440000"
+    flow: xtls-rprx-vision
+    tls:
+      fingerprint: chrome
+      reality:
+        public-key: abc123
+        short-id: def456
+  - name: "US-HY2"
+    type: hysteria2
+    address: us.example.com
+    port: 443
+    password: my-pass
+    up-mbps: 100
+    down-mbps: 200
+"#;
+        let configs = parse_subscription(zenone_yaml).unwrap();
+        assert_eq!(configs.len(), 2);
+        assert_eq!(configs[0].tag, "HK-VLESS");
+        assert_eq!(configs[0].protocol, "vless");
+        assert_eq!(configs[1].tag, "US-HY2");
+        assert_eq!(configs[1].protocol, "hysteria2");
+    }
+
+    #[test]
+    fn parse_zenone_json_subscription() {
+        let zenone_json = r#"{
+            "zen-version": 1,
+            "nodes": [
+                {
+                    "name": "SG-VLESS",
+                    "type": "vless",
+                    "address": "sg.example.com",
+                    "port": 443,
+                    "uuid": "test-uuid"
+                }
+            ]
+        }"#;
+        let configs = parse_subscription(zenone_json).unwrap();
+        assert_eq!(configs.len(), 1);
+        assert_eq!(configs[0].tag, "SG-VLESS");
+        assert_eq!(configs[0].protocol, "vless");
+    }
+
+    #[test]
+    fn parse_subscription_zenone_priority() {
+        // ZenOne格式应该被优先检测
+        let content = r#"
+zen-version: 1
+nodes:
+  - name: zenone-node
+    type: direct
+"#;
+        let configs = parse_subscription(content).unwrap();
+        assert_eq!(configs.len(), 1);
+        assert_eq!(configs[0].tag, "zenone-node");
     }
 }

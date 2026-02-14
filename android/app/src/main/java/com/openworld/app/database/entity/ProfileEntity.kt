@@ -7,9 +7,8 @@ import com.openworld.app.model.ProfileUi
 import com.openworld.app.model.UpdateStatus
 
 /**
- * Profile 数据库实体
- *
- * 对应 ProfileUi，使用 Room 存储以提升查询性能
+ * Profile 数据库实�? *
+ * 对应 ProfileUi，使�?Room 存储以提升查询性能
  */
 @Entity(tableName = "profiles")
 data class ProfileEntity(
@@ -26,12 +25,11 @@ data class ProfileEntity(
     val totalTraffic: Long = 0,
     val usedTraffic: Long = 0,
     val sortOrder: Int = 0,
-    // DNS 预解析设置
-    val dnsPreResolve: Boolean = false,
+    // DNS 预解析设�?    val dnsPreResolve: Boolean = false,
     val dnsServer: String? = null
 ) {
     /**
-     * 转换为 UI 模型
+     * 转换�?UI 模型
      */
     fun toUiModel(): ProfileUi = ProfileUi(
         id = id,
@@ -51,7 +49,7 @@ data class ProfileEntity(
 
     companion object {
         /**
-         * 从 UI 模型创建实体
+         * �?UI 模型创建实体
          */
         fun fromUiModel(ui: ProfileUi, sortOrder: Int = 0): ProfileEntity = ProfileEntity(
             id = ui.id,
@@ -71,3 +69,10 @@ data class ProfileEntity(
         )
     }
 }
+
+
+
+
+
+
+

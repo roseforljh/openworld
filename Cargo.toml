@@ -63,6 +63,7 @@ flate2 = "1"
 md-5 = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 socket2 = { version = "0.5", features = ["all"] }
+once_cell = "1"
 blake3 = "1.8.3"
 log = "0.4"
 smoltcp = { version = "0.12", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-udp"] }

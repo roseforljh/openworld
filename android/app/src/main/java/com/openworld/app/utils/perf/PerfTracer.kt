@@ -5,14 +5,12 @@ import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 性能追踪器
- * 用于测量和记录各个操作的耗时
+ * 性能追踪�? * 用于测量和记录各个操作的耗时
  */
 object PerfTracer {
     private const val TAG = "PerfTracer"
 
-    // 活跃的追踪任务
-    private val activeTraces = ConcurrentHashMap<String, TraceInfo>()
+    // 活跃的追踪任�?    private val activeTraces = ConcurrentHashMap<String, TraceInfo>()
 
     // 历史统计数据
     private val stats = ConcurrentHashMap<String, TraceStats>()
@@ -34,8 +32,7 @@ object PerfTracer {
     }
 
     /**
-     * 开始追踪
-     * @param name 追踪名称
+     * 开始追�?     * @param name 追踪名称
      * @param parent 父追踪名称（可选）
      */
     fun begin(name: String, parent: String? = null) {
@@ -73,11 +70,8 @@ object PerfTracer {
     }
 
     /**
-     * 测量代码块执行时间
-     * @param name 追踪名称
-     * @param block 要测量的代码块
-     * @return 代码块的返回值
-     */
+     * 测量代码块执行时�?     * @param name 追踪名称
+     * @param block 要测量的代码�?     * @return 代码块的返回�?     */
     inline fun <T> trace(name: String, block: () -> T): T {
         begin(name)
         return try {
@@ -88,11 +82,8 @@ object PerfTracer {
     }
 
     /**
-     * 测量挂起代码块执行时间
-     * @param name 追踪名称
-     * @param block 要测量的挂起代码块
-     * @return 代码块的返回值
-     */
+     * 测量挂起代码块执行时�?     * @param name 追踪名称
+     * @param block 要测量的挂起代码�?     * @return 代码块的返回�?     */
     suspend inline fun <T> traceSuspend(name: String, block: () -> T): T {
         begin(name)
         return try {
@@ -103,13 +94,11 @@ object PerfTracer {
     }
 
     /**
-     * 获取指定操作的统计信息
-     */
+     * 获取指定操作的统计信�?     */
     fun getStats(name: String): TraceStats? = stats[name]
 
     /**
-     * 获取所有统计信息
-     */
+     * 获取所有统计信�?     */
     fun getAllStats(): Map<String, TraceStats> = stats.toMap()
 
     /**
@@ -132,8 +121,7 @@ object PerfTracer {
     }
 
     /**
-     * 清除所有统计数据
-     */
+     * 清除所有统计数�?     */
     fun clearStats() {
         stats.clear()
         activeTraces.clear()
@@ -156,3 +144,10 @@ object PerfTracer {
         const val DNS_PREWARM = "dns_prewarm"
     }
 }
+
+
+
+
+
+
+

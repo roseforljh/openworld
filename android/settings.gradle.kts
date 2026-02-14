@@ -14,8 +14,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // JitPack for sing-box libbox
-        maven { url = uri("https://jitpack.io") }
         // 国内镜像作为备用
         maven { url = uri("https://maven.aliyun.com/repository/public") }
         maven { url = uri("https://maven.aliyun.com/repository/google") }

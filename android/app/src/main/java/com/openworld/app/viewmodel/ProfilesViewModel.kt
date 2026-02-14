@@ -5,7 +5,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.openworld.app.ipc.SingBoxRemote
+import com.openworld.app.ipc.OpenWorldRemote
 import com.openworld.app.model.ProfileUi
 import com.openworld.app.model.ProfileType
 import com.openworld.app.model.SubscriptionUpdateResult
@@ -44,12 +44,10 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
             initialValue = null
         )
 
-    // 导入状态
-    private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
+    // 导入状�?    private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
     val importState: StateFlow<ImportState> = _importState.asStateFlow()
 
-    // 单个配置更新状态
-    private val _updateStatus = MutableStateFlow<String?>(null)
+    // 单个配置更新状�?    private val _updateStatus = MutableStateFlow<String?>(null)
     val updateStatus: StateFlow<String?> = _updateStatus.asStateFlow()
 
     private val _toastEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
@@ -63,15 +61,14 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         configRepository.setActiveProfile(profileId)
 
         // Only show toast when VPN is running
-        val isVpnRunning = SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value
+        val isVpnRunning = OpenWorldRemote.isRunning.value || OpenWorldRemote.isStarting.value
         if (isVpnRunning) {
             val name = profiles.value.find { it.id == profileId }?.name
             if (!name.isNullOrBlank()) {
                 emitToast(getApplication<Application>().getString(R.string.profiles_updated) + ": $name")
             }
 
-            // 2025-fix: 切换配置后自动触发节点切换，确保VPN加载新配置
-            viewModelScope.launch {
+            // 2025-fix: 切换配置后自动触发节点切换，确保VPN加载新配�?            viewModelScope.launch {
                 delay(100)
                 val currentNodeId = configRepository.activeNodeId.value
                 if (currentNodeId != null) {
@@ -179,16 +176,14 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
                 }
             )
 
-            // 防止取消后仍然更新状态
-            coroutineContext.ensureActive()
+            // 防止取消后仍然更新状�?            coroutineContext.ensureActive()
 
             result.fold(
                 onSuccess = { profile ->
                     _importState.value = ImportState.Success(profile)
                 },
                 onFailure = { error ->
-                    // 检查是否是由于取消导致的
-                    if (error is kotlinx.coroutines.CancellationException) {
+                    // 检查是否是由于取消导致�?                    if (error is kotlinx.coroutines.CancellationException) {
                         _importState.value = ImportState.Idle
                     } else {
                         _importState.value = ImportState.Error(error.message ?: getApplication<Application>().getString(R.string.import_failed))
@@ -223,16 +218,14 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
                 }
             )
 
-            // 防止取消后仍然更新状态
-            coroutineContext.ensureActive()
+            // 防止取消后仍然更新状�?            coroutineContext.ensureActive()
 
             result.fold(
                 onSuccess = { profile ->
                     _importState.value = ImportState.Success(profile)
                 },
                 onFailure = { error ->
-                    // 检查是否是由于取消导致的
-                    if (error is kotlinx.coroutines.CancellationException) {
+                    // 检查是否是由于取消导致�?                    if (error is kotlinx.coroutines.CancellationException) {
                         _importState.value = ImportState.Idle
                     } else {
                         _importState.value = ImportState.Error(error.message ?: getApplication<Application>().getString(R.string.import_failed))
@@ -243,8 +236,7 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * 取消当前的导入操作
-     */
+     * 取消当前的导入操�?     */
     fun cancelImport() {
         importJob?.cancel()
         importJob = null
@@ -263,3 +255,10 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         data class Error(val message: String) : ImportState()
     }
 }
+
+
+
+
+
+
+

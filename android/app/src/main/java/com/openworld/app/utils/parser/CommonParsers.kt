@@ -6,12 +6,10 @@ import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
 import com.openworld.app.model.Outbound
-import com.openworld.app.model.SingBoxConfig
+import com.openworld.app.model.OpenWorldConfig
 
 /**
- * Sing-box JSON 格式解析器
- * 只提取 outbounds 节点，忽略规则配置
- * 防止因 sing-box 规则版本更新导致解析失败
+ * Sing-box JSON 格式解析�? * 只提�?outbounds 节点，忽略规则配�? * 防止�?sing-box 规则版本更新导致解析失败
  */
 class SingBoxParser(private val gson: Gson) : SubscriptionParser {
     companion object {
@@ -25,26 +23,24 @@ class SingBoxParser(private val gson: Gson) : SubscriptionParser {
             (trimmed.startsWith("[") && trimmed.endsWith("]"))
     }
 
-    override fun parse(content: String): SingBoxConfig? {
+    override fun parse(content: String): OpenWorldConfig? {
         val trimmed = content.trim()
 
-        // 如果是数组格式，直接解析为 outbounds 列表
+        // 如果是数组格式，直接解析�?outbounds 列表
         if (trimmed.startsWith("[")) {
             return parseAsOutboundArray(trimmed)
         }
 
-        // 对象格式：只提取 outbounds 字段，忽略其他可能不兼容的字段
-        return parseAsConfigObject(trimmed)
+        // 对象格式：只提取 outbounds 字段，忽略其他可能不兼容的字�?        return parseAsConfigObject(trimmed)
     }
 
     /**
-     * 解析 JSON 数组格式（直接是 outbounds 列表）
-     */
-    private fun parseAsOutboundArray(content: String): SingBoxConfig? {
+     * 解析 JSON 数组格式（直接是 outbounds 列表�?     */
+    private fun parseAsOutboundArray(content: String): OpenWorldConfig? {
         return try {
             val outbounds: List<Outbound> = gson.fromJson(content, OUTBOUND_LIST_TYPE)
             if (outbounds.isNotEmpty()) {
-                SingBoxConfig(outbounds = outbounds)
+                OpenWorldConfig(outbounds = outbounds)
             } else null
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse as outbound array: ${e.message}")
@@ -55,17 +51,17 @@ class SingBoxParser(private val gson: Gson) : SubscriptionParser {
     /**
      * 解析 JSON 对象格式，只提取 outbounds/proxies 字段
      */
-    private fun parseAsConfigObject(content: String): SingBoxConfig? {
+    private fun parseAsConfigObject(content: String): OpenWorldConfig? {
         return try {
             val jsonObject = JsonParser.parseString(content).asJsonObject
 
-            // 优先尝试 outbounds 字段，其次 proxies
+            // 优先尝试 outbounds 字段，其�?proxies
             val outboundsElement = jsonObject.get("outbounds") ?: jsonObject.get("proxies")
 
             if (outboundsElement != null && outboundsElement.isJsonArray) {
                 val outbounds: List<Outbound> = gson.fromJson(outboundsElement, OUTBOUND_LIST_TYPE)
                 if (outbounds.isNotEmpty()) {
-                    return SingBoxConfig(outbounds = outbounds)
+                    return OpenWorldConfig(outbounds = outbounds)
                 }
             }
             null
@@ -77,8 +73,7 @@ class SingBoxParser(private val gson: Gson) : SubscriptionParser {
 }
 
 /**
- * Base64 订阅格式解析器（通用链接）
- */
+ * Base64 订阅格式解析器（通用链接�? */
 class Base64Parser(private val nodeParser: (String) -> Outbound?) : SubscriptionParser {
     private val LINK_PREFIXES = listOf(
         "vmess://",
@@ -104,7 +99,7 @@ class Base64Parser(private val nodeParser: (String) -> Outbound?) : Subscription
         return !trimmed.startsWith("{") && !trimmed.startsWith("proxies:") && !trimmed.startsWith("proxy-groups:")
     }
 
-    override fun parse(content: String): SingBoxConfig? {
+    override fun parse(content: String): OpenWorldConfig? {
         android.util.Log.d("Base64Parser", "Parsing content, length: ${content.length}, starts with: ${content.take(20)}")
         val trimmed = content.trim()
 
@@ -133,25 +128,24 @@ class Base64Parser(private val nodeParser: (String) -> Outbound?) : Subscription
         android.util.Log.d("Base64Parser", "Total outbounds parsed: ${outbounds.size}")
         if (outbounds.isEmpty()) return null
 
-        return SingBoxConfig(outbounds = outbounds)
+        return OpenWorldConfig(outbounds = outbounds)
     }
 
     private fun extractLinksFromLine(line: String): List<String> {
         val normalized = line.trim()
             .trimStart('\uFEFF', '\u200B', '\u200C', '\u200D')
             .removePrefix("- ")
-            .removePrefix("• ")
+            .removePrefix("�?")
             .trim()
             .trim('`', '"', '\'')
 
         if (normalized.isBlank()) return emptyList()
 
         // 按前缀长度降序排列，确保长前缀（如 vmess://）先于短前缀（如 ss://）被匹配
-        // 这样可以避免 vmess:// 被误识别为 ss://
+        // 这样可以避免 vmess:// 被误识别�?ss://
         val sortedPrefixes = LINK_PREFIXES.sortedByDescending { it.length }
 
-        // 找到所有链接的起始位置，使用贪婪匹配（最长前缀优先）
-        val linkPositions = mutableListOf<Pair<Int, String>>() // (位置, 前缀)
+        // 找到所有链接的起始位置，使用贪婪匹配（最长前缀优先�?        val linkPositions = mutableListOf<Pair<Int, String>>() // (位置, 前缀)
         val usedPositions = mutableSetOf<Int>()
 
         for (prefix in sortedPrefixes) {
@@ -177,8 +171,7 @@ class Base64Parser(private val nodeParser: (String) -> Outbound?) : Subscription
 
         if (linkPositions.isEmpty()) return emptyList()
 
-        // 按位置排序
-        val sortedPositions = linkPositions.sortedBy { it.first }
+        // 按位置排�?        val sortedPositions = linkPositions.sortedBy { it.first }
 
         val results = mutableListOf<String>()
         for (i in sortedPositions.indices) {
@@ -218,3 +211,10 @@ class Base64Parser(private val nodeParser: (String) -> Outbound?) : Subscription
         return null
     }
 }
+
+
+
+
+
+
+

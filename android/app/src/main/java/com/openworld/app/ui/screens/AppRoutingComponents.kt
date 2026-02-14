@@ -82,7 +82,7 @@ fun AppRuleItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = rule.appName, style = MaterialTheme.typography.titleMedium, color = if (rule.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(2.dp))
-                Text(text = "${stringResource(mode.displayNameRes)} â†’ $outboundText", style = MaterialTheme.typography.bodySmall, color = color, maxLines = 1)
+                Text(text = "${stringResource(mode.displayNameRes)} â†?$outboundText", style = MaterialTheme.typography.bodySmall, color = color, maxLines = 1)
             }
             IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
                 Icon(Icons.Rounded.Delete, contentDescription = stringResource(R.string.common_delete), tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
@@ -402,7 +402,7 @@ fun AppGroupCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "${stringResource(mode.displayNameRes)} â†’ $outboundText â€¢ " + stringResource(R.string.import_count_items, group.apps.size),
+                        text = "${stringResource(mode.displayNameRes)} â†?$outboundText â€?" + stringResource(R.string.import_count_items, group.apps.size),
                         style = MaterialTheme.typography.bodySmall,
                         color = color
                     )
@@ -900,3 +900,10 @@ fun AppGroupEditorDialog(
         }
     )
 }
+
+
+
+
+
+
+

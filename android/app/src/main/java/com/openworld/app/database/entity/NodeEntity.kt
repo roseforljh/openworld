@@ -7,10 +7,8 @@ import androidx.room.PrimaryKey
 import com.openworld.app.model.NodeUi
 
 /**
- * Node 数据库实体
- *
- * 对应 NodeUi，使用 Room 存储以支持高效的节点查询和过滤
- */
+ * Node 数据库实�? *
+ * 对应 NodeUi，使�?Room 存储以支持高效的节点查询和过�? */
 @Entity(
     tableName = "nodes",
     foreignKeys = [
@@ -43,7 +41,7 @@ data class NodeEntity(
     val sortOrder: Int = 0
 ) {
     /**
-     * 转换为 UI 模型
+     * 转换�?UI 模型
      */
     fun toUiModel(): NodeUi = NodeUi(
         id = id,
@@ -60,7 +58,7 @@ data class NodeEntity(
 
     companion object {
         /**
-         * 从 UI 模型创建实体
+         * �?UI 模型创建实体
          */
         fun fromUiModel(ui: NodeUi, sortOrder: Int = 0): NodeEntity = NodeEntity(
             id = ui.id,
@@ -94,3 +92,10 @@ data class NodeEntity(
         }
     }
 }
+
+
+
+
+
+
+

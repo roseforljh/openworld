@@ -4,7 +4,7 @@
 
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9.0-purple.svg?style=flat&logo=kotlin)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material3-4285F4.svg?style=flat&logo=android)](https://developer.android.com/jetpack/compose)
-[![Sing-box](https://img.shields.io/badge/Core-Sing--box-success.svg?style=flat)](https://github.com/SagerNet/sing-box)
+[![OpenWorldCore](https://img.shields.io/badge/Core-OpenWorldCore-success.svg?style=flat)](#-核心特性)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat)](LICENSE)
 [![Telegram](https://img.shields.io/badge/Telegram-Chat-blue?style=flat&logo=telegram)](https://t.me/+EKxpszVkOBc1MGJl)
 [![Downloads](https://img.shields.io/github/downloads/roseforljh/OpenWorld/total.svg?style=flat&logo=github)](https://github.com/roseforljh/OpenWorld/releases)
@@ -73,7 +73,7 @@
 - **自适应图标**: 支持 Android 13+ 主题自适应图标
 
 ### 🚀 极致性能核心 (High-Performance Core)
-基于 Golang 编写的 **Sing-box (libbox)** 下一代通用代理核心。
+基于 **OpenWorldCore**（Rust 原生内核）。
 - **内存占用**: 相比传统核心降低 30%+
 - **启动速度**: 毫秒级冷启动
 - **连接稳定性**: 优秀的连接复用与保活机制
@@ -118,7 +118,8 @@
 | **AnyTLS** | `AnyTLS` | `anytls://` | 通用 TLS 包装, 流量伪装 |
 
 ### 订阅生态支持
-- **Sing-box JSON**: 原生支持，特性最全。
+- **OpenWorld JSON 配置**: 原生支持，特性最全。
+- **Sing-box JSON（兼容）**: 提供完整兼容输入支持。
 - **Clash YAML**: 完美兼容 Clash / Clash Meta (Mihomo) 配置，自动转换策略组。
 - **Standard Base64**: 兼容 V2RayN / Shadowrocket 订阅格式。
 - **导入方式**: 支持 剪贴板导入、URL 订阅导入、二维码扫描、本地文件导入。
@@ -131,11 +132,11 @@
 
 ```
 OpenWorld-Android/
-├── app/src/main/java/com/openworld/singbox/
-│   ├── core/              # libbox JNI 封装 (BoxWrapperManager, SingBoxCore)
+├── app/src/main/java/com/openworld/app/
+│   ├── core/              # OpenWorldCore JNI 封装 (BoxWrapperManager, SingBoxCore)
 │   ├── database/          # Room 数据库 (dao/, entity/)
-│   ├── ipc/               # VPN 跨进程通信 (SingBoxIpcHub, VpnStateStore)
-│   ├── model/             # 数据模型 (SingBoxConfig, RoutingModels, Settings)
+│   ├── ipc/               # VPN 跨进程通信 (OpenWorldIpcHub, VpnStateStore)
+│   ├── model/             # 数据模型 (OpenWorldConfig, RoutingModels, Settings)
 │   ├── repository/        # 数据仓库层
 │   │   ├── config/        # 配置构建器 (InboundBuilder, OutboundFixer)
 │   │   ├── store/         # 设置存储
@@ -151,8 +152,8 @@ OpenWorld-Android/
 │   ├── utils/parser/      # 协议解析器 (NodeLinkParser, ClashYamlParser)
 │   └── viewmodel/         # ViewModel 层
 │
-├── Kkunbox/               # Sing-box 核心源码与构建脚本
-│   └── buildScript/       # libbox 编译脚本
+├── src/                   # OpenWorld Rust 内核源码
+└── scripts/               # Android 交叉编译脚本
 │
 └── config/detekt/         # 代码质量检查配置
 ```
@@ -161,12 +162,12 @@ OpenWorld-Android/
 
 #### 多进程架构
 - VPN 服务运行在独立进程 (`:vpn_service`)
-- UI 通过 `SingBoxIpcHub` 进行跨进程通信
+- UI 通过 `OpenWorldIpcHub` 进行跨进程通信
 - 使用 `VpnStateStore` (MMKV) 实现跨进程状态同步
 
 #### VPN 数据流
 ```
-SingBoxService -> CoreManager -> BoxWrapperManager -> libbox.aar
+OpenWorldService -> CoreManager -> BoxWrapperManager -> libopenworld.so
 ```
 
 ---
@@ -178,7 +179,7 @@ SingBoxService -> CoreManager -> BoxWrapperManager -> libbox.aar
 | **Language** | Kotlin 1.9 | 100% 纯 Kotlin 代码，利用 Coroutines 和 Flow 处理异步流 |
 | **UI Framework** | Jetpack Compose | 声明式 UI，Material 3 设计规范 |
 | **Architecture** | MVVM | 配合 ViewModel 和 Repository 实现关注点分离 |
-| **Core Engine** | Sing-box (Go) | 通过 JNI 与 Go 核心库通信 |
+| **Core Engine** | OpenWorldCore (Rust) | 通过 JNI 与 Rust 核心库通信 |
 | **Database** | Room | 本地数据持久化 |
 | **KV Storage** | MMKV | 高性能跨进程键值存储 |
 | **Network** | OkHttp 4 | 用于订阅更新、延迟测试等网络请求 |
@@ -194,7 +195,7 @@ SingBoxService -> CoreManager -> BoxWrapperManager -> libbox.aar
 
 - **JDK**: 17 或更高版本
 - **Android Studio**: Hedgehog (2023.1.1) 或更高版本
-- **Go**: 1.24+ (仅编译 libbox 核心时需要)
+- **Rust**: stable 工具链（构建 OpenWorldCore 时需要）
 - **NDK**: r29 或更高版本
 
 ### 克隆项目
@@ -231,41 +232,27 @@ KEY_PASSWORD=your_key_password
 .\gradlew assembleRelease
 ```
 
-### 编译 libbox 核心 (可选)
+### 编译 OpenWorldCore (可选)
 
-如需修改底层核心代码，需要编译 libbox：
+如需修改底层核心代码，构建 OpenWorldCore：
 
 ```powershell
-# 从本地源码编译 (需要 Go 1.24+)
-.\Kkunbox\buildScript\tasks\build_libbox.ps1 -UseLocalSource
-
-# 从远程仓库编译
-.\Kkunbox\buildScript\tasks\build_libbox.ps1
+# 构建 Rust 内核并复制 libopenworld.so 到 Android jniLibs
+.\scripts\build_android.ps1 -Release
 ```
 
-编译完成后，`libbox.aar` 将自动放置到 `app/libs/` 目录。
+构建完成后，`libopenworld.so` 会复制到 `android/app/src/main/jniLibs/arm64-v8a/`。
 
 ### 同步官方内核
 
-OpenWorld 使用固定分支 `kunbox-extensions` 管理内核扩展。该分支基于 sing-box 官方 tag，顶部叠加了 OpenWorld 扩展 commits。
+OpenWorld 可直接在当前仓库同步和迭代内核改动。
 
 同步到新版本的流程：
 
 ```powershell
-cd Kkunbox\singbox-core
-
-# 1. 拉取上游最新 tags
-git fetch upstream --tags
-
-# 2. Rebase 到新版本 tag（例如 v1.12.22）
-git rebase v1.12.22
-
-# 3. 回到项目根目录，重新编译内核
-cd ..\..
-.\Kkunbox\buildScript\tasks\build_libbox.ps1 -UseLocalSource -AutoReplace
+# 重新构建 Android 原生内核
+.\scripts\build_android.ps1 -Release
 ```
-
-> **说明**：rebase 时 OpenWorld 的扩展 commits 会自动保留在分支顶部。如遇冲突需手动解决后 `git rebase --continue`。
 
 ### 运行测试
 
@@ -296,12 +283,12 @@ cd ..\..
 OpenWorld 支持通过 URL Scheme 快速导入配置：
 
 ```
-kunbox://import?url=<subscription_url>
+kunbox://install-config?url=<subscription_url>
 ```
 
 示例：
 ```
-kunbox://import?url=https%3A%2F%2Fexample.com%2Fsubscription
+kunbox://install-config?url=https%3A%2F%2Fexample.com%2Fsubscription
 ```
 
 ---
@@ -365,7 +352,7 @@ A: 请检查：
 A: 支持多种方式：
 1. 点击右上角 "+" 选择 "从剪贴板导入"
 2. 长按订阅链接选择 "用 OpenWorld 打开"
-3. 使用 URL Scheme: `kunbox://import?url=<url>`
+3. 使用 URL Scheme: `kunbox://install-config?url=<url>`
 
 ### Q: 耗电量大怎么办？
 A: 建议：
@@ -394,7 +381,7 @@ A: 最低支持 Android 7.0 (API 24)，推荐 Android 10+ 以获得最佳体验�
 
 本项目站在巨人的肩膀上，特别感谢以下开源项目：
 
-* **[SagerNet/sing-box](https://github.com/SagerNet/sing-box)**: 下一代通用代理平台核心
+* **OpenWorldCore（本仓库）**: 面向 Android 集成的 Rust 原生代理内核
 * **[MatsuriDayo/NekoBoxForAndroid](https://github.com/MatsuriDayo/NekoBoxForAndroid)**: 优秀的 Android 代理客户端参考
 * **[v2ray/v2ray-core](https://github.com/v2ray/v2ray-core)**: V2Ray 团队为代理生态做出的开创性贡献
 * **[Jetpack Compose](https://developer.android.com/jetpack/compose)**: 现代化的 Android UI 工具包
@@ -422,7 +409,7 @@ limitations under the License.
 
 <div align="center">
 
-**[⬆ 回到顶部](#kunbox-for-android)**
+**[⬆ 回到顶部](#openworld-for-android)**
 
 <sub>本项目仅供学习和研究网络技术使用，请遵守当地法律法规。</sub>
 

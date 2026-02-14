@@ -13,19 +13,18 @@ import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * DNS 预热器
- * 在 VPN 启动前并行预解析节点域名，减少 libbox 启动时的 DNS 等待时间
+ * DNS 预热�? * �?VPN 启动前并行预解析节点域名，减�?libbox 启动时的 DNS 等待时间
  *
  * 工作原理:
- * 1. 从配置 JSON 中提取所有节点服务器域名
+ * 1. 从配�?JSON 中提取所有节点服务器域名
  * 2. 使用系统 DNS 并行解析这些域名
  * 3. 解析结果会被系统 DNS 缓存
  * 4. sing-box 启动时可以直接使用缓存的 DNS 结果
  *
  * 预期效果:
  * - 单个域名解析: 50-200ms
- * - 10 个域名并行解析: 100-300ms (而非串行的 500-2000ms)
- * - libbox 启动时 DNS 查询: 接近 0ms (命中缓存)
+ * - 10 个域名并行解�? 100-300ms (而非串行�?500-2000ms)
+ * - libbox 启动�?DNS 查询: 接近 0ms (命中缓存)
  */
 object DnsPrewarmer {
     private const val TAG = "DnsPrewarmer"
@@ -33,7 +32,7 @@ object DnsPrewarmer {
     // DNS 缓存 - 避免重复解析
     private val dnsCache = ConcurrentHashMap<String, List<String>>()
 
-    // 缓存有效期 (5 分钟)
+    // 缓存有效�?(5 分钟)
     private const val CACHE_TTL_MS = 5 * 60 * 1000L
     private val cacheTimestamps = ConcurrentHashMap<String, Long>()
 
@@ -43,8 +42,7 @@ object DnsPrewarmer {
     // 单个域名解析超时
     private const val RESOLVE_TIMEOUT_MS = 2000L
 
-    // 总预热超时
-    private const val TOTAL_TIMEOUT_MS = 3000L
+    // 总预热超�?    private const val TOTAL_TIMEOUT_MS = 3000L
 
     /**
      * 预热结果
@@ -58,8 +56,7 @@ object DnsPrewarmer {
     )
 
     /**
-     * 从配置中提取所有节点域名并并行预解析
-     * @param configContent 配置 JSON 内容
+     * 从配置中提取所有节点域名并并行预解�?     * @param configContent 配置 JSON 内容
      * @return 预热结果
      */
     suspend fun prewarm(configContent: String): PrewarmResult = withContext(Dispatchers.IO) {
@@ -119,7 +116,7 @@ object DnsPrewarmer {
     }
 
     /**
-     * 快速预热 - 只解析最重要的域名 (当前活跃节点)
+     * 快速预�?- 只解析最重要的域�?(当前活跃节点)
      */
     suspend fun prewarmSingle(domain: String): Boolean = withContext(Dispatchers.IO) {
         if (domain.isBlank() || isIpAddress(domain)) {
@@ -140,7 +137,7 @@ object DnsPrewarmer {
     }
 
     /**
-     * 获取缓存的 DNS 结果
+     * 获取缓存�?DNS 结果
      */
     fun getCachedAddresses(domain: String): List<String>? {
         val timestamp = cacheTimestamps[domain] ?: return null
@@ -159,8 +156,7 @@ object DnsPrewarmer {
     }
 
     private suspend fun resolveWithCache(domain: String): ResolveResult {
-        // 检查缓存
-        val cached = getCachedAddresses(domain)
+        // 检查缓�?        val cached = getCachedAddresses(domain)
         if (cached != null) {
             Log.v(TAG, "DNS cache hit: $domain -> ${cached.firstOrNull()}")
             return ResolveResult.CACHED
@@ -187,7 +183,7 @@ object DnsPrewarmer {
     }
 
     /**
-     * 从配置 JSON 中提取所有节点服务器域名
+     * 从配�?JSON 中提取所有节点服务器域名
      * 使用正则快速解析，避免完整 JSON 解析的开销
      */
     private fun extractNodeDomains(configJson: String): Set<String> {
@@ -202,7 +198,7 @@ object DnsPrewarmer {
             }
         }
 
-        // 匹配 "address": "xxx" 模式 (DNS 服务器)
+        // 匹配 "address": "xxx" 模式 (DNS 服务�?
         val addressRegex = """"address"\s*:\s*"([^"]+)"""".toRegex()
         addressRegex.findAll(configJson).forEach { match ->
             val address = match.groupValues[1]
@@ -219,8 +215,7 @@ object DnsPrewarmer {
     }
 
     /**
-     * 验证是否为有效域名（而非 sing-box 内部 tag 如 "local", "remote", "fakeip-dns"）
-     */
+     * 验证是否为有效域名（而非 sing-box 内部 tag �?"local", "remote", "fakeip-dns"�?     */
     private fun isValidDomain(host: String): Boolean {
         if (!host.contains('.')) return false
         if (host.startsWith('.') || host.endsWith('.')) return false
@@ -253,3 +248,10 @@ object DnsPrewarmer {
         return false
     }
 }
+
+
+
+
+
+
+

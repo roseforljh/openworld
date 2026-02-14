@@ -38,9 +38,7 @@ fun RuleSetHubScreen(
     settingsViewModel: SettingsViewModel = viewModel(),
     ruleSetViewModel: RuleSetViewModel = viewModel()
 ) {
-    // 强制使用 Activity 的 ViewModel 实例，避免重新创建
-    // 注意：在实际项目中最好通过 Hilt 注入或在 MainActivity 中传递，这里简化处理
-    val activityRuleSetViewModel: RuleSetViewModel = viewModel(
+    // 强制使用 Activity �?ViewModel 实例，避免重新创�?    // 注意：在实际项目中最好通过 Hilt 注入或在 MainActivity 中传递，这里简化处�?    val activityRuleSetViewModel: RuleSetViewModel = viewModel(
         viewModelStoreOwner = (navController.context as? androidx.activity.ComponentActivity)
             ?: throw IllegalStateException("Context is not a ComponentActivity")
     )
@@ -50,10 +48,9 @@ fun RuleSetHubScreen(
     val isLoading by activityRuleSetViewModel.isLoading.collectAsState()
     val error by activityRuleSetViewModel.error.collectAsState()
     val downloadingRuleSets by settingsViewModel.downloadingRuleSets.collectAsState()
-    // 收集 settings 以便在规则集列表变化时自动更新 UI（如删除规则集后）
-    val ruleSetSettings by activityRuleSetViewModel.settings.collectAsState()
+    // 收集 settings 以便在规则集列表变化时自动更�?UI（如删除规则集后�?    val ruleSetSettings by activityRuleSetViewModel.settings.collectAsState()
 
-    // 创建一个 Set 用于快速查找已添加的规则集
+    // 创建一�?Set 用于快速查找已添加的规则集
     val addedRuleSetTags = remember(ruleSetSettings.ruleSets) {
         ruleSetSettings.ruleSets.map { it.tag }.toSet()
     }
@@ -307,3 +304,10 @@ fun HubRuleSetItem(
         }
     }
 }
+
+
+
+
+
+
+

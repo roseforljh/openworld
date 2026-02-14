@@ -9,10 +9,7 @@ import com.google.gson.annotations.SerializedName
  */
 @Keep
 data class ExportData(
-    @SerializedName("version") val version: Int = 1, // 数据格式版本号
-    @SerializedName("exportTime") val exportTime: Long, // 导出时间戳
-    @SerializedName("appVersion") val appVersion: String, // 应用版本号
-    @SerializedName("settings") val settings: AppSettings, // 应用设置
+    @SerializedName("version") val version: Int = 1, // 数据格式版本�?    @SerializedName("exportTime") val exportTime: Long, // 导出时间�?    @SerializedName("appVersion") val appVersion: String, // 应用版本�?    @SerializedName("settings") val settings: AppSettings, // 应用设置
     @SerializedName("profiles") val profiles: List<ProfileExportData>, // 配置列表
     @SerializedName("activeProfileId") val activeProfileId: String?, // 活跃配置 ID
     @SerializedName("activeNodeId") val activeNodeId: String? // 活跃节点 ID
@@ -20,13 +17,10 @@ data class ExportData(
 
 /**
  * 配置导出数据
- * 包含配置元数据和完整的节点配置
- */
+ * 包含配置元数据和完整的节点配�? */
 @Keep
 data class ProfileExportData(
-    @SerializedName("profile") val profile: ProfileUi, // 配置元数据
-    @SerializedName("config") val config: SingBoxConfig // 完整的节点配置
-)
+    @SerializedName("profile") val profile: ProfileUi, // 配置元数�?    @SerializedName("config") val config: OpenWorldConfig // 完整的节点配�?)
 
 /**
  * 导入选项
@@ -70,8 +64,7 @@ sealed class ImportResult {
 
 /**
  * 导出数据摘要
- * 用于在导入前展示给用户确认
- */
+ * 用于在导入前展示给用户确�? */
 @Keep
 data class ExportDataSummary(
     val version: Int,
@@ -84,3 +77,10 @@ data class ExportDataSummary(
     val hasRuleSets: Boolean,
     val hasAppRules: Boolean
 )
+
+
+
+
+
+
+

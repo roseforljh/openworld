@@ -44,8 +44,7 @@ data class TrafficSummary(
 
 /**
  * 流量统计仓库
- * 负责持久化存储节点流量数据，支持按时间维度查询
- */
+ * 负责持久化存储节点流量数据，支持按时间维度查�? */
 class TrafficRepository private constructor(private val context: Context) {
 
     companion object {
@@ -409,8 +408,7 @@ class TrafficRepository private constructor(private val context: Context) {
 
     /**
      * 从文件重新加载数据（用于跨进程同步）
-     * UI 进程调用此方法以获取 VPN 进程保存的最新数据
-     */
+     * UI 进程调用此方法以获取 VPN 进程保存的最新数�?     */
     fun reloadFromDisk() {
         trafficMap.clear()
         dailyRecords.clear()
@@ -429,3 +427,10 @@ class TrafficRepository private constructor(private val context: Context) {
         Log.i(TAG, "All traffic stats cleared, timestamp=$clearTs")
     }
 }
+
+
+
+
+
+
+

@@ -244,7 +244,7 @@ fun DomainRulesScreen(
                         OutboundTag.PROXY -> RuleSetOutboundMode.PROXY
                     }
                     val outboundText = resolveOutboundText(mode, rule.outboundValue, allNodes, profiles)
-                    DomainRuleItem(rule = rule, outboundText = "${stringResource(mode.displayNameRes)} → $outboundText", onClick = { editingRule = rule })
+                    DomainRuleItem(rule = rule, outboundText = "${stringResource(mode.displayNameRes)} �?$outboundText", onClick = { editingRule = rule })
                 }
             }
         }
@@ -265,7 +265,7 @@ private fun DomainRuleEditorDialog(
 
     fun generateRuleNameFromValue(raw: String): String {
         val first = raw
-            .split("\n", "\r", ",", "，")
+            .split("\n", "\r", ",", "�?)
             .map { it.trim() }
             .firstOrNull { it.isNotEmpty() }
         return (first ?: raw.trim()).trim().take(120)
@@ -300,7 +300,7 @@ private fun DomainRuleEditorDialog(
         val trimmed = input.trim()
         return when {
             trimmed.startsWith("=") -> "精确匹配"
-            trimmed.contains("*") -> "关键字匹配"
+            trimmed.contains("*") -> "关键字匹�?
             trimmed.isNotEmpty() -> "后缀匹配 (含子域名)"
             else -> ""
         }
@@ -430,7 +430,7 @@ private fun DomainRuleEditorDialog(
                 val smartHint = getSmartTypeHint(value)
                 if (smartHint.isNotEmpty()) {
                     Text(
-                        text = "识别为: $smartHint",
+                        text = "识别�? $smartHint",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -539,3 +539,10 @@ private fun DomainRuleEditorDialog(
         }
     )
 }
+
+
+
+
+
+
+

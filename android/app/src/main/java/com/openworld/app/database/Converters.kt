@@ -5,10 +5,8 @@ import com.openworld.app.model.ProfileType
 import com.openworld.app.model.UpdateStatus
 
 /**
- * Room 类型转换器
- *
- * 用于将枚举类型转换为数据库可存储的格式
- */
+ * Room 类型转换�? *
+ * 用于将枚举类型转换为数据库可存储的格�? */
 class Converters {
 
     @TypeConverter
@@ -25,3 +23,10 @@ class Converters {
     fun toUpdateStatus(value: String): UpdateStatus =
         runCatching { UpdateStatus.valueOf(value) }.getOrDefault(UpdateStatus.Idle)
 }
+
+
+
+
+
+
+
