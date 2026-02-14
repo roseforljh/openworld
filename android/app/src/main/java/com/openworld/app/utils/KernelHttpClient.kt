@@ -5,7 +5,7 @@ import android.util.Log
 import com.openworld.app.core.BoxWrapperManager
 import com.openworld.app.ipc.VpnStateStore
 import com.openworld.app.repository.SettingsRepository
-import io.nekohasekai.libbox.Libbox
+import com.openworld.app.core.bridge.Libbox
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -245,7 +245,7 @@ object KernelHttpClient {
         url: String,
         headers: Map<String, String> = emptyMap()
     ): HttpResult {
-        var client: io.nekohasekai.libbox.HTTPClient? = null
+        var client: com.openworld.app.core.bridge.HTTPClient? = null
         try {
             // 创建 HTTP 客户端
             client = Libbox.newHTTPClient()

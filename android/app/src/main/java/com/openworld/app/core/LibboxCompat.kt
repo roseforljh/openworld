@@ -1,7 +1,7 @@
 package com.openworld.app.core
 
 import android.util.Log
-import io.nekohasekai.libbox.Libbox
+import com.openworld.app.core.bridge.Libbox
 import java.lang.reflect.Method
 
 /**

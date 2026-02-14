@@ -1,7 +1,7 @@
 package com.openworld.app.core
 
-import io.nekohasekai.libbox.ExchangeContext
-import io.nekohasekai.libbox.LocalDNSTransport
+import com.openworld.app.core.bridge.ExchangeContext
+import com.openworld.app.core.bridge.LocalDNSTransport
 import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress

@@ -197,12 +197,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             repository.setShowNotificationSpeed(value)
 
             // 跨进程通知 Service 立即更新设置 (因为 Service 运行在独立进程，无法实时监听 DataStore)
-            if (com.openworld.app.ipc.SingBoxRemote.isRunning.value) {
+            if (com.openworld.app.ipc.OpenWorldRemote.isRunning.value) {
                 try {
-                    val intent = android.content.Intent(getApplication(), com.openworld.app.service.SingBoxService::class.java).apply {
-                        action = com.openworld.app.service.SingBoxService.ACTION_UPDATE_SETTING
-                        putExtra(com.openworld.app.service.SingBoxService.EXTRA_SETTING_KEY, "show_notification_speed")
-                        putExtra(com.openworld.app.service.SingBoxService.EXTRA_SETTING_VALUE_BOOL, value)
+                    val intent = android.content.Intent(getApplication(), com.openworld.app.service.OpenWorldService::class.java).apply {
+                        action = com.openworld.app.service.OpenWorldService.ACTION_UPDATE_SETTING
+                        putExtra(com.openworld.app.service.OpenWorldService.EXTRA_SETTING_KEY, "show_notification_speed")
+                        putExtra(com.openworld.app.service.OpenWorldService.EXTRA_SETTING_VALUE_BOOL, value)
                     }
                     getApplication<Application>().startService(intent)
                 } catch (e: Exception) {

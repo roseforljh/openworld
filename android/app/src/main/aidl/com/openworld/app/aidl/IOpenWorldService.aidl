@@ -1,8 +1,8 @@
 package com.openworld.app.aidl;
 
-import com.openworld.app.aidl.ISingBoxServiceCallback;
+import com.openworld.app.aidl.IOpenWorldServiceCallback;
 
-interface ISingBoxService {
+interface IOpenWorldService {
     int getState();
 
     String getActiveLabel();
@@ -11,9 +11,9 @@ interface ISingBoxService {
 
     boolean isManuallyStopped();
 
-    void registerCallback(ISingBoxServiceCallback callback);
+    void registerCallback(IOpenWorldServiceCallback callback);
 
-    void unregisterCallback(ISingBoxServiceCallback callback);
+    void unregisterCallback(IOpenWorldServiceCallback callback);
 
     oneway void notifyAppLifecycle(boolean isForeground);
 

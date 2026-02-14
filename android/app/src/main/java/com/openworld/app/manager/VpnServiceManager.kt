@@ -4,10 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
-import com.openworld.app.ipc.SingBoxRemote
+import com.openworld.app.ipc.OpenWorldRemote
 import com.openworld.app.ipc.VpnStateStore
 import com.openworld.app.service.ProxyOnlyService
-import com.openworld.app.service.SingBoxService
+import com.openworld.app.service.OpenWorldService
 
 /**
  * VPN 服务管理器
@@ -51,7 +51,7 @@ object VpnServiceManager {
             return true
         }
 
-        return SingBoxRemote.isRunning.value
+        return OpenWorldRemote.isRunning.value
     }
 
     private const val PREFS_VPN_STATE = "vpn_state"
@@ -62,7 +62,7 @@ object VpnServiceManager {
      * 判断 VPN 是否正在启动中
      */
     fun isStarting(): Boolean {
-        return SingBoxRemote.isStarting.value
+        return OpenWorldRemote.isStarting.value
     }
 
     /**
@@ -110,14 +110,14 @@ object VpnServiceManager {
         Log.d(TAG, "startVpn: tunMode=$tunMode")
 
         val serviceClass = if (tunMode) {
-            SingBoxService::class.java
+            OpenWorldService::class.java
         } else {
             ProxyOnlyService::class.java
         }
 
         val intent = Intent(context, serviceClass).apply {
             action = if (tunMode) {
-                SingBoxService.ACTION_START
+                OpenWorldService.ACTION_START
             } else {
                 ProxyOnlyService.ACTION_START
             }
@@ -151,8 +151,8 @@ object VpnServiceManager {
             }
 
             val intent = if (stopTun) {
-                Intent(context, SingBoxService::class.java).apply {
-                    action = SingBoxService.ACTION_STOP
+                Intent(context, OpenWorldService::class.java).apply {
+                    action = OpenWorldService.ACTION_STOP
                 }
             } else {
                 Intent(context, ProxyOnlyService::class.java).apply {
@@ -241,7 +241,7 @@ object VpnServiceManager {
             append("isStarting: ${isStarting()}\n")
             append("activeService: ${getActiveService(context)}\n")
             append("cachedTunEnabled: $cachedTunEnabled\n")
-            append("activeLabel: ${SingBoxRemote.activeLabel.value}\n")
+            append("activeLabel: ${OpenWorldRemote.activeLabel.value}\n")
         }
     }
 }

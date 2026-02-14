@@ -5,7 +5,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.openworld.app.ipc.SingBoxRemote
+import com.openworld.app.ipc.OpenWorldRemote
 import com.openworld.app.model.ProfileUi
 import com.openworld.app.model.ProfileType
 import com.openworld.app.model.SubscriptionUpdateResult
@@ -63,7 +63,7 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         configRepository.setActiveProfile(profileId)
 
         // Only show toast when VPN is running
-        val isVpnRunning = SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value
+        val isVpnRunning = OpenWorldRemote.isRunning.value || OpenWorldRemote.isStarting.value
         if (isVpnRunning) {
             val name = profiles.value.find { it.id == profileId }?.name
             if (!name.isNullOrBlank()) {

@@ -66,12 +66,12 @@ import com.openworld.app.model.ConnectionState
 import com.openworld.app.model.AppLanguage
 import com.openworld.app.utils.LocaleHelper
 import com.openworld.app.utils.DeepLinkHandler
-import com.openworld.app.ipc.SingBoxRemote
+import com.openworld.app.ipc.OpenWorldRemote
 import com.openworld.app.service.VpnTileService
 import com.openworld.app.ui.components.AppNavBar
 import com.openworld.app.ui.navigation.AppNavigation
 import com.openworld.app.ui.theme.PureWhite
-import com.openworld.app.ui.theme.SingBoxTheme
+import com.openworld.app.ui.theme.OpenWorldTheme
 import android.content.ComponentName
 import android.service.quicksettings.TileService
 import androidx.work.WorkManager
@@ -116,7 +116,7 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
         setContent {
-            SingBoxApp()
+            OpenWorldApp()
         }
 
         cancelRuleSetUpdateWork()
@@ -128,7 +128,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun SingBoxApp() {
+fun OpenWorldApp() {
     val context = LocalContext.current
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -138,7 +138,7 @@ fun SingBoxApp() {
     )
 
     LaunchedEffect(Unit) {
-        SingBoxRemote.ensureBound(context)
+        OpenWorldRemote.ensureBound(context)
         // Best-effort: ask system to refresh QS tile state after app process restarts/force-stops.
         runCatching {
             TileService.requestListeningState(context, ComponentName(context, VpnTileService::class.java))
@@ -172,7 +172,7 @@ fun SingBoxApp() {
     }
 
     // 自动检查更新 - 当 VPN 连接后检查，或 App 启动 10 秒后检查（直连尝试）
-    val isVpnRunningForUpdate by SingBoxRemote.isRunning.collectAsState()
+    val isVpnRunningForUpdate by OpenWorldRemote.isRunning.collectAsState()
     var updateChecked by remember { mutableStateOf(false) }
 
     LaunchedEffect(settings?.autoCheckUpdate, isVpnRunningForUpdate) {
@@ -240,9 +240,9 @@ fun SingBoxApp() {
         }
     }
     val connectionState by dashboardViewModel.connectionState.collectAsState()
-    val isRunning by SingBoxRemote.isRunning.collectAsState()
-    val isStarting by SingBoxRemote.isStarting.collectAsState()
-    val manuallyStopped by SingBoxRemote.manuallyStopped.collectAsState()
+    val isRunning by OpenWorldRemote.isRunning.collectAsState()
+    val isStarting by OpenWorldRemote.isStarting.collectAsState()
+    val manuallyStopped by OpenWorldRemote.manuallyStopped.collectAsState()
 
     // 监听 VPN 状态变化，清理网络连接池，避免复用失效的 Socket
     LaunchedEffect(isRunning, isStarting) {
@@ -283,7 +283,7 @@ fun SingBoxApp() {
     LaunchedEffect(Unit) {
         SettingsRepository.restartRequiredEvents.collectLatest {
             // 如果 VPN 没有在运行，也没有正在启动，就不弹窗（因为下次启动自然生效）
-            if (!SingBoxRemote.isRunning.value && !SingBoxRemote.isStarting.value) return@collectLatest
+            if (!OpenWorldRemote.isRunning.value && !OpenWorldRemote.isStarting.value) return@collectLatest
 
             // 新提示出现时，立即关闭旧的，只保留最新的那一个
             snackbarHostState.currentSnackbarData?.dismiss()
@@ -297,7 +297,7 @@ fun SingBoxApp() {
 
     val appTheme = settings?.appTheme ?: com.openworld.app.model.AppThemeMode.SYSTEM
 
-    SingBoxTheme(appTheme = appTheme) {
+    OpenWorldTheme(appTheme = appTheme) {
         val navController = rememberNavController()
 
         // Handle pending navigation from App Shortcuts

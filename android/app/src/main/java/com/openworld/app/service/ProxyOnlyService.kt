@@ -15,24 +15,28 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import com.openworld.app.MainActivity
-import com.openworld.app.core.SingBoxCore
-import com.openworld.app.ipc.SingBoxIpcHub
+import com.openworld.app.core.OpenWorldCore
+import com.openworld.app.ipc.OpenWorldIpcHub
 import com.openworld.app.ipc.VpnStateStore
 import com.openworld.app.repository.ConfigRepository
 import com.openworld.app.repository.LogRepository
 import com.openworld.app.utils.NetworkClient
 import com.openworld.app.utils.KernelHttpClient
 import com.openworld.app.repository.RuleSetRepository
-import io.nekohasekai.libbox.CommandServer
-import io.nekohasekai.libbox.CommandServerHandler
-import io.nekohasekai.libbox.BoxService
-import io.nekohasekai.libbox.InterfaceUpdateListener
-import io.nekohasekai.libbox.NetworkInterfaceIterator
-import io.nekohasekai.libbox.PlatformInterface
-import io.nekohasekai.libbox.StringIterator
-import io.nekohasekai.libbox.TunOptions
-import io.nekohasekai.libbox.WIFIState
-import io.nekohasekai.libbox.Libbox
+import com.openworld.app.core.bridge.CommandServer
+import com.openworld.app.core.bridge.CommandServerHandler
+import com.openworld.app.core.bridge.BoxService
+import com.openworld.app.core.bridge.InterfaceUpdateListener
+import com.openworld.app.core.bridge.LocalDNSTransport
+import com.openworld.app.core.bridge.NetworkInterfaceIterator
+import com.openworld.app.core.bridge.NetworkInterface as BridgeNetworkInterface
+import com.openworld.app.core.bridge.PlatformInterface
+import com.openworld.app.core.bridge.StringIterator
+import com.openworld.app.core.bridge.Notification as BridgeNotification
+import com.openworld.app.core.bridge.SystemProxyStatus
+import com.openworld.app.core.bridge.TunOptions
+import com.openworld.app.core.bridge.WIFIState
+import com.openworld.app.core.bridge.Libbox
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -62,11 +66,11 @@ class ProxyOnlyService : Service() {
         private const val PORT_WAIT_TIMEOUT_MS = 5000L
         private const val PORT_CHECK_INTERVAL_MS = 100L
 
-        const val ACTION_START = SingBoxService.ACTION_START
-        const val ACTION_STOP = SingBoxService.ACTION_STOP
-        const val ACTION_SWITCH_NODE = SingBoxService.ACTION_SWITCH_NODE
-        const val ACTION_PREPARE_RESTART = SingBoxService.ACTION_PREPARE_RESTART
-        const val EXTRA_CONFIG_PATH = SingBoxService.EXTRA_CONFIG_PATH
+        const val ACTION_START = OpenWorldService.ACTION_START
+        const val ACTION_STOP = OpenWorldService.ACTION_STOP
+        const val ACTION_SWITCH_NODE = OpenWorldService.ACTION_SWITCH_NODE
+        const val ACTION_PREPARE_RESTART = OpenWorldService.ACTION_PREPARE_RESTART
+        const val EXTRA_CONFIG_PATH = OpenWorldService.EXTRA_CONFIG_PATH
 
         @Volatile
         var isRunning = false
@@ -119,7 +123,7 @@ class ProxyOnlyService : Service() {
     private var currentInterfaceListener: InterfaceUpdateListener? = null
 
     private val platformInterface = object : PlatformInterface {
-        override fun localDNSTransport(): io.nekohasekai.libbox.LocalDNSTransport {
+        override fun localDNSTransport(): LocalDNSTransport {
             return com.openworld.app.core.LocalResolverImpl
         }
 
@@ -208,7 +212,8 @@ class ProxyOnlyService : Service() {
         }
 
         // v1.12.20: 新增 uidByPackageName 方法
-        override fun uidByPackageName(packageName: String): Int {
+        override fun uidByPackageName(packageName: String?): Int {
+            if (packageName.isNullOrBlank()) return -1
             return try {
                 val pm = packageManager
                 val appInfo = pm.getApplicationInfo(packageName, 0)
@@ -270,9 +275,9 @@ class ProxyOnlyService : Service() {
 
                     override fun hasNext(): Boolean = iterator.hasNext()
 
-                    override fun next(): io.nekohasekai.libbox.NetworkInterface {
+                    override fun next(): BridgeNetworkInterface {
                         val iface = iterator.next()
-                        return io.nekohasekai.libbox.NetworkInterface().apply {
+                        return BridgeNetworkInterface().apply {
                             name = iface.name
                             index = iface.index
                             mtu = iface.mtu
@@ -311,7 +316,7 @@ class ProxyOnlyService : Service() {
         override fun clearDNSCache() {
         }
 
-        override fun sendNotification(notification: io.nekohasekai.libbox.Notification?) {
+        override fun sendNotification(notification: BridgeNotification?) {
         }
 
         override fun systemCertificates(): StringIterator? = null
@@ -426,7 +431,7 @@ class ProxyOnlyService : Service() {
                 // 跨配置切换预清理机制
                 // ProxyOnlyService 模式下：唤醒核心 + 重置网络 + 关闭连接
                 // 2025-fix: 简化流程，减少过度的重置次数
-                val reason = intent.getStringExtra(SingBoxService.EXTRA_PREPARE_RESTART_REASON).orEmpty()
+                val reason = intent.getStringExtra(OpenWorldService.EXTRA_PREPARE_RESTART_REASON).orEmpty()
                 Log.i(TAG, "Received ACTION_PREPARE_RESTART (reason='$reason') -> preparing for restart")
 
                 val now = SystemClock.elapsedRealtime()
@@ -507,7 +512,7 @@ class ProxyOnlyService : Service() {
                 val configContent = configFile.readText()
 
                 runCatching {
-                    SingBoxCore.ensureLibboxSetup(this@ProxyOnlyService)
+                    OpenWorldCore.ensureCoreSetup(this@ProxyOnlyService)
                 }
 
                 // 等待代理端口可用（解决跨服务切换时端口未释放的问题）
@@ -544,7 +549,7 @@ class ProxyOnlyService : Service() {
                     override fun serviceReload() {
                         Log.i(TAG, "serviceReload requested")
                     }
-                    override fun getSystemProxyStatus(): io.nekohasekai.libbox.SystemProxyStatus? = null
+                    override fun getSystemProxyStatus(): SystemProxyStatus? = null
                     override fun setSystemProxyEnabled(isEnabled: Boolean) {}
                 }
 
@@ -765,7 +770,7 @@ class ProxyOnlyService : Service() {
                 ?: if (repo != null && activeId != null) repo.nodes.value.find { it.id == activeId }?.name else ""
         }.getOrNull().orEmpty()
 
-        SingBoxIpcHub.update(
+        OpenWorldIpcHub.update(
             state = st,
             activeLabel = activeLabel,
             lastError = lastErrorFlow.value.orEmpty(),

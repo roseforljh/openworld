@@ -10,7 +10,7 @@ import com.openworld.app.repository.ConfigRepository
 import com.openworld.app.repository.LogRepository
 import com.openworld.app.repository.TrafficRepository
 import com.openworld.app.service.notification.VpnNotificationManager
-import io.nekohasekai.libbox.*
+import com.openworld.app.core.bridge.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -687,7 +687,7 @@ class CommandManager(
     private fun processConnections(connections: Connections) {
         // 处理连接
         val iterator = connections.iterator()
-        var newestConnection: io.nekohasekai.libbox.Connection? = null
+        var newestConnection: Connection? = null
         val ids = ArrayList<String>(64)
         val egressCounts = LinkedHashMap<String, Int>()
         val configRepo = ConfigRepository.getInstance(context)

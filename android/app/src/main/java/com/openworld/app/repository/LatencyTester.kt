@@ -3,7 +3,7 @@ package com.openworld.app.repository
 import android.content.Context
 import android.util.Log
 import com.openworld.app.R
-import com.openworld.app.core.SingBoxCore
+import com.openworld.app.core.OpenWorldCore
 import com.openworld.app.model.Outbound
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -20,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class LatencyTester(
     private val context: Context,
-    private val singBoxCore: SingBoxCore
+    private val openWorldCore: OpenWorldCore
 ) {
     companion object {
         private const val TAG = "LatencyTester"
@@ -58,7 +58,7 @@ class LatencyTester(
         try {
             val result = withContext(Dispatchers.IO) {
                 try {
-                    val latency = singBoxCore.testOutboundLatency(outbound, allOutbounds)
+                    val latency = openWorldCore.testOutboundLatency(outbound, allOutbounds)
                     onResult?.invoke(latency)
                     latency
                 } catch (e: Exception) {
@@ -98,7 +98,7 @@ class LatencyTester(
             return@withContext
         }
 
-        singBoxCore.testOutboundsLatency(outbounds) { tag, latency ->
+        openWorldCore.testOutboundsLatency(outbounds) { tag, latency ->
             val latencyValue = if (latency > 0) latency else -1L
             onNodeComplete?.invoke(tag, latencyValue)
         }

@@ -23,13 +23,13 @@ import com.openworld.app.model.NodeSortType
 import com.openworld.app.model.NodeUi
 import com.openworld.app.model.ProfileUi
 import com.openworld.app.repository.SettingsRepository
-import com.openworld.app.ipc.SingBoxRemote
+import com.openworld.app.ipc.OpenWorldRemote
 import com.openworld.app.ipc.VpnStateStore
-import com.openworld.app.service.SingBoxService
+import com.openworld.app.service.OpenWorldService
 import com.openworld.app.service.ServiceState
 import com.openworld.app.service.ProxyOnlyService
 import com.openworld.app.service.VpnTileService
-import com.openworld.app.core.SingBoxCore
+import com.openworld.app.core.OpenWorldCore
 import com.openworld.app.core.BoxWrapperManager
 import com.openworld.app.repository.ConfigRepository
 import com.openworld.app.viewmodel.shared.NodeDisplaySettings
@@ -66,7 +66,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val configRepository = ConfigRepository.getInstance(application)
     private val settingsRepository = SettingsRepository.getInstance(application)
-    private val singBoxCore = SingBoxCore.getInstance(application)
+    private val openWorldCore = OpenWorldCore.getInstance(application)
 
     // 使用共享的设置状态，和 NodesViewModel 共享同一份数据
     private val displaySettings = NodeDisplaySettings.getInstance(application)
@@ -109,7 +109,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
         // 2025-fix: 如果VPN正在运行，切换配置后需要触发热切换/重启以加载新配置
         // 否则VPN仍然使用旧配置，导致用户看到"选中"了新配置的节点但实际没网
-        if (SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value) {
+        if (OpenWorldRemote.isRunning.value || OpenWorldRemote.isStarting.value) {
             viewModelScope.launch {
                 // 等待配置切换完成（setActiveProfile 内部可能有异步加载）
                 delay(100)
@@ -131,7 +131,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             val node = nodes.value.find { it.id == nodeId }
             val result = configRepository.setActiveNodeWithResult(nodeId)
 
-            if (SingBoxRemote.isRunning.value && node != null) {
+            if (OpenWorldRemote.isRunning.value && node != null) {
                 val msg = when (result) {
                     is ConfigRepository.NodeSwitchResult.Success,
                     is ConfigRepository.NodeSwitchResult.NotRunning -> getApplication<Application>().getString(R.string.node_switch_success, node.name)
@@ -285,9 +285,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             // 第一阶段：确保 IPC 绑定（带重试）
             for (attempt in 1..5) {
-                runCatching { SingBoxRemote.ensureBound(getApplication()) }
+                runCatching { OpenWorldRemote.ensureBound(getApplication()) }
                 delay(300) // 每次等待 300ms，总共最多 1500ms
-                if (SingBoxRemote.isBound()) {
+                if (OpenWorldRemote.isBound()) {
                     Log.i(TAG, "IPC bound successfully on attempt $attempt")
                     break
                 }
@@ -321,7 +321,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 if (hasSystemVpn && persisted) {
                     _connectionState.value = ConnectionState.Connected
                     _connectedAtElapsedMs.value = SystemClock.elapsedRealtime()
-                } else if (!SingBoxRemote.isStarting.value) {
+                } else if (!OpenWorldRemote.isStarting.value) {
                     _connectionState.value = ConnectionState.Idle
                 }
             }
@@ -334,7 +334,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
         // Surface service-level startup errors on UI
         viewModelScope.launch {
-            SingBoxRemote.lastError.collect { err ->
+            OpenWorldRemote.lastError.collect { err ->
                 if (!err.isNullOrBlank()) {
                     _testStatus.value = err
                     lastErrorToastJob?.cancel()
@@ -376,7 +376,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
 
         // 收集器1: 监听 SingBoxService 状态变化
-        val stateFlow = SingBoxRemote.state
+        val stateFlow = OpenWorldRemote.state
         viewModelScope.launch {
             stateFlow.collect { state ->
                 when (state) {
@@ -402,7 +402,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // 收集器2: 监听服务端节点切换，同步更新主进程的 activeNodeId
         // 解决通知栏切换节点后首页显示旧节点的问题
         viewModelScope.launch {
-            SingBoxRemote.activeLabel
+            OpenWorldRemote.activeLabel
                 .filter { it.isNotBlank() }
                 .distinctUntilChanged()
                 .collect { nodeName ->
@@ -455,7 +455,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
                         // 宽限期过，再次检查 SingBoxRemote 状态
                         // 只有当服务端依然坚持是 STOPPED 时，才真正断开 UI
-                        if (SingBoxRemote.state.value == ServiceState.STOPPED) {
+                        if (OpenWorldRemote.state.value == ServiceState.STOPPED) {
                             performDisconnect()
                         }
                         // 宽限期结束，标记失效
@@ -471,7 +471,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                             if (pendingIdleJob?.isActive == true) return
                             pendingIdleJob = viewModelScope.launch {
                                 delay(remaining)
-                                if (SingBoxRemote.state.value == ServiceState.STOPPED) {
+                                if (OpenWorldRemote.state.value == ServiceState.STOPPED) {
                                     performDisconnect()
                                 }
                                 pendingIdleJob = null
@@ -532,13 +532,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             val context = getApplication<Application>()
 
             // Phase 1: 即时恢复 (< 1ms，从 MMKV 读状态 + 异步验证 IPC)
-            SingBoxRemote.instantRecovery(context)
+            OpenWorldRemote.instantRecovery(context)
 
             // 立即从 MMKV 状态更新 UI（不等 IPC）
             val isActive = VpnStateStore.getActive()
             val phase1State = when {
                 isActive -> ConnectionState.Connected
-                SingBoxRemote.isStarting.value -> ConnectionState.Connecting
+                OpenWorldRemote.isStarting.value -> ConnectionState.Connecting
                 else -> ConnectionState.Idle
             }
             setConnectionState(phase1State)
@@ -549,13 +549,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             launch {
                 var retries = 0
                 val maxRetries = 80 // 80 * 100ms = 8 秒
-                while (!SingBoxRemote.isBound() && retries < maxRetries) {
+                while (!OpenWorldRemote.isBound() && retries < maxRetries) {
                     delay(100)
                     retries++
                 }
 
-                if (SingBoxRemote.isBound()) {
-                    val state = SingBoxRemote.state.value
+                if (OpenWorldRemote.isBound()) {
+                    val state = OpenWorldRemote.state.value
                     Log.i(TAG, "refreshState Phase 2: state=$state, bound=true, retries=$retries")
                     when (state) {
                         ServiceState.RUNNING -> setConnectionState(ConnectionState.Connected)
@@ -685,7 +685,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
             val requiresFullRestart = perAppSettingsChanged || tunSettingsChanged
 
-            if (useTun && SingBoxRemote.isRunning.value && !requiresFullRestart) {
+            if (useTun && OpenWorldRemote.isRunning.value && !requiresFullRestart) {
                 Log.i(TAG, "Settings are hot-reloadable, attempting kernel hot reload")
                 if (tryHotReload(configResult.path)) {
                     Log.i(TAG, "Hot reload succeeded, settings applied without VPN reconnection")
@@ -708,7 +708,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private fun logRestartDebugInfo(settings: AppSettings) {
         Log.d(
             TAG,
-            "restartVpn: useTun=${settings.tunEnabled}, isRunning=${SingBoxRemote.isRunning.value}"
+            "restartVpn: useTun=${settings.tunEnabled}, isRunning=${OpenWorldRemote.isRunning.value}"
         )
         Log.d(
             TAG,
@@ -726,15 +726,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             Log.i(TAG, "Attempting kernel hot reload via IPC...")
 
             val result = withContext(Dispatchers.IO) {
-                SingBoxRemote.hotReloadConfig(configContent)
+                OpenWorldRemote.hotReloadConfig(configContent)
             }
 
             when (result) {
-                SingBoxRemote.HotReloadResult.SUCCESS -> {
+                OpenWorldRemote.HotReloadResult.SUCCESS -> {
                     Log.i(TAG, "Hot reload succeeded via IPC")
                     return true
                 }
-                SingBoxRemote.HotReloadResult.IPC_ERROR -> {
+                OpenWorldRemote.HotReloadResult.IPC_ERROR -> {
                     Log.w(TAG, "Hot reload IPC failed, falling back to traditional restart")
                 }
                 else -> {
@@ -751,11 +751,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         useTun: Boolean,
         perAppSettingsChanged: Boolean
     ) {
-        if (perAppSettingsChanged && useTun && SingBoxRemote.isRunning.value) {
+        if (perAppSettingsChanged && useTun && OpenWorldRemote.isRunning.value) {
             Log.i(TAG, "Per-app settings changed, using full restart to rebuild TUN")
-            val intent = Intent(context, SingBoxService::class.java).apply {
-                action = SingBoxService.ACTION_FULL_RESTART
-                putExtra(SingBoxService.EXTRA_CONFIG_PATH, configPath)
+            val intent = Intent(context, OpenWorldService::class.java).apply {
+                action = OpenWorldService.ACTION_FULL_RESTART
+                putExtra(OpenWorldService.EXTRA_CONFIG_PATH, configPath)
             }
             startServiceCompat(context, intent)
             return
@@ -765,10 +765,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             if (!com.openworld.app.ipc.VpnStateStore.shouldTriggerPrepareRestart(1500L)) {
                 Log.d(TAG, "PREPARE_RESTART suppressed (sender throttle)")
             } else {
-                context.startService(Intent(context, SingBoxService::class.java).apply {
-                    action = SingBoxService.ACTION_PREPARE_RESTART
+                context.startService(Intent(context, OpenWorldService::class.java).apply {
+                    action = OpenWorldService.ACTION_PREPARE_RESTART
                     putExtra(
-                        SingBoxService.EXTRA_PREPARE_RESTART_REASON,
+                        OpenWorldService.EXTRA_PREPARE_RESTART_REASON,
                         "DashboardViewModel:restartVpn"
                     )
                 })
@@ -778,16 +778,16 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         delay(150)
 
         val intent = if (useTun) {
-            Intent(context, SingBoxService::class.java).apply {
-                action = SingBoxService.ACTION_START
-                putExtra(SingBoxService.EXTRA_CONFIG_PATH, configPath)
-                putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
+            Intent(context, OpenWorldService::class.java).apply {
+                action = OpenWorldService.ACTION_START
+                putExtra(OpenWorldService.EXTRA_CONFIG_PATH, configPath)
+                putExtra(OpenWorldService.EXTRA_CLEAN_CACHE, true)
             }
         } else {
             Intent(context, ProxyOnlyService::class.java).apply {
                 action = ProxyOnlyService.ACTION_START
                 putExtra(ProxyOnlyService.EXTRA_CONFIG_PATH, configPath)
-                putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
+                putExtra(OpenWorldService.EXTRA_CLEAN_CACHE, true)
             }
         }
 
@@ -839,8 +839,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 VpnStateStore.CoreMode.PROXY -> {
                     runCatching {
-                        context.startService(Intent(context, SingBoxService::class.java).apply {
-                            action = SingBoxService.ACTION_STOP
+                        context.startService(Intent(context, OpenWorldService::class.java).apply {
+                            action = OpenWorldService.ACTION_STOP
                         })
                     }
                     true
@@ -851,13 +851,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             // 如果需要停止对立服务，等待其完全停止
             if (needToStopOpposite) {
                 // 先检查对立服务是否正在运行
-                val oppositeWasRunning = SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value
+                val oppositeWasRunning = OpenWorldRemote.isRunning.value || OpenWorldRemote.isStarting.value
                 if (oppositeWasRunning) {
                     try {
                         // 增加超时时间：BoxService.close() 可能需要较长时间释放端口
                         withTimeout(8000L) {
                             // 使用 drop(1) 跳过当前值，等待真正的状态变化
-                            SingBoxRemote.state
+                            OpenWorldRemote.state
                                 .drop(1)
                                 .first { it == ServiceState.STOPPED }
                         }
@@ -888,19 +888,19 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
                 val useTun = desiredMode == VpnStateStore.CoreMode.VPN
                 val intent = if (useTun) {
-                    Intent(context, SingBoxService::class.java).apply {
-                        action = SingBoxService.ACTION_START
-                        putExtra(SingBoxService.EXTRA_CONFIG_PATH, configResult.path)
+                    Intent(context, OpenWorldService::class.java).apply {
+                        action = OpenWorldService.ACTION_START
+                        putExtra(OpenWorldService.EXTRA_CONFIG_PATH, configResult.path)
                         // 从停止状态启动时，强制清理缓存，确保使用配置文件中选中的节点
                         // 修复 bug: App 更新后 cache.db 保留了旧的选中节点，导致 UI 上选中的新节点无效
-                        putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
+                        putExtra(OpenWorldService.EXTRA_CLEAN_CACHE, true)
                     }
                 } else {
                     Intent(context, ProxyOnlyService::class.java).apply {
                         action = ProxyOnlyService.ACTION_START
                         putExtra(ProxyOnlyService.EXTRA_CONFIG_PATH, configResult.path)
                         // 同理，Proxy 模式也需要清理缓存
-                        putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
+                        putExtra(OpenWorldService.EXTRA_CLEAN_CACHE, true)
                     }
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -918,13 +918,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     var showedStartingHint = false
 
                     while (true) {
-                        if (SingBoxRemote.isRunning.value) {
+                        if (OpenWorldRemote.isRunning.value) {
                             _connectionState.value = ConnectionState.Connected
                             startTrafficMonitor()
                             return@launch
                         }
 
-                        val err = SingBoxRemote.lastError.value
+                        val err = OpenWorldRemote.lastError.value
                         if (!err.isNullOrBlank()) {
                             _connectionState.value = ConnectionState.Error
                             _testStatus.value = err
@@ -980,8 +980,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             VpnStateStore.CoreMode.PROXY -> Intent(context, ProxyOnlyService::class.java).apply {
                 action = ProxyOnlyService.ACTION_STOP
             }
-            else -> Intent(context, SingBoxService::class.java).apply {
-                action = SingBoxService.ACTION_STOP
+            else -> Intent(context, OpenWorldService::class.java).apply {
+                action = OpenWorldService.ACTION_STOP
             }
         }
         context.startService(intent)

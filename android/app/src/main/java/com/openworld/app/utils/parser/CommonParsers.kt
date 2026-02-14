@@ -6,14 +6,14 @@ import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
 import com.openworld.app.model.Outbound
-import com.openworld.app.model.SingBoxConfig
+import com.openworld.app.model.OpenWorldConfig
 
 /**
  * Sing-box JSON 格式解析器
  * 只提取 outbounds 节点，忽略规则配置
  * 防止因 sing-box 规则版本更新导致解析失败
  */
-class SingBoxParser(private val gson: Gson) : SubscriptionParser {
+class OpenWorldParser(private val gson: Gson) : SubscriptionParser {
     companion object {
         private const val TAG = "SingBoxParser"
         private val OUTBOUND_LIST_TYPE = object : TypeToken<List<Outbound>>() {}.type
@@ -25,7 +25,7 @@ class SingBoxParser(private val gson: Gson) : SubscriptionParser {
             (trimmed.startsWith("[") && trimmed.endsWith("]"))
     }
 
-    override fun parse(content: String): SingBoxConfig? {
+    override fun parse(content: String): OpenWorldConfig? {
         val trimmed = content.trim()
 
         // 如果是数组格式，直接解析为 outbounds 列表
@@ -40,11 +40,11 @@ class SingBoxParser(private val gson: Gson) : SubscriptionParser {
     /**
      * 解析 JSON 数组格式（直接是 outbounds 列表）
      */
-    private fun parseAsOutboundArray(content: String): SingBoxConfig? {
+    private fun parseAsOutboundArray(content: String): OpenWorldConfig? {
         return try {
             val outbounds: List<Outbound> = gson.fromJson(content, OUTBOUND_LIST_TYPE)
             if (outbounds.isNotEmpty()) {
-                SingBoxConfig(outbounds = outbounds)
+                OpenWorldConfig(outbounds = outbounds)
             } else null
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse as outbound array: ${e.message}")
@@ -55,7 +55,7 @@ class SingBoxParser(private val gson: Gson) : SubscriptionParser {
     /**
      * 解析 JSON 对象格式，只提取 outbounds/proxies 字段
      */
-    private fun parseAsConfigObject(content: String): SingBoxConfig? {
+    private fun parseAsConfigObject(content: String): OpenWorldConfig? {
         return try {
             val jsonObject = JsonParser.parseString(content).asJsonObject
 
@@ -65,7 +65,7 @@ class SingBoxParser(private val gson: Gson) : SubscriptionParser {
             if (outboundsElement != null && outboundsElement.isJsonArray) {
                 val outbounds: List<Outbound> = gson.fromJson(outboundsElement, OUTBOUND_LIST_TYPE)
                 if (outbounds.isNotEmpty()) {
-                    return SingBoxConfig(outbounds = outbounds)
+                    return OpenWorldConfig(outbounds = outbounds)
                 }
             }
             null
@@ -104,7 +104,7 @@ class Base64Parser(private val nodeParser: (String) -> Outbound?) : Subscription
         return !trimmed.startsWith("{") && !trimmed.startsWith("proxies:") && !trimmed.startsWith("proxy-groups:")
     }
 
-    override fun parse(content: String): SingBoxConfig? {
+    override fun parse(content: String): OpenWorldConfig? {
         android.util.Log.d("Base64Parser", "Parsing content, length: ${content.length}, starts with: ${content.take(20)}")
         val trimmed = content.trim()
 
@@ -133,7 +133,7 @@ class Base64Parser(private val nodeParser: (String) -> Outbound?) : Subscription
         android.util.Log.d("Base64Parser", "Total outbounds parsed: ${outbounds.size}")
         if (outbounds.isEmpty()) return null
 
-        return SingBoxConfig(outbounds = outbounds)
+        return OpenWorldConfig(outbounds = outbounds)
     }
 
     private fun extractLinksFromLine(line: String): List<String> {

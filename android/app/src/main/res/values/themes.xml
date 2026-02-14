@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.SingBoxAndroid" parent="android:Theme.Material.Light.NoActionBar">
+    <style name="Theme.OpenWorldAndroid" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
@@ -11,7 +11,7 @@
     </style>
 
     <!-- 透明主题用于快捷方式 Activity -->
-    <style name="Theme.SingBoxAndroid.Transparent" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.OpenWorldAndroid.Transparent" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowContentOverlay">@null</item>

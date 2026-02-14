@@ -17,7 +17,7 @@ import com.openworld.app.service.notification.VpnNotificationManager
 import com.openworld.app.service.network.NetworkManager
 import com.openworld.app.service.network.TrafficMonitor
 import com.openworld.app.utils.NetworkClient
-import io.nekohasekai.libbox.InterfaceUpdateListener
+import com.openworld.app.core.bridge.InterfaceUpdateListener
 import kotlinx.coroutines.*
 
 /**

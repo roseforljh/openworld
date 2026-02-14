@@ -11,10 +11,10 @@ import android.os.SystemClock
 import android.util.Log
 import com.openworld.app.MainActivity
 import com.openworld.app.R
-import com.openworld.app.service.SingBoxService
-import com.openworld.app.service.SingBoxService.Companion.ACTION_STOP
-import com.openworld.app.service.SingBoxService.Companion.ACTION_SWITCH_NODE
-import com.openworld.app.service.SingBoxService.Companion.ACTION_RESET_CONNECTIONS
+import com.openworld.app.service.OpenWorldService
+import com.openworld.app.service.OpenWorldService.Companion.ACTION_STOP
+import com.openworld.app.service.OpenWorldService.Companion.ACTION_SWITCH_NODE
+import com.openworld.app.service.OpenWorldService.Companion.ACTION_RESET_CONNECTIONS
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -96,7 +96,7 @@ class VpnNotificationManager(
      * @param state 当前通知状态
      * @param service VPN 服务实例 (用于 startForeground)
      */
-    fun updateNotification(state: NotificationState, service: SingBoxService) {
+    fun updateNotification(state: NotificationState, service: OpenWorldService) {
         val notification = createNotification(state)
 
         val text = runCatching {
@@ -134,7 +134,7 @@ class VpnNotificationManager(
      */
     fun requestNotificationUpdate(
         state: NotificationState,
-        service: SingBoxService,
+        service: OpenWorldService,
         force: Boolean = false
     ) {
         if (suppressUpdates) return
@@ -192,7 +192,7 @@ class VpnNotificationManager(
         )
 
         // 切换节点按钮
-        val switchIntent = Intent(context, SingBoxService::class.java).apply {
+        val switchIntent = Intent(context, OpenWorldService::class.java).apply {
             action = ACTION_SWITCH_NODE
         }
         val switchPendingIntent = PendingIntent.getService(
@@ -201,7 +201,7 @@ class VpnNotificationManager(
         )
 
         // 断开连接按钮
-        val stopIntent = Intent(context, SingBoxService::class.java).apply {
+        val stopIntent = Intent(context, OpenWorldService::class.java).apply {
             action = ACTION_STOP
         }
         val stopPendingIntent = PendingIntent.getService(
@@ -210,7 +210,7 @@ class VpnNotificationManager(
         )
 
         // 重置连接按钮
-        val resetIntent = Intent(context, SingBoxService::class.java).apply {
+        val resetIntent = Intent(context, OpenWorldService::class.java).apply {
             action = ACTION_RESET_CONNECTIONS
         }
         val resetPendingIntent = PendingIntent.getService(

@@ -21,11 +21,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.lang.ref.WeakReference
 
 /**
- * OpenWorldRemote - IPC 客户�? *
- * 2025-fix-v6: 解决后台恢复�?UI 一直加载中的问�? *
+ * OpenWorldRemote - IPC 客户�? *
+ * 2025-fix-v6: 解决后台恢复�?UI 一直加载中的问�? *
  * 核心改进:
- * 1. VpnStateStore 双重验证 - 回调失效时从 MMKV 读取真实状�? * 2. 回调心跳检�?- 检测回调通道是否正常工作
- * 3. 强制重连机制 - rebind() 时直接断开再重连，不尝试复�? * 4. 状态同步超�?- 如果回调超过阈值未更新，主动从 VpnStateStore 恢复
+ * 1. VpnStateStore 双重验证 - 回调失效时从 MMKV 读取真实状�? * 2. 回调心跳检�?- 检测回调通道是否正常工作
+ * 3. 强制重连机制 - rebind() 时直接断开再重连，不尝试复�? * 4. 状态同步超�?- 如果回调超过阈值未更新，主动从 VpnStateStore 恢复
  */
 @Suppress("TooManyFunctions")
 object OpenWorldRemote {
@@ -34,7 +34,7 @@ object OpenWorldRemote {
     private const val MAX_RECONNECT_ATTEMPTS = 5
     // 2025-fix-v6: 回调超时阈值，超过此时间未收到回调则认为回调通道失效
     private const val CALLBACK_TIMEOUT_MS = 10_000L
-    // 2025-fix-v6: 强制�?VpnStateStore 同步的阈�?    private const val FORCE_STORE_SYNC_THRESHOLD_MS = 5_000L
+    private const val FORCE_STORE_SYNC_THRESHOLD_MS = 5_000L
 
     private val _state = MutableStateFlow(ServiceState.STOPPED)
     val state: StateFlow<ServiceState> = _state.asStateFlow()
@@ -78,11 +78,11 @@ object OpenWorldRemote {
     @Volatile
     private var lastSyncTimeMs = 0L
 
-    // 2025-fix-v6: 上次收到回调的时�?(基于 SystemClock.elapsedRealtime)
+    // 2025-fix-v6: 上次收到回调的时�?(基于 SystemClock.elapsedRealtime)
     @Volatile
     private var lastCallbackReceivedAtMs = 0L
 
-    // App 生命周期通知可能发生�?bind 完成前（例如 MainActivity.onStart �?rebind �?notify�?    // 这里缓存最近一次事件，�?onServiceConnected 后补发，避免“跳过导致恢复不触发”�?    @Volatile
+    // App 生命周期通知可能发生�?bind 完成前（例如 MainActivity.onStart �?rebind �?notify�?    // 这里缓存最近一次事件，�?onServiceConnected 后补发，避免“跳过导致恢复不触发”�?    @Volatile
     private var pendingAppLifecycle: Boolean? = null
 
     @Volatile
@@ -124,8 +124,8 @@ object OpenWorldRemote {
     }
 
     /**
-     * 2025-fix-v6: �?VpnStateStore 同步状�?(不依�?AIDL 回调)
-     * 当回调通道失效时，直接�?MMKV 读取跨进程共享的真实状�?     */
+     * 2025-fix-v6: �?VpnStateStore 同步状�?(不依�?AIDL 回调)
+     * 当回调通道失效时，直接�?MMKV 读取跨进程共享的真实状�?     */
     private fun syncStateFromStore() {
         val isActive = VpnStateStore.getActive()
         val storedLabel = VpnStateStore.getActiveLabel()
@@ -287,8 +287,8 @@ object OpenWorldRemote {
             bound = false
 
             val ctx = contextRef?.get()
-            // 保护：如果系�?VPN 仍在运行，或 MMKV 记录 VPN 活跃，不要回退�?STOPPED
-            // 这避免了 rebind 过程�?disconnect→onServiceDisconnected 导致的状态闪�?            val mmkvActive = VpnStateStore.getActive()
+            // 保护：如果系�?VPN 仍在运行，或 MMKV 记录 VPN 活跃，不要回退�?STOPPED
+            val mmkvActive = VpnStateStore.getActive()
             val systemVpn = ctx != null && hasSystemVpn(ctx)
             if (systemVpn || mmkvActive) {
                 Log.i(
@@ -411,8 +411,8 @@ object OpenWorldRemote {
     }
 
     /**
-     * 主动查询并同步状�?     * 用于 Activity onResume 时确�?UI 与服务状态一�?     *
-     * 2025-fix-v5: 增强�?- 如果连接 stale 则强制重�?     */
+     * 主动查询并同步状�?     * 用于 Activity onResume 时确�?UI 与服务状态一�?     *
+     * 2025-fix-v5: 增强�?- 如果连接 stale 则强制重�?     */
     fun queryAndSyncState(context: Context): Boolean {
         contextRef = WeakReference(context.applicationContext)
         reconnectAttempts = 0
@@ -460,48 +460,51 @@ object OpenWorldRemote {
 
     /**
      * 强制重新绑定
-     * 直接断开再重连，不尝试复�?stale 连接
+     * 直接断开再重连，不尝试复�?stale 连接
      */
     fun rebind(context: Context) {
         Log.i(TAG, "rebind: forcing disconnect -> connect cycle")
         contextRef = WeakReference(context.applicationContext)
         reconnectAttempts = 0
 
-        // 2025-fix-v6: 不再尝试复用现有连接，直接断开再重�?        // 原来的逻辑是先检查连接有效性再决定是否重连，但这无法检测回调通道失效
+        // 2025-fix-v6: 不再尝试复用现有连接，直接断开再重�?        // 原来的逻辑是先检查连接有效性再决定是否重连，但这无法检测回调通道失效
         disconnect(context)
         connect(context)
 
-        // 2025-fix-v6: 在重连期间，先从 VpnStateStore 恢复状�?        // 这样 UI 不会显示过时状态，即使回调还没到达
+        // 2025-fix-v6: 在重连期间，先从 VpnStateStore 恢复状�?        // 这样 UI 不会显示过时状态，即使回调还没到达
         syncStateFromStore()
     }
 
     /**
-     * 2025-fix-v10: 原子�?rebind + foreground 通知
+     * 2025-fix-v10: 原子�?rebind + foreground 通知
      *
-     * 解决竞态条�? rebind() 是异步的，notifyAppLifecycle() �?IPC 未连接时执行会导�?     * pendingAppLifecycle 可能�?onServiceConnected 之前/之后被设置，造成恢复通知丢失�?     *
-     * 此方法确�?
-     * 1. 先设�?pendingAppLifecycle = true，确保不丢失
-     * 2. 再断开并重�?IPC
-     * 3. onServiceConnected 会处�?pendingAppLifecycle 并触发恢�?     */
+     * 解决竞态条�? rebind() 是异步的，notifyAppLifecycle() �?IPC 未连接时执行会导�?     * pendingAppLifecycle 可能�?onServiceConnected 之前/之后被设置，造成恢复通知丢失�?     *
+     * 此方法确�?
+     * 1. 先设�?pendingAppLifecycle = true，确保不丢失
+     * 2. 再断开并重�?IPC
+     * 3. onServiceConnected 会处�?pendingAppLifecycle 并触发恢�?     */
     fun rebindAndNotifyForeground(context: Context) {
         Log.i(TAG, "rebindAndNotifyForeground: start (atomic rebind + foreground)")
         contextRef = WeakReference(context.applicationContext)
         reconnectAttempts = 0
 
-        // 1. 先设�?pending 标记，确保不丢失
-        // 这是关键: �?disconnect 之前设置，避免竞�?        pendingAppLifecycle = true
+        // 1. 先设�?pending 标记，确保不丢失
+        // 这是关键: �?disconnect 之前设置，避免竞�?
+        pendingAppLifecycle = true
 
-        // 2. 断开旧连�?        disconnect(context)
+        // 2. 断开旧连�?
+        disconnect(context)
 
-        // 3. 重新连接 (onServiceConnected 会处�?pendingAppLifecycle)
+        // 3. 重新连接 (onServiceConnected 会处�?pendingAppLifecycle)
         connect(context)
 
-        // 4. 同步状态兜�?- UI 立即显示正确状�?        syncStateFromStore()
+        // 4. 同步状态兜�?- UI 立即显示正确状�?
+        syncStateFromStore()
     }
 
     /**
      * 2025-fix-v6: 检测回调通道是否超时
-     * 如果超过阈值未收到回调，返�?true
+     * 如果超过阈值未收到回调，返�?true
      */
     fun isCallbackStale(): Boolean {
         if (lastCallbackReceivedAtMs == 0L) return false
@@ -510,16 +513,16 @@ object OpenWorldRemote {
     }
 
     /**
-     * 2025-fix-v6: 强制�?VpnStateStore 同步状�?     * 用于 Activity onResume 时确�?UI 显示正确状�?     */
+     * 2025-fix-v6: 强制�?VpnStateStore 同步状�?     * 用于 Activity onResume 时确�?UI 显示正确状�?     */
     fun forceStoreSync() {
         syncStateFromStore()
     }
 
     /**
-     * 即时恢复 - 前台回来时调�?     * Phase 1: 同步�?MMKV 恢复状�?(< 1ms, 不依�?IPC)
-     * Phase 2: 异步验证 IPC，仅在确认失效时才重连（避免不必要的 rebind 导致 STOPPED 闪烁�?     */
+     * 即时恢复 - 前台回来时调�?     * Phase 1: 同步�?MMKV 恢复状�?(< 1ms, 不依�?IPC)
+     * Phase 2: 异步验证 IPC，仅在确认失效时才重连（避免不必要的 rebind 导致 STOPPED 闪烁�?     */
     fun instantRecovery(context: Context) {
-        // Phase 1: 立即�?MMKV 读取状态（微秒级）
+        // Phase 1: 立即�?MMKV 读取状态（微秒级）
         syncStateFromStore()
         Log.i(TAG, "instantRecovery: Phase 1 done, state=${_state.value}")
 
@@ -527,18 +530,19 @@ object OpenWorldRemote {
         contextRef = WeakReference(context.applicationContext)
 
         if (!connectionActive) {
-            // IPC 完全不存在，�?connect（不�?rebind）避免多�?disconnect
+            // IPC 完全不存在，�?connect（不�?rebind）避免多�?disconnect
             Log.i(TAG, "instantRecovery: IPC not active, connecting (not rebinding)")
             connect(context)
             return
         }
 
         if (!bound || service == null) {
-            // connectionActive �?bound/service 丢失，说明正在重连中，不要打�?            Log.i(TAG, "instantRecovery: connection in progress, skip rebind")
+            Log.i(TAG, "instantRecovery: connection in progress, skip rebind")
             return
         }
 
-        // 连接看似存活，异步验�?+ 同步（在主线�?post 避免并发问题�?        mainHandler.post {
+        // 连接看似存活，异步验�?+ 同步（在主线�?post 避免并发问题�?
+        mainHandler.post {
             val s = service ?: run {
                 Log.w(TAG, "instantRecovery: service became null, rebinding")
                 rebind(context)
@@ -618,7 +622,6 @@ object OpenWorldRemote {
         }
     }
 }
-
 
 
 

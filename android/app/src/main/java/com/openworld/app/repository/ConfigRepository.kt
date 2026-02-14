@@ -11,15 +11,15 @@ import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
-import com.openworld.app.core.SingBoxCore
-import com.openworld.app.ipc.SingBoxRemote
+import com.openworld.app.core.OpenWorldCore
+import com.openworld.app.ipc.OpenWorldRemote
 import com.openworld.app.ipc.VpnStateStore
 import com.openworld.app.model.*
-import com.openworld.app.service.SingBoxService
+import com.openworld.app.service.OpenWorldService
 import com.openworld.app.service.ProxyOnlyService
 import com.openworld.app.utils.parser.Base64Parser
 import com.openworld.app.utils.parser.NodeLinkParser
-import com.openworld.app.utils.parser.SingBoxParser
+import com.openworld.app.utils.parser.OpenWorldParser
 import com.openworld.app.repository.config.OutboundFixer
 import com.openworld.app.repository.config.InboundBuilder
 import com.openworld.app.repository.config.NodeLinkExporter
@@ -126,7 +126,7 @@ class ConfigRepository(private val context: Context) {
     }
 
     private val gson = Gson()
-    private val singBoxCore = SingBoxCore.getInstance(context)
+    private val openWorldCore = OpenWorldCore.getInstance(context)
     private val settingsRepository = SettingsRepository.getInstance(context)
 
     // Room 数据库
@@ -231,7 +231,7 @@ class ConfigRepository(private val context: Context) {
     private val nodeLinkParser = NodeLinkParser(gson)
 
     private val subscriptionManager = SubscriptionManager(listOf(
-        SingBoxParser(gson),
+        OpenWorldParser(gson),
         com.openworld.app.utils.parser.ClashYamlParser(),
         Base64Parser { nodeLinkParser.parse(it) }
     ))
@@ -257,9 +257,9 @@ class ConfigRepository(private val context: Context) {
 
     private val maxConfigCacheSize = 10
     // 使用 LinkedHashMap 实现 LRU 缓存，线程安全
-    private val configCache: MutableMap<String, SingBoxConfig> = Collections.synchronizedMap(
-        object : LinkedHashMap<String, SingBoxConfig>(maxConfigCacheSize, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, SingBoxConfig>?): Boolean {
+    private val configCache: MutableMap<String, OpenWorldConfig> = Collections.synchronizedMap(
+        object : LinkedHashMap<String, OpenWorldConfig>(maxConfigCacheSize, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, OpenWorldConfig>?): Boolean {
                 return size > maxConfigCacheSize
             }
         }
@@ -343,7 +343,7 @@ class ConfigRepository(private val context: Context) {
         return profileLastSelectedNode[profileId]
     }
 
-    private fun loadConfig(profileId: String): SingBoxConfig? {
+    private fun loadConfig(profileId: String): OpenWorldConfig? {
         configCache[profileId]?.let { return it }
 
         val configFile = File(configDir, "$profileId.json")
@@ -351,7 +351,7 @@ class ConfigRepository(private val context: Context) {
 
         return try {
             val configJson = configFile.readText()
-            var config = gson.fromJson(configJson, SingBoxConfig::class.java)
+            var config = gson.fromJson(configJson, OpenWorldConfig::class.java)
             config = deduplicateTags(config)
             cacheConfig(profileId, config)
             config
@@ -361,7 +361,7 @@ class ConfigRepository(private val context: Context) {
         }
     }
 
-    private fun cacheConfig(profileId: String, config: SingBoxConfig) {
+    private fun cacheConfig(profileId: String, config: OpenWorldConfig) {
         configCache[profileId] = config
     }
 
@@ -633,7 +633,7 @@ class ConfigRepository(private val context: Context) {
         scope.launch {
             try {
                 val configJson = configFile.readText()
-                val config = gson.fromJson(configJson, SingBoxConfig::class.java)
+                val config = gson.fromJson(configJson, OpenWorldConfig::class.java)
                 val nodes = extractNodesFromConfig(config, activeProfileId)
                 // 恢复延迟数据
                 val nodesWithLatency = nodes.map { node ->
@@ -688,7 +688,7 @@ class ConfigRepository(private val context: Context) {
     )
 
     private data class FetchResult(
-        val config: SingBoxConfig,
+        val config: OpenWorldConfig,
         val userInfo: SubscriptionUserInfo?
     )
 
@@ -947,7 +947,7 @@ class ConfigRepository(private val context: Context) {
                     .header("Accept", "application/yaml,text/yaml,text/plain,application/json,*/*")
                     .build()
 
-                var parsedConfig: SingBoxConfig? = null
+                var parsedConfig: OpenWorldConfig? = null
                 var userInfo: SubscriptionUserInfo? = null
 
                 val response = executeRequestWithFallback(request)
@@ -1045,7 +1045,7 @@ class ConfigRepository(private val context: Context) {
         return s
     }
 
-    private fun parseClashYamlConfig(content: String): SingBoxConfig? {
+    private fun parseClashYamlConfig(content: String): OpenWorldConfig? {
         return com.openworld.app.utils.parser.ClashYamlParser().parse(content)
     }
 
@@ -1253,9 +1253,9 @@ class ConfigRepository(private val context: Context) {
      * 从配置中只提取节点信息，忽略规则配置
      * 防止因 sing-box 规则版本更新导致解析失败
      */
-    private fun extractOutboundsOnly(config: SingBoxConfig): SingBoxConfig {
+    private fun extractOutboundsOnly(config: OpenWorldConfig): OpenWorldConfig {
         val outbounds = config.outbounds ?: config.proxies ?: emptyList()
-        return SingBoxConfig(outbounds = outbounds)
+        return OpenWorldConfig(outbounds = outbounds)
     }
 
     /**
@@ -1285,14 +1285,14 @@ class ConfigRepository(private val context: Context) {
         }
     }
 
-    private fun parseSubscriptionResponse(content: String): SingBoxConfig? {
+    private fun parseSubscriptionResponse(content: String): OpenWorldConfig? {
         val normalizedContent = normalizeImportedContent(content)
 
         // 1. 尝试直接解析为 sing-box JSON (只提取节点信息，使用宽松解析避免规则字段不兼容)
         try {
             val outbounds = extractOutboundsFromJson(normalizedContent)
             if (outbounds != null && outbounds.isNotEmpty()) {
-                return SingBoxConfig(outbounds = outbounds)
+                return OpenWorldConfig(outbounds = outbounds)
             } else {
                 Log.w(TAG, "Parsed as JSON but outbounds/proxies is empty/null. content snippet: ${sanitizeSubscriptionSnippet(normalizedContent)}")
             }
@@ -1321,7 +1321,7 @@ class ConfigRepository(private val context: Context) {
             try {
                 val outbounds = extractOutboundsFromJson(decoded)
                 if (outbounds != null && outbounds.isNotEmpty()) {
-                    return SingBoxConfig(outbounds = outbounds)
+                    return OpenWorldConfig(outbounds = outbounds)
                 } else {
                     Log.w(TAG, "Parsed decoded Base64 as JSON but outbounds is empty/null")
                 }
@@ -1364,7 +1364,7 @@ class ConfigRepository(private val context: Context) {
 
                 if (outbounds.isNotEmpty()) {
                     // 创建一个包含这些节点的配置
-                    return SingBoxConfig(
+                    return OpenWorldConfig(
                         outbounds = outbounds
                     )
                 }
@@ -1387,7 +1387,7 @@ class ConfigRepository(private val context: Context) {
      * 从配置中提取节点 - 使用协程并行处理提升性能
      */
     private suspend fun extractNodesFromConfig(
-        config: SingBoxConfig,
+        config: OpenWorldConfig,
         profileId: String,
         onProgress: ((String) -> Unit)? = null
     ): List<NodeUi> = withContext(Dispatchers.Default) {
@@ -1446,7 +1446,7 @@ class ConfigRepository(private val context: Context) {
      * 从配置中提取节点 - 同步版本，用于导入场景
      */
     private fun extractNodesFromConfigSync(
-        config: SingBoxConfig,
+        config: OpenWorldConfig,
         profileId: String
     ): List<NodeUi> {
         val outbounds = config.outbounds ?: return emptyList()
@@ -1680,7 +1680,7 @@ class ConfigRepository(private val context: Context) {
             _activeNodeId.value = nodeId
             saveProfilesImmediate()
 
-            val remoteRunning = SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value
+            val remoteRunning = OpenWorldRemote.isRunning.value || OpenWorldRemote.isStarting.value
             if (!remoteRunning) {
                 Log.i(TAG, "setActiveNodeWithResult: VPN not running, skip hot switch")
                 return NodeSwitchResult.NotRunning
@@ -1739,7 +1739,7 @@ class ConfigRepository(private val context: Context) {
                     // 3. VPN 正在启动中（核心还没准备好接受热切换）
                     // 4. lastRunOutboundTags 为 null（首次运行或 App 重启后状态丢失）
                     val tagsActuallyChanged = lastRunOutboundTags != null && lastRunOutboundTags != currentTags
-                    val isVpnStartingNotReady = SingBoxRemote.isStarting.value && !SingBoxRemote.isRunning.value
+                    val isVpnStartingNotReady = OpenWorldRemote.isStarting.value && !OpenWorldRemote.isRunning.value
                     val needsConfigReload = lastRunOutboundTags == null && remoteRunning
 
                     val tagsChanged = tagsActuallyChanged ||
@@ -1772,15 +1772,15 @@ class ConfigRepository(private val context: Context) {
                                 Intent(context, ProxyOnlyService::class.java).apply {
                                     action = ProxyOnlyService.ACTION_PREPARE_RESTART
                                     putExtra(
-                                        com.openworld.app.service.SingBoxService.EXTRA_PREPARE_RESTART_REASON,
+                                        OpenWorldService.EXTRA_PREPARE_RESTART_REASON,
                                         "ConfigRepository:switchNode"
                                     )
                                 }
                             } else {
-                                Intent(context, SingBoxService::class.java).apply {
-                                    action = SingBoxService.ACTION_PREPARE_RESTART
+                                Intent(context, OpenWorldService::class.java).apply {
+                                    action = OpenWorldService.ACTION_PREPARE_RESTART
                                     putExtra(
-                                        com.openworld.app.service.SingBoxService.EXTRA_PREPARE_RESTART_REASON,
+                                        OpenWorldService.EXTRA_PREPARE_RESTART_REASON,
                                         "ConfigRepository:switchNode"
                                     )
                                 }
@@ -1807,22 +1807,22 @@ class ConfigRepository(private val context: Context) {
                             putExtra(ProxyOnlyService.EXTRA_CONFIG_PATH, generationResult.path)
                         }
                     } else {
-                        Intent(context, SingBoxService::class.java).apply {
+                        Intent(context, OpenWorldService::class.java).apply {
                             if (tagsChanged) {
-                                action = SingBoxService.ACTION_START
-                                putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
+                                action = OpenWorldService.ACTION_START
+                                putExtra(OpenWorldService.EXTRA_CLEAN_CACHE, true)
                                 Log.i(
                                     TAG,
                                     "Outbound tags changed (or first run), " +
                                         "forcing RESTART/RELOAD with CACHE CLEAN"
                                 )
                             } else {
-                                action = SingBoxService.ACTION_SWITCH_NODE
+                                action = OpenWorldService.ACTION_SWITCH_NODE
                                 Log.i(TAG, "Outbound tags match, attempting HOT SWITCH")
                             }
                             putExtra("node_id", nodeId)
                             putExtra("outbound_tag", generationResult.activeNodeTag)
-                            putExtra(SingBoxService.EXTRA_CONFIG_PATH, generationResult.path)
+                            putExtra(OpenWorldService.EXTRA_CONFIG_PATH, generationResult.path)
                         }
                     }
 
@@ -1899,7 +1899,7 @@ class ConfigRepository(private val context: Context) {
      * 直接导入配置到 Room 数据库
      * 用于数据恢复/导入场景，保持原始 Profile ID
      */
-    fun importProfileDirectly(profile: ProfileUi, config: SingBoxConfig) {
+    fun importProfileDirectly(profile: ProfileUi, config: OpenWorldConfig) {
         val deduplicatedConfig = deduplicateTags(config)
 
         // 缓存配置
@@ -2015,7 +2015,7 @@ class ConfigRepository(private val context: Context) {
 
                         val fixedOutbound = buildOutboundForRuntime(outbound)
                         val allOutbounds = config.outbounds.map { buildOutboundForRuntime(it) }
-                        val latency = singBoxCore.testOutboundLatency(fixedOutbound, allOutbounds)
+                        val latency = openWorldCore.testOutboundLatency(fixedOutbound, allOutbounds)
 
                         _nodes.update { list ->
                             list.map {
@@ -2108,7 +2108,7 @@ class ConfigRepository(private val context: Context) {
         val outbounds = testInfoList.map { it.outbound }
         val tagToInfo = testInfoList.associateBy { it.outbound.tag }
 
-        singBoxCore.testOutboundsLatency(outbounds) { tag, latency ->
+        openWorldCore.testOutboundsLatency(outbounds) { tag, latency ->
             val info = tagToInfo[tag] ?: return@testOutboundsLatency
             val latencyValue = if (latency > 0) latency else -1L
 
@@ -2344,7 +2344,7 @@ class ConfigRepository(private val context: Context) {
                 outbounds = outboundsContext.outbounds
             )
 
-            val validation = singBoxCore.validateConfig(runConfig)
+            val validation = openWorldCore.validateConfig(runConfig)
             validation.exceptionOrNull()?.let { e ->
                 val msg = e.cause?.message ?: e.message ?: "unknown error"
                 Log.e(TAG, "Config pre-validation failed: $msg", e)
@@ -2392,7 +2392,7 @@ class ConfigRepository(private val context: Context) {
      */
     private suspend fun preResolveDomainsForProfile(
         profileId: String,
-        config: SingBoxConfig,
+        config: OpenWorldConfig,
         dnsServer: String?
     ) {
         val outbounds = config.outbounds ?: return
@@ -3195,7 +3195,7 @@ class ConfigRepository(private val context: Context) {
 
     @Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod", "NestedBlockDepth")
     private fun buildRunOutbounds(
-        baseConfig: SingBoxConfig,
+        baseConfig: OpenWorldConfig,
         activeNode: NodeUi?,
         settings: AppSettings,
         allNodes: List<NodeUi>,
@@ -3214,7 +3214,7 @@ class ConfigRepository(private val context: Context) {
                 processed = applyDnsResolveToOutbound(profileId, processed)
             }
             // 验证 outbound 是否有效，过滤掉无效的节点
-            if (singBoxCore.validateOutbound(processed)) {
+            if (openWorldCore.validateOutbound(processed)) {
                 processed
             } else {
                 Log.w(TAG, "Skipping invalid outbound: ${outbound.tag} (type=${outbound.type})")
@@ -3381,7 +3381,7 @@ class ConfigRepository(private val context: Context) {
             }
 
             // 验证 outbound 是否有效
-            if (!singBoxCore.validateOutbound(fixedSourceOutbound)) {
+            if (!openWorldCore.validateOutbound(fixedSourceOutbound)) {
                 Log.w(TAG, "Skipping invalid cross-profile outbound: ${node.name} (type=${sourceOutbound.type})")
                 return@forEach
             }
@@ -3598,7 +3598,7 @@ class ConfigRepository(private val context: Context) {
     /**
      * 获取当前活跃配置的原始 JSON
      */
-    fun getActiveConfig(): SingBoxConfig? {
+    fun getActiveConfig(): OpenWorldConfig? {
         val id = _activeProfileId.value ?: return null
         return loadConfig(id)
     }
@@ -3606,7 +3606,7 @@ class ConfigRepository(private val context: Context) {
     /**
      * 获取指定配置的原始 JSON
      */
-    fun getConfig(profileId: String): SingBoxConfig? {
+    fun getConfig(profileId: String): OpenWorldConfig? {
         return loadConfig(profileId)
     }
 
@@ -3685,7 +3685,7 @@ class ConfigRepository(private val context: Context) {
     ) {
         try {
             val profileId: String
-            val existingConfig: SingBoxConfig?
+            val existingConfig: OpenWorldConfig?
             var targetProfile: ProfileUi? = null
             val finalProfileName: String
 
@@ -3748,7 +3748,7 @@ class ConfigRepository(private val context: Context) {
                 newOutbounds.add(Outbound(type = "dns", tag = "dns-out"))
             }
 
-            val newConfig = deduplicateTags(SingBoxConfig(outbounds = newOutbounds))
+            val newConfig = deduplicateTags(OpenWorldConfig(outbounds = newOutbounds))
 
             val configFile = File(configDir, "$profileId.json")
             configFile.writeText(gson.toJson(newConfig))
@@ -3858,7 +3858,7 @@ class ConfigRepository(private val context: Context) {
                 ?: return@withContext Result.failure(Exception("Failed to parse node link"))
 
             val profileId: String
-            val existingConfig: SingBoxConfig?
+            val existingConfig: OpenWorldConfig?
             var isNewProfile = false
 
             when {
@@ -3913,7 +3913,7 @@ class ConfigRepository(private val context: Context) {
                 newOutbounds.add(Outbound(type = "dns", tag = "dns-out"))
             }
 
-            val newConfig = deduplicateTags(SingBoxConfig(outbounds = newOutbounds))
+            val newConfig = deduplicateTags(OpenWorldConfig(outbounds = newOutbounds))
 
             val configFile = File(configDir, "$profileId.json")
             configFile.writeText(gson.toJson(newConfig))
@@ -4107,7 +4107,7 @@ class ConfigRepository(private val context: Context) {
     /**
      * 去除重复的 outbound tag
      */
-    private fun deduplicateTags(config: SingBoxConfig): SingBoxConfig {
+    private fun deduplicateTags(config: OpenWorldConfig): OpenWorldConfig {
         val outbounds = config.outbounds ?: return config
         val seenTags = mutableSetOf<String>()
 

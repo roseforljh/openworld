@@ -75,7 +75,7 @@ class DataExportRepository(private val context: Context) {
                     val configFile = File(configDir, "${profile.id}.json")
                     if (configFile.exists()) {
                         val configJson = configFile.readText()
-                        val config = gson.fromJson(configJson, SingBoxConfig::class.java)
+                        val config = gson.fromJson(configJson, OpenWorldConfig::class.java)
                         ProfileExportData(profile = profile, config = config)
                     } else {
                         Log.w(TAG, "Config file not found for profile: ${profile.id}")

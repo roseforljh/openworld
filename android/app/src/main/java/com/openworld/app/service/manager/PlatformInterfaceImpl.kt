@@ -12,12 +12,15 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.system.OsConstants
 import android.util.Log
-import io.nekohasekai.libbox.InterfaceUpdateListener
-import io.nekohasekai.libbox.NetworkInterfaceIterator
-import io.nekohasekai.libbox.PlatformInterface
-import io.nekohasekai.libbox.StringIterator
-import io.nekohasekai.libbox.TunOptions
-import io.nekohasekai.libbox.WIFIState
+import com.openworld.app.core.bridge.InterfaceUpdateListener
+import com.openworld.app.core.bridge.NetworkInterfaceIterator
+import com.openworld.app.core.bridge.NetworkInterface as BridgeNetworkInterface
+import com.openworld.app.core.bridge.Notification
+import com.openworld.app.core.bridge.LocalDNSTransport
+import com.openworld.app.core.bridge.PlatformInterface
+import com.openworld.app.core.bridge.StringIterator
+import com.openworld.app.core.bridge.TunOptions
+import com.openworld.app.core.bridge.WIFIState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -25,7 +28,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.net.NetworkInterface
+import java.net.NetworkInterface as JavaNetworkInterface
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -148,7 +151,7 @@ class PlatformInterfaceImpl(
     @Volatile private var cachedProcFsReadable: Boolean? = null
     private val procFsCheckIntervalMs: Long = 5 * 60_000L
 
-    override fun localDNSTransport(): io.nekohasekai.libbox.LocalDNSTransport {
+    override fun localDNSTransport(): LocalDNSTransport {
         return com.openworld.app.core.LocalResolverImpl
     }
 
@@ -488,7 +491,7 @@ class PlatformInterfaceImpl(
             if (interfaceName.isNotEmpty()) {
                 defaultInterfaceName = interfaceName
                 val index = try {
-                    NetworkInterface.getByName(interfaceName)?.index ?: 0
+                    JavaNetworkInterface.getByName(interfaceName)?.index ?: 0
                 } catch (e: Exception) { 0 }
                 val caps = connectivityManager?.getNetworkCapabilities(initialNetwork)
                 val isExpensive = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED) == false
@@ -683,9 +686,9 @@ class PlatformInterfaceImpl(
 
                 override fun hasNext(): Boolean = iterator.hasNext()
 
-                override fun next(): io.nekohasekai.libbox.NetworkInterface {
-                    val iface = iterator.next()
-                    return io.nekohasekai.libbox.NetworkInterface().apply {
+                    override fun next(): BridgeNetworkInterface {
+                        val iface = iterator.next()
+                        return BridgeNetworkInterface().apply {
                         name = iface.name
                         index = iface.index
                         mtu = iface.mtu
@@ -723,7 +726,7 @@ class PlatformInterfaceImpl(
 
     override fun clearDNSCache() {}
 
-    override fun sendNotification(notification: io.nekohasekai.libbox.Notification?) {}
+    override fun sendNotification(notification: Notification?) {}
 
     override fun systemCertificates(): StringIterator? = null
 

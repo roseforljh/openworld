@@ -4,7 +4,7 @@ import android.content.Context
 import com.openworld.app.R
 import com.openworld.app.model.NodeUi
 import com.openworld.app.model.Outbound
-import com.openworld.app.model.SingBoxConfig
+import com.openworld.app.model.OpenWorldConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -88,7 +88,7 @@ object NodeExtractor {
      * @param onProgress 进度回调
      */
     suspend fun extract(
-        config: SingBoxConfig,
+        config: OpenWorldConfig,
         profileId: String,
         trafficRepo: TrafficRepository,
         context: Context,

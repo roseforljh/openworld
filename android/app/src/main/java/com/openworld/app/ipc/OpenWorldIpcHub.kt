@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicLong
 object OpenWorldIpcHub {
     private const val TAG = "OpenWorldIpcHub"
 
-    // 高频状态更新时避免 CPU 空转�?0ms �?RemoteCallbackList 回调的合理间�?    private const val MIN_BROADCAST_INTERVAL_MS = 50L
+    private const val MIN_BROADCAST_INTERVAL_MS = 50L
 
     // 单线程调度器：保证广播串行执行，避免 Thread.sleep 阻塞调用线程
     private val broadcastScheduler = ScheduledThreadPoolExecutor(1).apply {
@@ -51,7 +51,7 @@ object OpenWorldIpcHub {
     private val broadcastPending = AtomicBoolean(false)
     private val broadcasting = AtomicBoolean(false)
 
-    // 省电管理器引用，�?OpenWorldService 设置
+    // 省电管理器引用，�?OpenWorldService 设置
     @Volatile
     private var powerManager: BackgroundPowerManager? = null
 
@@ -221,7 +221,7 @@ object OpenWorldIpcHub {
     /**
      * 内核级热重载配置
      * 通过 ServiceStateHolder.instance 访问 OpenWorldService
-     * 直接调用 Go �?StartOrReloadService，不销�?VPN 服务
+     * 直接调用 Go �?StartOrReloadService，不销�?VPN 服务
      *
      * @param configContent 新的配置内容 (JSON)
      * @return 热重载结果码 (HotReloadResult)
@@ -229,7 +229,7 @@ object OpenWorldIpcHub {
     fun hotReloadConfig(configContent: String): Int {
         log("[HotReload] IPC request received")
 
-        // 检�?VPN 是否运行
+        // 检�?VPN 是否运行
         if (stateOrdinal != ServiceState.RUNNING.ordinal) {
             Log.w(TAG, "[HotReload] VPN not running, state=$stateOrdinal")
             return HotReloadResult.VPN_NOT_RUNNING
@@ -244,12 +244,12 @@ object OpenWorldIpcHub {
 
         // 调用 Service 的热重载方法
         return try {
-            val result = service.performHotReloadSync(configContent)
-            if (result) {
+            val success = service.performHotReloadSync(configContent)
+            if (success) {
                 log("[HotReload] Success")
                 HotReloadResult.SUCCESS
             } else {
-                Log.e(TAG, "[HotReload] Kernel returned false")
+                Log.e(TAG, "[HotReload] Kernel hot reload returned false")
                 HotReloadResult.KERNEL_ERROR
             }
         } catch (e: Exception) {
@@ -258,8 +258,6 @@ object OpenWorldIpcHub {
         }
     }
 }
-
-
 
 
 

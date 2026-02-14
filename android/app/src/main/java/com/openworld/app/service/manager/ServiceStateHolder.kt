@@ -31,7 +31,7 @@ object ServiceStateHolder {
     const val EXTRA_PREPARE_RESTART_REASON = "prepare_restart_reason"
 
     @Volatile
-    var instance: com.openworld.app.service.SingBoxService? = null
+    var instance: com.openworld.app.service.OpenWorldService? = null
         internal set
 
     private val _isRunningFlow = MutableStateFlow(false)
@@ -70,7 +70,7 @@ object ServiceStateHolder {
         if (!message.isNullOrBlank()) {
             try {
                 LogRepository.getInstance()
-                    .addLog("ERROR SingBoxService: $message")
+                    .addLog("ERROR OpenWorldService: $message")
             } catch (_: Exception) {
             }
         }

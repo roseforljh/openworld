@@ -2,7 +2,7 @@ package com.openworld.app.service.manager
 
 import android.util.Log
 import com.openworld.app.core.SelectorManager as CoreSelectorManager
-import io.nekohasekai.libbox.CommandClient
+import com.openworld.app.core.bridge.CommandClient
 import kotlinx.coroutines.flow.StateFlow
 
 /**

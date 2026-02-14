@@ -2,7 +2,7 @@ package com.openworld.app.utils.parser
 
 import android.util.Log
 import com.openworld.app.model.Outbound
-import com.openworld.app.model.SingBoxConfig
+import com.openworld.app.model.OpenWorldConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -20,9 +20,9 @@ interface SubscriptionParser {
     fun canParse(content: String): Boolean
 
     /**
-     * 解析内容并返回 SingBoxConfig
+     * 解析内容并返回 OpenWorldConfig
      */
-    fun parse(content: String): SingBoxConfig?
+    fun parse(content: String): OpenWorldConfig?
 }
 
 /**
@@ -224,14 +224,14 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
     /**
      * 解析订阅内容
      */
-    fun parse(content: String): SingBoxConfig? {
+    fun parse(content: String): OpenWorldConfig? {
         for (parser in parsers) {
             if (parser.canParse(content)) {
                 try {
                     val config = parser.parse(content)
                     if (config != null && !config.outbounds.isNullOrEmpty()) {
                         // 对节点进行去重
-                        val deduplicatedOutbounds = deduplicateOutbounds(config.outbounds)
+                        val deduplicatedOutbounds = deduplicateOutbounds(config.outbounds ?: emptyList())
                         return config.copy(outbounds = deduplicatedOutbounds)
                     }
                 } catch (e: Exception) {
@@ -248,7 +248,7 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
      * @param preResolveDns 是否预解析 DNS
      * @return 解析结果和 DNS 解析数量
      */
-    suspend fun parseWithDnsPreResolve(content: String, preResolveDns: Boolean = true): Pair<SingBoxConfig?, Int> {
+    suspend fun parseWithDnsPreResolve(content: String, preResolveDns: Boolean = true): Pair<OpenWorldConfig?, Int> {
         val config = parse(content)
         if (config == null || config.outbounds.isNullOrEmpty()) {
             return Pair(null, 0)
@@ -259,7 +259,7 @@ class SubscriptionManager(private val parsers: List<SubscriptionParser>) {
         }
 
         // 提取域名并预解析
-        val domains = DnsResolveCache.extractDomains(config.outbounds)
+        val domains = DnsResolveCache.extractDomains(config.outbounds ?: emptyList())
         val resolvedCount = DnsResolveCache.preResolve(domains)
 
         return Pair(config, resolvedCount)

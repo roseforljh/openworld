@@ -54,9 +54,6 @@ data class DnsFakeIpConfig(
 
 @Keep
 data class DnsRule(
-    // sing-box 1.11.0+: action-based DNS rule
-    // https://sing-box.sagernet.org/configuration/dns/rule/
-    // https://sing-box.sagernet.org/configuration/dns/rule_action/
     @SerializedName("action") val action: String? = null,
     // reject action fields
     @SerializedName("method") val method: String? = null,
@@ -136,7 +133,6 @@ data class Outbound(
     @SerializedName("server_port") val serverPort: Int? = null,
     @SerializedName("tcp_fast_open") val tcpFastOpen: Boolean? = null,
 
-    // TCP Keepalive 字段 (sing-box 1.13.0+)
     @SerializedName("tcp_keep_alive") val tcpKeepAlive: String? = null,
     @SerializedName("tcp_keep_alive_interval") val tcpKeepAliveInterval: String? = null,
     @SerializedName("connect_timeout") val connectTimeout: String? = null,
@@ -182,7 +178,8 @@ data class Outbound(
     // TLS 配置
     @SerializedName("tls") val tls: TlsConfig? = null,
 
-    // 传输层配�?    @SerializedName("transport") val transport: TransportConfig? = null,
+    // 传输层配�?
+    @SerializedName("transport") val transport: TransportConfig? = null,
 
     // 多路复用配置
     @SerializedName("multiplex") val multiplex: MultiplexConfig? = null,
@@ -251,7 +248,7 @@ data class TlsConfig(
     @SerializedName("server_name") val serverName: String? = null,
     @SerializedName("insecure") val insecure: Boolean? = null,
     @SerializedName("alpn") val alpn: List<String>? = null,
-    @SerializedName("min_version") val minVersion: String? = null, // TLS 版本限制: "1.2" �?"1.3"
+    @SerializedName("min_version") val minVersion: String? = null, // TLS 版本限制: "1.2" �?"1.3"
     @SerializedName("max_version") val maxVersion: String? = null,
     @SerializedName("utls") val utls: UtlsConfig? = null,
     @SerializedName("reality") val reality: RealityConfig? = null,
@@ -284,7 +281,6 @@ data class RealityConfig(
     @SerializedName("enabled") val enabled: Boolean? = null,
     @SerializedName("public_key") val publicKey: String? = null,
     @SerializedName("short_id") val shortId: String? = null
-    // Note: spiderX is Xray-core specific, not supported by sing-box
 )
 
 @Keep
@@ -385,8 +381,6 @@ data class ClashApiConfig(
     @SerializedName("secret") val secret: String? = null,
     @SerializedName("default_mode") val defaultMode: String? = null
 )
-
-
 
 
 

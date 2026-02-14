@@ -11,7 +11,7 @@ import android.os.SystemClock
 import android.util.Log
 import com.google.gson.Gson
 import com.openworld.app.model.AppSettings
-import com.openworld.app.model.SingBoxConfig
+import com.openworld.app.model.OpenWorldConfig
 import com.openworld.app.repository.LogRepository
 import com.openworld.app.repository.RuleSetRepository
 import com.openworld.app.repository.SettingsRepository
@@ -416,7 +416,7 @@ class StartupManager(
         val logLevel = if (settings.debugLoggingEnabled) "debug" else "info"
 
         try {
-            val configObj = gson.fromJson(configContent, SingBoxConfig::class.java)
+            val configObj = gson.fromJson(configContent, OpenWorldConfig::class.java)
 
             val logConfig = configObj.log?.copy(level = logLevel)
                 ?: com.openworld.app.model.LogConfig(level = logLevel, timestamp = true, output = "box.log")

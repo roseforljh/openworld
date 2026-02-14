@@ -32,17 +32,17 @@ class OpenWorldApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
 
-        // 初始�?MMKV - 必须在所有进程中初始�?        MMKV.initialize(this)
+        MMKV.initialize(this)
 
-        // 手动初始�?WorkManager 以支持多进程
+        // 手动初始�?WorkManager 以支持多进程
         if (!isWorkManagerInitialized()) {
             WorkManager.initialize(this, workManagerConfiguration)
         }
 
         LogRepository.init(this)
 
-        // 检测并初始�?OpenWorld 内核
-        BoxWrapperManager.detectOpenWorldKernel()
+        // 检测并初始�?OpenWorld 内核
+        BoxWrapperManager.detectCoreType()
 
         // 清理遗留的临时数据库文件 (应对应用崩溃或强制停止的情况)
         cleanupOrphanedTempFiles()
@@ -52,7 +52,7 @@ class OpenWorldApplication : Application(), Configuration.Provider {
             AppLifecycleObserver.register()
 
             applicationScope.launch {
-                // 读取省电设置并传�?AppLifecycleObserver
+                // 读取省电设置并传�?AppLifecycleObserver
                 try {
                     val settings = SettingsRepository.getInstance(this@OpenWorldApplication).settings.value
                     AppLifecycleObserver.setBackgroundTimeout(settings.backgroundPowerSavingDelay.delayMs)
@@ -60,7 +60,7 @@ class OpenWorldApplication : Application(), Configuration.Provider {
                     android.util.Log.w("OpenWorldApp", "Failed to read power saving setting", e)
                 }
 
-                // 预缓存物理网�?                // VPN 启动时可直接使用已缓存的网络，避免应用二次加�?                val cm = getSystemService(CONNECTIVITY_SERVICE) as? ConnectivityManager
+                val cm = getSystemService(CONNECTIVITY_SERVICE) as? ConnectivityManager
                 if (cm != null) {
                     DefaultNetworkListener.start(cm, this@OpenWorldApplication) { network ->
                         android.util.Log.d("OpenWorldApp", "Underlying network updated: $network")
@@ -69,9 +69,9 @@ class OpenWorldApplication : Application(), Configuration.Provider {
 
                 // 订阅自动更新
                 SubscriptionAutoUpdateWorker.rescheduleAll(this@OpenWorldApplication)
-                // 规则集自动更�?                RuleSetAutoUpdateWorker.rescheduleAll(this@OpenWorldApplication)
+                RuleSetAutoUpdateWorker.rescheduleAll(this@OpenWorldApplication)
                 // VPN 进程保活机制
-                // 优化: 定期检查后台进程状�?防止系统杀死导�?VPN 意外断开
+                // 优化: 定期检查后台进程状�?防止系统杀死导�?VPN 意外断开
                 VpnKeepaliveWorker.schedule(this@OpenWorldApplication)
             }
         }
@@ -95,10 +95,10 @@ class OpenWorldApplication : Application(), Configuration.Provider {
 
     /**
      * 清理遗留的临时数据库文件
-     * 在应用启动时执行,清理因崩溃或强制停止而残留的测试数据库文�?     */
+     * 在应用启动时执行,清理因崩溃或强制停止而残留的测试数据库文�?     */
     private fun cleanupOrphanedTempFiles() {
         try {
-            val tempDir = java.io.File(cacheDir, "singbox_temp")
+            val tempDir = java.io.File(cacheDir, "openworld_temp")
             if (!tempDir.exists() || !tempDir.isDirectory) return
 
             val cleaned = mutableListOf<String>()
@@ -119,7 +119,6 @@ class OpenWorldApplication : Application(), Configuration.Provider {
         }
     }
 }
-
 
 
 

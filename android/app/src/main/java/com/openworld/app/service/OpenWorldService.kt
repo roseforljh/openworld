@@ -63,25 +63,28 @@ class OpenWorldService : VpnService() {
 
     private val gson = Gson()
 
-    // ===== 新架�?Managers =====
-    // 核心管理�?(VPN 启动/停止)
+    // ===== 新架�?Managers =====
+    // 核心管理�?(VPN 启动/停止)
     private val coreManager: CoreManager by lazy {
         CoreManager(this, this, serviceScope)
     }
 
-    // 连接管理�?    private val connectManager: ConnectManager by lazy {
+    // 连接管理器
+    private val connectManager: ConnectManager by lazy {
         ConnectManager(this, serviceScope)
     }
 
-    // 节点选择管理�?    private val serviceSelectorManager: ServiceSelectorManager by lazy {
+    // 节点选择管理器
+    private val serviceSelectorManager: ServiceSelectorManager by lazy {
         ServiceSelectorManager()
     }
 
-    // 路由组自动选择管理�?    private val routeGroupSelector: RouteGroupSelector by lazy {
+    // 路由组自动选择管理器
+    private val routeGroupSelector: RouteGroupSelector by lazy {
         RouteGroupSelector(this, serviceScope)
     }
 
-    // Command 管理�?(Server/Client 交互)
+    // Command 管理�?(Server/Client 交互)
     private val commandManager: CommandManager by lazy {
         CommandManager(this, serviceScope)
     }
@@ -101,11 +104,13 @@ class OpenWorldService : VpnService() {
         NetworkHelper(this, serviceScope)
     }
 
-    // 启动管理�?    private val startupManager: com.openworld.app.service.manager.StartupManager by lazy {
+    // 启动管理器
+    private val startupManager: com.openworld.app.service.manager.StartupManager by lazy {
         com.openworld.app.service.manager.StartupManager(this, this, serviceScope)
     }
 
-    // 关闭管理�?    private val shutdownManager: com.openworld.app.service.manager.ShutdownManager by lazy {
+    // 关闭管理器
+    private val shutdownManager: com.openworld.app.service.manager.ShutdownManager by lazy {
         com.openworld.app.service.manager.ShutdownManager(this, cleanupScope)
     }
 
@@ -114,11 +119,13 @@ class OpenWorldService : VpnService() {
         ScreenStateManager(this, serviceScope)
     }
 
-    // 外部 VPN 监控�?    private val foreignVpnMonitor: ForeignVpnMonitor by lazy {
+    // 外部 VPN 监控器
+    private val foreignVpnMonitor: ForeignVpnMonitor by lazy {
         ForeignVpnMonitor(this)
     }
 
-    // 节点切换管理�?    private val nodeSwitchManager: NodeSwitchManager by lazy {
+    // 节点切换管理器
+    private val nodeSwitchManager: NodeSwitchManager by lazy {
         NodeSwitchManager(this, serviceScope)
     }
 
@@ -206,7 +213,7 @@ class OpenWorldService : VpnService() {
         override fun findBestPhysicalNetwork(): Network? = this@OpenWorldService.findBestPhysicalNetwork()
     }
 
-    // 通知管理�?(原有)
+    // 通知管理�?(原有)
     private val notificationManager: VpnNotificationManager by lazy {
         VpnNotificationManager(this, serviceScope)
     }
@@ -276,7 +283,7 @@ class OpenWorldService : VpnService() {
     }
 
     /**
-     * 初始化新架构 Managers (7个核心模�?
+     * 初始化新架构 Managers (7个核心模�?
      */
     @Suppress("CognitiveComplexMethod")
     private fun initManagers() {
@@ -310,12 +317,14 @@ class OpenWorldService : VpnService() {
     }
 
     private fun initServiceSelectorManager() {
-        // 3. 初始化节点选择管理�?        serviceSelectorManager.init(commandManager.getCommandClient())
+        // 3. 初始化节点选择管理�?
+        serviceSelectorManager.init(commandManager.getCommandClient())
         Log.i(TAG, "ServiceSelectorManager initialized")
     }
 
     private fun initCommandManager() {
-        // 4. 初始�?Command 管理�?        commandManager.init(object : CommandManager.Callbacks {
+        // 4. 初始�?Command 管理�?
+        commandManager.init(object : CommandManager.Callbacks {
             override fun requestNotificationUpdate(force: Boolean) {
                 this@OpenWorldService.requestNotificationUpdate(force)
             }
@@ -354,7 +363,8 @@ class OpenWorldService : VpnService() {
         })
         Log.i(TAG, "ScreenStateManager initialized")
 
-        // 初始化路由组自动选择管理�?        routeGroupSelector.init(object : RouteGroupSelector.Callbacks {
+        // 初始化路由组自动选择管理�?
+        routeGroupSelector.init(object : RouteGroupSelector.Callbacks {
             override val isRunning: Boolean
                 get() = OpenWorldService.isRunning
             override val isStopping: Boolean
@@ -364,7 +374,8 @@ class OpenWorldService : VpnService() {
         })
         Log.i(TAG, "RouteGroupSelector initialized")
 
-        // 9. 初始化外�?VPN 监控�?        foreignVpnMonitor.init(object : ForeignVpnMonitor.Callbacks {
+        // 9. 初始化外�?VPN 监控�?
+        foreignVpnMonitor.init(object : ForeignVpnMonitor.Callbacks {
             override val isStarting: Boolean
                 get() = OpenWorldService.isStarting
             override val isRunning: Boolean
@@ -441,9 +452,9 @@ class OpenWorldService : VpnService() {
             backgroundPowerManager.setThreshold(thresholdMs)
         }
 
-        // 设置 IPC Hub �?PowerManager 引用，用于接收主进程的生命周期通知
+        // 设置 IPC Hub �?PowerManager 引用，用于接收主进程的生命周期通知
         OpenWorldIpcHub.setPowerManager(backgroundPowerManager)
-        // 设置 ScreenStateManager �?PowerManager 引用，用于接收屏幕状态通知
+        // 设置 ScreenStateManager �?PowerManager 引用，用于接收屏幕状态通知
         screenStateManager.setPowerManager(backgroundPowerManager)
     }
 
@@ -451,7 +462,8 @@ class OpenWorldService : VpnService() {
      * StartupManager 回调实现
      */
     private val startupCallbacks = object : com.openworld.app.service.manager.StartupManager.Callbacks {
-        // 状态回�?        override fun onStarting() {
+        // 状态回调
+        override fun onStarting() {
             updateServiceState(ServiceState.STARTING)
             realTimeNodeName = null
             vpnLinkValidated = false
@@ -461,7 +473,8 @@ class OpenWorldService : VpnService() {
             Log.i(TAG, "OpenWorld VPN started successfully")
             notificationManager.setSuppressUpdates(false)
 
-            // 初始�?KernelHttpClient 的代理端�?            serviceScope.launch {
+            // 初始�?KernelHttpClient 的代理端�?
+            serviceScope.launch {
                 KernelHttpClient.updateProxyPortFromSettings(this@OpenWorldService)
             }
         }
@@ -493,7 +506,8 @@ class OpenWorldService : VpnService() {
         override fun stopForeignVpnMonitor() { foreignVpnMonitor.stop() }
         override fun detectExistingVpns(): Boolean = foreignVpnMonitor.hasExistingVpn()
 
-        // 组件初始�?        override fun initSelectorManager(configContent: String) {
+        // 组件初始化
+        override fun initSelectorManager(configContent: String) {
             this@OpenWorldService.initSelectorManager(configContent)
         }
 
@@ -501,7 +515,7 @@ class OpenWorldService : VpnService() {
             return runCatching {
                 // 1. 创建 CommandServer
                 val server = commandManager.createServer(platformInterfaceImpl).getOrThrow()
-                // 2. 设置�?CoreManager
+                // 2. 设置�?CoreManager
                 coreManager.setCommandServer(server)
                 // 3. 启动 CommandServer
                 commandManager.startServer().getOrThrow()
@@ -513,7 +527,7 @@ class OpenWorldService : VpnService() {
             commandManager.startClients().onFailure { e ->
                 Log.e(TAG, "Failed to start Command Clients", e)
             }
-            // 更新 serviceSelectorManager �?commandClient (修复热切换不生效的问�?
+            // 更新 serviceSelectorManager �?commandClient (修复热切换不生效的问�?
             serviceSelectorManager.updateCommandClient(commandManager.getCommandClient())
         }
 
@@ -526,7 +540,8 @@ class OpenWorldService : VpnService() {
         }
 
         override fun startHealthMonitor() {
-            // 健康监控已移除，保留空实�?            Log.i(TAG, "Health monitor disabled (simplified mode)")
+            // 健康监控已移除，保留空实�?
+            Log.i(TAG, "Health monitor disabled (simplified mode)")
         }
 
         override fun scheduleKeepaliveWorker() {
@@ -539,7 +554,8 @@ class OpenWorldService : VpnService() {
             networkManager = NetworkManager(this@OpenWorldService, this@OpenWorldService)
         }
 
-        // 状态管�?        override fun updateTileState() { this@OpenWorldService.updateTileState() }
+        // 状态管理
+        override fun updateTileState() { this@OpenWorldService.updateTileState() }
         override fun setIsRunning(running: Boolean) { isRunning = running; NetworkClient.onVpnStateChanged(running) }
         override fun setIsStarting(starting: Boolean) { isStarting = starting }
         override fun setLastError(error: String?) { OpenWorldService.setLastError(error) }
@@ -568,7 +584,7 @@ class OpenWorldService : VpnService() {
         override fun restoreUnderlyingNetwork(network: Network) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
                 setUnderlyingNetworks(arrayOf(network))
-                Log.i(TAG, "Underlying network restored before libbox start: $network")
+            Log.i(TAG, "Underlying network restored before core start: $network")
             }
         }
 
@@ -587,7 +603,8 @@ class OpenWorldService : VpnService() {
 
     // ShutdownManager 回调实现
     private val shutdownCallbacks = object : ShutdownManager.Callbacks {
-        // 状态管�?        override fun updateServiceState(state: ServiceState) {
+        // 状态管理
+        override fun updateServiceState(state: ServiceState) {
             this@OpenWorldService.updateServiceState(state)
         }
         override fun updateTileState() { this@OpenWorldService.updateTileState() }
@@ -635,12 +652,14 @@ class OpenWorldService : VpnService() {
             platformInterfaceImpl.closeDefaultInterfaceMonitor(listener)
         }
 
-        // 获取状�?        override fun isServiceRunning(): Boolean = coreManager.isServiceRunning()
+        // 获取状态
+        override fun isServiceRunning(): Boolean = coreManager.isServiceRunning()
         override fun getVpnInterface(): ParcelFileDescriptor? = vpnInterface
         override fun getCurrentInterfaceListener(): InterfaceUpdateListener? = currentInterfaceListener
         override fun getConnectivityManager(): ConnectivityManager? = connectivityManager
 
-        // 设置状�?        override fun setVpnInterface(fd: ParcelFileDescriptor?) { vpnInterface = fd }
+        // 设置状态
+        override fun setVpnInterface(fd: ParcelFileDescriptor?) { vpnInterface = fd }
         override fun setIsRunning(running: Boolean) { isRunning = running }
         override fun setRealTimeNodeName(name: String?) { realTimeNodeName = name }
         override fun setVpnLinkValidated(validated: Boolean) { vpnLinkValidated = validated }
@@ -670,12 +689,13 @@ class OpenWorldService : VpnService() {
             this@OpenWorldService.startVpn(configPath)
         }
 
-        // 检�?VPN 接口是否可复�?        override fun hasExistingTunInterface(): Boolean = vpnInterface != null
+        // 检查 VPN 接口是否可复用
+        override fun hasExistingTunInterface(): Boolean = vpnInterface != null
     }
 
     /**
-     * 初始�?SelectorManager - 记录 PROXY selector �?outbound 列表
-     * 用于后续热切换时判断是否在同一 selector group �?     */
+     * 初始�?SelectorManager - 记录 PROXY selector �?outbound 列表
+     * 用于后续热切换时判断是否在同一 selector group �?     */
     private fun initSelectorManager(configContent: String) {
         try {
             val config = gson.fromJson(configContent, OpenWorldConfig::class.java) ?: return
@@ -699,19 +719,19 @@ class OpenWorldService : VpnService() {
     }
 
     /**
-     * 触发 URL 测试并返回结�?     * 使用 CommandClient.urlTest(groupTag) API
+     * 触发 URL 测试并返回结�?     * 使用 CommandClient.urlTest(groupTag) API
      *
-     * @param groupTag 要测试的 group 标签 (�?"PROXY")
-     * @param timeoutMs 等待结果的超时时�?     * @return 节点延迟映射 (tag -> delay ms)，失败返回空 Map
+     * @param groupTag 要测试的 group 标签 (�?"PROXY")
+     * @param timeoutMs 等待结果的超时时�?     * @return 节点延迟映射 (tag -> delay ms)，失败返回空 Map
      */
     suspend fun urlTestGroup(groupTag: String, timeoutMs: Long = 10000L): Map<String, Int> {
         return commandManager.urlTestGroup(groupTag, timeoutMs)
     }
 
     /**
-     * 获取缓存�?URL 测试延迟
+     * 获取缓存�?URL 测试延迟
      * @param tag 节点标签
-     * @return 延迟�?(ms)，未测试返回 null
+     * @return 延迟�?(ms)，未测试返回 null
      */
     fun getCachedUrlTestDelay(tag: String): Int? {
         return commandManager.getCachedUrlTestDelay(tag)
@@ -731,7 +751,7 @@ class OpenWorldService : VpnService() {
     }
 
     /**
-     * 重置所有连�?- 渐进式降级策�?     */
+     * 重置所有连�?- 渐进式降级策�?     */
     private suspend fun resetConnectionsOptimal(reason: String, skipDebounce: Boolean = false) {
         networkHelper.resetConnectionsOptimal(
             reason = reason,
@@ -768,10 +788,12 @@ class OpenWorldService : VpnService() {
         val activeLabel = runCatching {
             val repo = ConfigRepository.getInstance(applicationContext)
             val activeNodeId = repo.activeNodeId.value
-            // 2025-fix: �?buildNotificationState 保持一致的优先�?            realTimeNodeName
+            // 2025-fix: 与 buildNotificationState 保持一致优先级
+            val resolvedNodeName = realTimeNodeName
                 ?: VpnStateStore.getActiveLabel().takeIf { it.isNotBlank() }
                 ?: repo.nodes.value.find { it.id == activeNodeId }?.name
                 ?: ""
+            resolvedNodeName
         }.getOrDefault("")
 
         OpenWorldIpcHub.update(
@@ -818,13 +840,13 @@ class OpenWorldService : VpnService() {
     }
 
     /**
-     * 暴露�?ConfigRepository 调用，尝试热切换节点
+     * 暴露�?ConfigRepository 调用，尝试热切换节点
      * @return true if hot switch triggered successfully, false if restart is needed
      *
      * 核心原理:
-     * sing-box �?Selector.SelectOutbound() 内部会调�?interruptGroup.Interrupt(interruptExternalConnections)
-     * �?PROXY selector 配置�?interrupt_exist_connections=true �?
-     * selectOutbound 会自动中断所有外部连�?入站连接)
+     * OpenWorld Selector.SelectOutbound() 内部会调用 interruptGroup.Interrupt(interruptExternalConnections)
+     * �?PROXY selector 配置�?interrupt_exist_connections=true �?
+     * selectOutbound 会自动中断所有外部连�?入站连接)
      */
     suspend fun hotSwitchNode(nodeTag: String): Boolean {
         if (!coreManager.isServiceRunning() || !isRunning) return false
@@ -836,7 +858,7 @@ class OpenWorldService : VpnService() {
             coreManager.wakeService()
             L.step("HotSwitch", 1, 2, "Called wakeService()")
 
-            // Step 2: 使用 SelectorManager 切换节点 (渐进式降�?
+            // Step 2: 使用 SelectorManager 切换节点 (渐进式降�?
             L.step("HotSwitch", 2, 2, "Calling SelectorManager.switchNode...")
 
             when (val result = serviceSelectorManager.switchNode(nodeTag)) {
@@ -847,7 +869,8 @@ class OpenWorldService : VpnService() {
                 }
                 is com.openworld.app.service.manager.SelectorManager.SwitchResult.NeedRestart -> {
                     L.warn("HotSwitch", "Need restart: ${result.reason}")
-                    // 需要完整重启，返回 false 让调用者处�?                    return false
+                    // 需要完整重启，返回 false 让调用者处�?
+                    return false
                 }
                 is com.openworld.app.service.manager.SelectorManager.SwitchResult.Failed -> {
                     L.error("HotSwitch", "Failed: ${result.error}")
@@ -879,18 +902,19 @@ class OpenWorldService : VpnService() {
 
     private val isConnectingTun = AtomicBoolean(false)
 
-// Command 相关变量已移�?CommandManager
-// 保留这些作为兼容性别�?(委托�?commandManager)
+// Command 相关变量已移�?CommandManager
+// 保留这些作为兼容性别�?(委托�?commandManager)
     private val activeConnectionNode: String? get() = commandManager.activeConnectionNode
     private val activeConnectionLabel: String? get() = commandManager.activeConnectionLabel
     private val recentConnectionIds: List<String> get() = commandManager.recentConnectionIds
 
-// 速度计算相关 - 委托�?TrafficMonitor
+// 速度计算相关 - 委托�?TrafficMonitor
     @Volatile private var showNotificationSpeed: Boolean = true
     private var currentUploadSpeed: Long = 0L
     private var currentDownloadSpeed: Long = 0L
 
-// TrafficMonitor 实例 - 统一管理流量监控和卡死检�?    private val trafficMonitor = TrafficMonitor(serviceScope)
+// TrafficMonitor 实例 - 统一管理流量监控和卡死检测
+    private val trafficMonitor = TrafficMonitor(serviceScope)
     private val trafficListener = object : TrafficMonitor.Listener {
         override fun onTrafficUpdate(snapshot: TrafficMonitor.TrafficSnapshot) {
             currentUploadSpeed = snapshot.uploadSpeed
@@ -934,7 +958,8 @@ class OpenWorldService : VpnService() {
         override fun onProxyIdle(idleDurationMs: Long) {
             val idleSeconds = idleDurationMs / 1000
 
-            // 条件化恢复：避免在“无连接/无需恢复”时触发重置导致抖动�?            if (!BoxWrapperManager.isAvailable()) {
+            // 条件化恢复：避免在“无连接/无需恢复”时触发重置导致抖动�?
+            if (!BoxWrapperManager.isAvailable()) {
                 Log.d(TAG, "Proxy idle detected (${idleSeconds}s) but Box not available, skip reset")
                 return
             }
@@ -1010,7 +1035,8 @@ class OpenWorldService : VpnService() {
     @Suppress("CognitiveComplexMethod", "LongMethod")
     private fun submitRecoveryRequest(request: RecoveryRequest) {
         synchronized(this) {
-            // 2025-fix-v7: APP_FOREGROUND + force 走快车道，不进合并窗�?            // 直接 wake + resetNetwork，跳�?800ms 合并等待和多级探�?            if (request.reason == RecoveryReason.APP_FOREGROUND && request.force && !recoveryInFlight) {
+            // 2025-fix-v7: APP_FOREGROUND + force 走快车道，不进合并窗�?            // 直接 wake + resetNetwork，跳�?800ms 合并等待和多级探�?
+            if (request.reason == RecoveryReason.APP_FOREGROUND && request.force && !recoveryInFlight) {
                 recoveryInFlight = true
                 serviceScope.launch {
                     try {
@@ -1176,13 +1202,15 @@ class OpenWorldService : VpnService() {
             recoveryReasonLastAtMs[context.reasonKey] = context.now
             recoveryTriggerCount.incrementAndGet()
 
-            // 使用智能恢复替代原有�?SOFT/HARD 二级恢复
+            // 使用智能恢复替代原有�?SOFT/HARD 二级恢复
             val smartResult = BoxWrapperManager.smartRecover(
                 context = this@OpenWorldService,
                 source = request.rawReason,
-                skipProbe = request.force // 强制恢复时跳过探�?            )
+                skipProbe = request.force // 强制恢复时跳过探测
+            )
 
-            // 映射 smartRecover 结果到原有统�?            val mode = when (smartResult.level) {
+            // 映射 smartRecover 结果到原有统�?
+            val mode = when (smartResult.level) {
                 BoxWrapperManager.RecoveryLevel.NONE,
                 BoxWrapperManager.RecoveryLevel.PROBE -> BoxWrapperManager.RecoveryMode.SOFT
                 BoxWrapperManager.RecoveryLevel.SELECTIVE -> {
@@ -1223,7 +1251,7 @@ class OpenWorldService : VpnService() {
                 outcome = outcomeDetail
             )
 
-            // smartRecover 已包含渐进升级逻辑，不再需�?foregroundHardFallback
+            // smartRecover 已包含渐进升级逻辑，不再需�?foregroundHardFallback
             // 仅当 PROBE 级别（链路正常无需恢复）时才考虑调度兜底
             if (smartResult.level == BoxWrapperManager.RecoveryLevel.PROBE) {
                 scheduleForegroundHardFallbackIfNeeded(request, mode, success)
@@ -1251,14 +1279,14 @@ class OpenWorldService : VpnService() {
     }
 
     /**
-     * 2025-fix-v7: 前台快速恢�?- 跳过探测，直�?wake + resetNetwork
-     * �?smartRecover �?2-5 秒（不做 PROBE + SELECTIVE 的验证循环）
-     * 仅在 APP_FOREGROUND + force 时使�?     */
+     * 2025-fix-v7: 前台快速恢�?- 跳过探测，直�?wake + resetNetwork
+     * �?smartRecover �?2-5 秒（不做 PROBE + SELECTIVE 的验证循环）
+     * 仅在 APP_FOREGROUND + force 时使�?     */
     private fun executeForegroundFastRecovery(request: RecoveryRequest) {
         val startMs = SystemClock.elapsedRealtime()
 
         // 2026-fix: wake + 清理僵死连接 + resetNetwork
-        // 息屏/后台期间 TCP 连接已超时，必须清理旧连接引�?        // 否则前台应用复用旧连接会一�?loading
+        // 息屏/后台期间 TCP 连接已超时，必须清理旧连接引�?        // 否则前台应用复用旧连接会一�?loading
         BoxWrapperManager.wake()
         BoxWrapperManager.closeAllTrackedConnections()
         BoxWrapperManager.resetAllConnections(true)
@@ -1350,7 +1378,7 @@ class OpenWorldService : VpnService() {
         foregroundHardFallbackJob = serviceScope.launch {
             delay(foregroundRecoveryGraceMs)
 
-            // 先探�?VPN 链路，如果正常则跳过 HARD fallback
+            // 先探�?VPN 链路，如果正常则跳过 HARD fallback
             val probeOk = runCatching {
                 ProbeManager.probeFirstSuccessViaVpn(
                     context = this@OpenWorldService,
@@ -1447,7 +1475,7 @@ class OpenWorldService : VpnService() {
     }
 
 /**
-     * 重启 VPN 服务以彻底清理网络状�?     * 用于处理网络栈重置无效的严重情况
+     * 重启 VPN 服务以彻底清理网络状�?     * 用于处理网络栈重置无效的严重情况
      */
     @Suppress("UnusedPrivateMember")
     private suspend fun restartVpnService(reason: String) = withContext(Dispatchers.Main) {
@@ -1460,7 +1488,7 @@ class OpenWorldService : VpnService() {
         }
 
         try {
-            // 停止当前服务 (不停�?Service 本身)
+            // 停止当前服务 (不停�?Service 本身)
             stopVpn(stopService = false)
 
             // 等待完全停止
@@ -1497,20 +1525,22 @@ class OpenWorldService : VpnService() {
     private var vpnHealthJob: Job? = null
     @Volatile private var vpnLinkValidated: Boolean = false
 
-// 网络就绪标志：确�?Libbox 启动前网络回调已完成初始采样
+// 网络就绪标志：确�?Libbox 启动前网络回调已完成初始采样
     @Volatile private var networkCallbackReady: Boolean = false
     @Volatile private var noPhysicalNetworkWarningLogged: Boolean = false
 
-// setUnderlyingNetworks 防抖机制 - 避免频繁调用触发系统提示�?    private val lastSetUnderlyingNetworksAtMs = AtomicLong(0)
-    private val setUnderlyingNetworksDebounceMs: Long = 2000L // 2秒防�?
-// VPN 启动窗口期保�?// �?VPN 启动后的短时间内，updateDefaultInterface 跳过 setUnderlyingNetworks 调用
+// setUnderlyingNetworks 防抖机制 - 避免频繁调用触发系统提示
+    private val lastSetUnderlyingNetworksAtMs = AtomicLong(0)
+    private val setUnderlyingNetworksDebounceMs: Long = 2000L // 2秒防�?
+// VPN 启动窗口期保�?// �?VPN 启动后的短时间内，updateDefaultInterface 跳过 setUnderlyingNetworks 调用
     private val vpnStartedAtMs = AtomicLong(0)
     private val vpnStartupWindowMs: Long = 3000L
 
     @Volatile private var lastConnectionsResetAtMs: Long = 0L
     private val connectionsResetDebounceMs: Long = 2000L
 
-// ACTION_PREPARE_RESTART 防抖：避免短时间内重复触发导致网络反复震�?    private val lastPrepareRestartAtMs = AtomicLong(0L)
+// ACTION_PREPARE_RESTART 防抖：避免短时间内重复触发导致网络反复震荡
+    private val lastPrepareRestartAtMs = AtomicLong(0L)
     private val prepareRestartDebounceMs: Long = 1500L
 
     private enum class RecoveryReason(
@@ -1569,11 +1599,11 @@ class OpenWorldService : VpnService() {
     )
 
     private fun findBestPhysicalNetwork(): Network? {
-        // 优先使用 ConnectManager (新架�?
+        // 优先使用 ConnectManager (新架�?
         connectManager.getCurrentNetwork()?.let { return it }
-        // 回退�?NetworkManager
+        // 回退�?NetworkManager
         networkManager?.findBestPhysicalNetwork()?.let { return it }
-        // �?networkManager �?null 时（服务重启期间），使用 NetworkHelper 的回退逻辑
+        // �?networkManager �?null 时（服务重启期间），使用 NetworkHelper 的回退逻辑
         return networkHelper.findBestPhysicalNetworkFallback()
     }
 
@@ -1610,7 +1640,7 @@ class OpenWorldService : VpnService() {
         Log.i(TAG, "Restored isManuallyStopped state: $isManuallyStopped")
 
         notificationManager.createNotificationChannel()
-        // 初始�?ConnectivityManager
+        // 初始�?ConnectivityManager
         connectivityManager = getSystemService(ConnectivityManager::class.java)
 
         // ===== 初始化新架构 Managers =====
@@ -1646,11 +1676,12 @@ class OpenWorldService : VpnService() {
                 }
         }
 
-        // �?P0修复3: 注册Activity生命周期回调，检测应用返回前�?        screenStateManager.registerActivityLifecycleCallbacks(application)
+        // �?P0修复3: 注册Activity生命周期回调，检测应用返回前�?
+        screenStateManager.registerActivityLifecycleCallbacks(application)
     }
 
 /**
-     * 监听应用前后台切�?(委托�?ScreenStateManager)
+     * 监听应用前后台切�?(委托�?ScreenStateManager)
      */
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
@@ -1673,7 +1704,7 @@ class OpenWorldService : VpnService() {
                 VpnStateStore.setManuallyStopped(false)
                 VpnTileService.persistVpnPending(applicationContext, "starting")
 
-                // 性能优化: 预创�?TUN Builder (非阻�?
+                // 性能优化: 预创�?TUN Builder (非阻�?
                 coreManager.preallocateTunBuilder()
 
                 val configPath = intent.getStringExtra(EXTRA_CONFIG_PATH)
@@ -1738,7 +1769,7 @@ class OpenWorldService : VpnService() {
                 if (isRunning) {
                     // 2025-fix: 优先尝试热切换节点，避免重启 VPN 导致连接断开
                     // 只有当需要更改核心配置（如路由规则、DNS 等）时才重启
-                    // 目前所有切换都视为可能包含核心变更，但我们可以尝试检�?                    // 暂时保持重启逻辑作为兜底，但在此之前尝试热切�?                    // 注意：如果只是切换节点，并不需要重�?VPN，直�?selectOutbound 即可
+                    // 目前所有切换都视为可能包含核心变更，但我们可以尝试检�?                    // 暂时保持重启逻辑作为兜底，但在此之前尝试热切�?                    // 注意：如果只是切换节点，并不需要重�?VPN，直�?selectOutbound 即可
                     // 但我们需要一种机制来通知 Service 是在切换节点还是完全重载
                     stopVpn(stopService = false)
                 } else {
@@ -1760,7 +1791,8 @@ class OpenWorldService : VpnService() {
             }
             ACTION_SWITCH_NODE -> {
                 Log.i(TAG, "Received ACTION_SWITCH_NODE -> switching node")
-                // �?Intent 中获取目标节�?ID，如果未提供则切换下一�?                val targetNodeId = intent.getStringExtra("node_id")
+                // �?Intent 中获取目标节�?ID，如果未提供则切换下一�?
+                val targetNodeId = intent.getStringExtra("node_id")
                 val outboundTag = intent.getStringExtra("outbound_tag")
                 runCatching {
                     LogRepository.getInstance().addLog(
@@ -1810,8 +1842,8 @@ class OpenWorldService : VpnService() {
                 performPrepareRestart()
             }
             ACTION_HOT_RELOAD -> {
-                // �?2025-fix: 内核级热重载
-                // �?VPN 运行时重载配置，不销�?VPN 服务
+                // �?2025-fix: 内核级热重载
+                // �?VPN 运行时重载配置，不销�?VPN 服务
                 Log.i(TAG, "Received ACTION_HOT_RELOAD -> performing hot reload")
                 val configContent = intent.getStringExtra(EXTRA_CONFIG_CONTENT)
                 if (configContent.isNullOrEmpty()) {
@@ -1858,7 +1890,7 @@ class OpenWorldService : VpnService() {
     @Volatile private var pendingHotSwitchFallbackConfigPath: String? = null
 
     /**
-     * 执行预清理操�?     */
+     * 执行预清理操�?     */
     private fun performPrepareRestart() {
         if (!isRunning) {
             Log.w(TAG, "performPrepareRestart: VPN not running, skip")
@@ -1885,11 +1917,12 @@ class OpenWorldService : VpnService() {
                 }
 
                 // Step 3: 等待应用收到广播
-                // 不需要太长时间，因为VPN重启本身也需要时�?                Log.i(TAG, "[PrepareRestart] Step 3/3: Waiting for apps to process network change...")
+                // 不需要太长时间，因为VPN重启本身也需要时�?
+                Log.i(TAG, "[PrepareRestart] Step 3/3: Waiting for apps to process network change...")
                 delay(100)
 
-                // 注意：不需要调�?closeAllConnectionsImmediate()
-                // 因为 VPN 重启时服务关闭会强制关闭所有连�?
+                // 注意：不需要调�?closeAllConnectionsImmediate()
+                // 因为 VPN 重启时服务关闭会强制关闭所有连�?
                 Log.i(TAG, "[PrepareRestart] Complete - apps should now detect network interruption")
             } catch (e: Exception) {
                 Log.e(TAG, "performPrepareRestart error", e)
@@ -1899,8 +1932,8 @@ class OpenWorldService : VpnService() {
 
 /**
      * 执行内核级热重载
-     * �?VPN 运行时重载配置，不销�?VPN 服务
-     * 失败�?Toast 报错并关�?VPN，让用户手动重新打开
+     * �?VPN 运行时重载配置，不销�?VPN 服务
+     * 失败�?Toast 报错并关�?VPN，让用户手动重新打开
      */
     private fun performHotReload(configContent: String) {
         if (!isRunning) {
@@ -1912,7 +1945,8 @@ class OpenWorldService : VpnService() {
             try {
                 Log.i(TAG, "[HotReload] Starting kernel-level hot reload...")
 
-                // 更新 CoreManager 的设置，确保后续操作使用最新设�?                val settings = SettingsRepository.getInstance(applicationContext).settings.first()
+                // 更新 CoreManager 的设置，确保后续操作使用最新设�?
+                val settings = SettingsRepository.getInstance(applicationContext).settings.first()
                 coreManager.setCurrentSettings(settings)
 
                 val result = coreManager.hotReloadConfig(configContent, preserveSelector = true)
@@ -1996,9 +2030,9 @@ class OpenWorldService : VpnService() {
 
     /**
      * 同步版本的热重载，供 IPC 调用
-     * 直接调用 Go �?StartOrReloadService，阻塞等待结�?     *
-     * 这里使用 runBlocking 是因�?AIDL 接口不支持挂起函数，
-     * 调用来自 VPN 进程�?Binder 线程池，使用 Dispatchers.IO 避免阻塞调用线程
+     * 直接调用 Go �?StartOrReloadService，阻塞等待结�?     *
+     * 这里使用 runBlocking 是因�?AIDL 接口不支持挂起函数，
+     * 调用来自 VPN 进程�?Binder 线程池，使用 Dispatchers.IO 避免阻塞调用线程
      *
      * @return true=成功, false=失败
      */
@@ -2038,10 +2072,10 @@ class OpenWorldService : VpnService() {
     }
 
     /**
-     * 启动 VPN (重构�?- 委托�?StartupManager)
-     * 原方�?~430 行，现在简化为 ~90 �?     */
+     * 启动 VPN (重构�?- 委托�?StartupManager)
+     * 原方�?~430 行，现在简化为 ~90 �?     */
     private fun startVpn(configPath: String) {
-        // 状态检查（保留�?Service 中，因为涉及多线程同步）
+        // 状态检查（保留�?Service 中，因为涉及多线程同步）
         synchronized(this) {
             if (isRunning) {
                 Log.w(TAG, "VPN already running, ignore start request")
@@ -2087,7 +2121,7 @@ class OpenWorldService : VpnService() {
             c
         }
 
-        // 委托�?StartupManager
+        // 委托�?StartupManager
         startVpnJob?.cancel()
         startVpnJob = serviceScope.launch {
             val result = startupManager.startVpn(
@@ -2102,14 +2136,13 @@ class OpenWorldService : VpnService() {
                 is com.openworld.app.service.manager.StartupManager.StartResult.Success -> {
                     updateServiceState(ServiceState.RUNNING)
 
-                    // 初始�?BoxWrapperManager with CommandServer
+                    // 初始�?BoxWrapperManager with CommandServer
                     commandManager.getCommandServer()?.let { server ->
                         if (BoxWrapperManager.init(server)) {
                             Log.i(TAG, "BoxWrapperManager initialized")
                         }
                     }
 
-                    // 注册 libbox 服务
                     tryRegisterRunningServiceForLibbox()
                 }
                 is com.openworld.app.service.manager.StartupManager.StartResult.Failed -> {
@@ -2120,7 +2153,8 @@ class OpenWorldService : VpnService() {
                     stopSelf()
                 }
                 is com.openworld.app.service.manager.StartupManager.StartResult.Cancelled -> {
-                    // 已在 callbacks.onCancelled() 中处�?                }
+                    // 已在 callbacks.onCancelled() 中处理
+                }
             }
 
             // 清理
@@ -2133,7 +2167,7 @@ class OpenWorldService : VpnService() {
     }
 
     private fun stopVpn(stopService: Boolean) {
-        // 状态同步检查（保留�?Service 中，因为涉及多线程同步）
+        // 状态同步检查（保留�?Service 中，因为涉及多线程同步）
         synchronized(this) {
             stopSelfRequested = stopSelfRequested || stopService
             if (isStopping) {
@@ -2142,12 +2176,13 @@ class OpenWorldService : VpnService() {
             isStopping = true
         }
 
-        // 更新状�?        updateServiceState(ServiceState.STOPPING)
+        // 更新状�?
+        updateServiceState(ServiceState.STOPPING)
         notificationManager.setSuppressUpdates(true)
         notificationManager.cancelNotification()
         updateTileState()
 
-        // 发�?Tile 刷新广播
+        // 发�?Tile 刷新广播
         runCatching {
             val intent = Intent(VpnTileService.ACTION_REFRESH_TILE).apply {
                 `package` = packageName
@@ -2155,10 +2190,11 @@ class OpenWorldService : VpnService() {
             sendBroadcast(intent)
         }
 
-        // 重置 VPN 启动时间�?        vpnStartedAtMs.set(0)
+        // 重置 VPN 启动时间�?
+        vpnStartedAtMs.set(0)
         stallRefreshAttempts = 0
 
-        // 清理 networkManager (stopService 时释�?
+        // 清理 networkManager (stopService 时释�?
         if (stopService) {
             networkManager?.reset()
             networkManager = null
@@ -2171,7 +2207,7 @@ class OpenWorldService : VpnService() {
         // 获取代理端口用于等待释放
         val proxyPort = currentSettings?.proxyPort ?: 2080
 
-        // 委托�?ShutdownManager
+        // 委托�?ShutdownManager
         // 不需要严格等待端口释放，启动时会强杀进程确保端口可用
         cleanupJob = shutdownManager.stopVpn(
             options = ShutdownManager.ShutdownOptions(
@@ -2195,7 +2231,8 @@ class OpenWorldService : VpnService() {
         try {
             TileService.requestListeningState(this, ComponentName(this, VpnTileService::class.java))
 
-            // 显式触发 TileService 刷新，避免仅依赖 listening/bind 回调导致状态滞�?            val refreshIntent = Intent(this, VpnTileService::class.java).apply {
+            // 显式触发 TileService 刷新，避免仅依赖 listening/bind 回调导致状态滞�?
+            val refreshIntent = Intent(this, VpnTileService::class.java).apply {
                 action = VpnTileService.ACTION_REFRESH_TILE
             }
             startService(refreshIntent)
@@ -2208,7 +2245,7 @@ class OpenWorldService : VpnService() {
         val configRepository = ConfigRepository.getInstance(this)
         val activeNodeId = configRepository.activeNodeId.value
         // 2025-fix: 优先使用内存中的 realTimeNodeName，然后是持久化的 VpnStateStore.activeLabel
-        // 最后才回退�?configRepository（可能在跨进程时不同步）
+        // 最后才回退�?configRepository（可能在跨进程时不同步）
         val nodeName = realTimeNodeName
             ?: VpnStateStore.getActiveLabel().takeIf { it.isNotBlank() }
             ?: configRepository.nodes.value.find { it.id == activeNodeId }?.name
@@ -2235,7 +2272,8 @@ class OpenWorldService : VpnService() {
         Log.i(TAG, "onDestroy called -> stopVpn(stopService=false) pid=${android.os.Process.myPid()}")
         TrafficRepository.getInstance(this).saveStats()
 
-        // 清理省电管理器引�?        OpenWorldIpcHub.setPowerManager(null)
+        // 清理省电管理器引�?
+        OpenWorldIpcHub.setPowerManager(null)
         screenStateManager.setPowerManager(null)
         backgroundPowerManager.cleanup()
 
@@ -2284,7 +2322,7 @@ class OpenWorldService : VpnService() {
         // This ensures clean restart if system decides to recreate the service.
         Log.i(TAG, "OpenWorldService destroyed. Halting process ${android.os.Process.myPid()}.")
 
-        // 同步取消通知，防�?halt(0) 后通知残留
+        // 同步取消通知，防�?halt(0) 后通知残留
         runCatching {
             val nm = getSystemService(android.app.NotificationManager::class.java)
             nm.cancel(com.openworld.app.service.notification.VpnNotificationManager.NOTIFICATION_ID)
@@ -2307,7 +2345,8 @@ class OpenWorldService : VpnService() {
         updateServiceState(ServiceState.STOPPED)
         updateTileState()
 
-        // 记录日志，告知用户原�?        com.openworld.app.repository.LogRepository.getInstance()
+        // 记录日志，告知用户原�?
+        com.openworld.app.repository.LogRepository.getInstance()
             .addLog("WARN: VPN permission revoked by system (possibly another VPN app started)")
 
         // 发送通知提醒用户
@@ -2336,7 +2375,7 @@ class OpenWorldService : VpnService() {
     }
 
 /**
-     * 确保网络回调就绪，最多等待指定超时时�?     * 如果超时仍未就绪，尝试主动采样当前活跃网�?     */
+     * 确保网络回调就绪，最多等待指定超时时�?     * 如果超时仍未就绪，尝试主动采样当前活跃网�?     */
     private suspend fun ensureNetworkCallbackReadyWithTimeout(timeoutMs: Long = 2000L) {
         networkHelper.ensureNetworkCallbackReady(
             isCallbackReady = { networkCallbackReady },
@@ -2351,23 +2390,24 @@ class OpenWorldService : VpnService() {
     }
 
     /**
-     * 后台异步更新规则�?- 性能优化
+     * 后台异步更新规则�?- 性能优化
      * VPN 启动成功后延迟执行，在后台静默更新规则集
      * 这样启动时不需要等待规则集下载
      *
-     * 2026-fix: 增加延迟时间并检�?CommandClient 状态，防止�?gomobile 回调并发导致
+     * 2026-fix: 增加延迟时间并检�?CommandClient 状态，防止�?gomobile 回调并发导致
      * go/Seq Unknown reference 崩溃
      */
     private fun scheduleAsyncRuleSetUpdate() {
         serviceScope.launch(Dispatchers.IO) {
-            // 2026-fix: 增加延迟�?15 秒，确保 CommandClient 回调已稳�?            delay(15000)
+            // 2026-fix: 增加延迟�?15 秒，确保 CommandClient 回调已稳�?
+            delay(15000)
 
             if (!isRunning || isStopping) {
                 Log.d(TAG, "scheduleAsyncRuleSetUpdate: VPN not running, skip")
                 return@launch
             }
 
-            // 2026-fix: 检�?CommandClient 是否已收到回调，避免在初始化阶段并发访问
+            // 2026-fix: 检�?CommandClient 是否已收到回调，避免在初始化阶段并发访问
             val groupsCount = commandManager.getGroupsCount()
             if (groupsCount == 0) {
                 Log.d(TAG, "scheduleAsyncRuleSetUpdate: CommandClient not ready yet, skip")
@@ -2410,10 +2450,5 @@ enum class ServiceState {
     RUNNING,
     STOPPING
 }
-
-
-
-
-
 
 

@@ -1,8 +1,8 @@
 package com.openworld.app.core
 
 import android.util.Log
-import io.nekohasekai.libbox.CommandServer
-import io.nekohasekai.libbox.Libbox
+import com.openworld.app.core.bridge.CommandServer
+import com.openworld.app.core.bridge.Libbox
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,6 +47,10 @@ object BoxWrapperManager {
     @Volatile
     private var lastResetNetworkTimestamp: Long = 0L
     private const val RESET_NETWORK_DEBOUNCE_MS = 500L
+
+    fun detectCoreType() {
+        Log.i(TAG, "OpenWorld core mode active")
+    }
 
     /**
      * 初始化 - 绑定 CommandServer
@@ -648,7 +652,7 @@ object BoxWrapperManager {
      * @return 节点延迟映射 (tag -> delay ms)，失败返回空 Map
      */
     suspend fun urlTestGroupAsync(groupTag: String, timeoutMs: Long = 10000L): Map<String, Int> {
-        val service = com.openworld.app.service.SingBoxService.instance
+        val service = com.openworld.app.service.OpenWorldService.instance
         if (service == null) {
             Log.w(TAG, "urlTestGroupAsync: service not available")
             return emptyMap()
@@ -667,7 +671,7 @@ object BoxWrapperManager {
      * @return 延迟值 (ms)，未测试返回 null
      */
     fun getCachedUrlTestDelay(tag: String): Int? {
-        val service = com.openworld.app.service.SingBoxService.instance
+        val service = com.openworld.app.service.OpenWorldService.instance
         return service?.getCachedUrlTestDelay(tag)
     }
 

@@ -1,7 +1,7 @@
 package com.openworld.app.core
 
 import android.util.Log
-import io.nekohasekai.libbox.CommandClient
+import com.openworld.app.core.bridge.CommandClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

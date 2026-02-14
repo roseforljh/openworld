@@ -25,7 +25,7 @@ data class ExportData(
 @Keep
 data class ProfileExportData(
     @SerializedName("profile") val profile: ProfileUi, // 配置元数据
-    @SerializedName("config") val config: SingBoxConfig // 完整的节点配置
+    @SerializedName("config") val config: OpenWorldConfig // 完整的节点配置
 )
 
 /**

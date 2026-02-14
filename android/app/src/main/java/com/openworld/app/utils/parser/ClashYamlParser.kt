@@ -2,7 +2,7 @@ package com.openworld.app.utils.parser
 
 import com.openworld.app.model.MultiplexConfig
 import com.openworld.app.model.Outbound
-import com.openworld.app.model.SingBoxConfig
+import com.openworld.app.model.OpenWorldConfig
 import com.openworld.app.model.TlsConfig
 import com.openworld.app.model.TransportConfig
 import com.openworld.app.model.UtlsConfig
@@ -30,7 +30,7 @@ class ClashYamlParser : SubscriptionParser {
         return trimmed.contains("proxies:") || trimmed.contains("proxy-groups:")
     }
 
-    override fun parse(content: String): SingBoxConfig? {
+    override fun parse(content: String): OpenWorldConfig? {
         val root = try {
             Yaml().load<Any>(content)
         } catch (_: YAMLException) {
@@ -113,7 +113,7 @@ class ClashYamlParser : SubscriptionParser {
         // 如果没有解析出任何代理节点，返回 null
         if (outbounds.isEmpty()) return null
 
-        return SingBoxConfig(outbounds = outbounds)
+        return OpenWorldConfig(outbounds = outbounds)
     }
 
     private fun parseProxy(proxyMap: Map<*, *>, globalFingerprint: String? = null, globalTlsMinVersion: String? = null): List<Outbound>? {

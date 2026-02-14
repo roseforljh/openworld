@@ -17,11 +17,11 @@ import android.app.NotificationManager
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.widget.Toast
-import com.openworld.app.aidl.ISingBoxService
-import com.openworld.app.aidl.ISingBoxServiceCallback
+import com.openworld.app.aidl.IOpenWorldService
+import com.openworld.app.aidl.IOpenWorldServiceCallback
 import com.openworld.app.R
 import com.openworld.app.ipc.VpnStateStore
-import com.openworld.app.ipc.SingBoxIpcService
+import com.openworld.app.ipc.OpenWorldIpcService
 import com.openworld.app.manager.VpnServiceManager
 import com.openworld.app.repository.ConfigRepository
 import com.openworld.app.repository.SettingsRepository
@@ -47,7 +47,7 @@ class VpnTileService : TileService() {
     @Volatile private var isStartingSequence = false
     @Volatile private var startSequenceId: Long = 0L
 
-    @Volatile private var remoteService: ISingBoxService? = null
+    @Volatile private var remoteService: IOpenWorldService? = null
 
     private val tileRefreshReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -57,7 +57,7 @@ class VpnTileService : TileService() {
         }
     }
 
-    private val remoteCallback = object : ISingBoxServiceCallback.Stub() {
+    private val remoteCallback = object : IOpenWorldServiceCallback.Stub() {
         override fun onStateChanged(state: Int, activeLabel: String?, lastError: String?, manuallyStopped: Boolean) {
             serviceScope.launch(Dispatchers.Main) {
                 val mappedState = ServiceState.values().getOrNull(state)
@@ -424,7 +424,7 @@ class VpnTileService : TileService() {
         val shouldTryBind = force || persistedActive || pending == "starting" || pending == "stopping"
         if (!shouldTryBind) return
 
-        val intent = Intent(this, SingBoxIpcService::class.java)
+        val intent = Intent(this, OpenWorldIpcService::class.java)
 
         val ok = runCatching {
             bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
@@ -467,7 +467,7 @@ class VpnTileService : TileService() {
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            val binder = ISingBoxService.Stub.asInterface(service)
+            val binder = IOpenWorldService.Stub.asInterface(service)
             remoteService = binder
             runCatching { binder.registerCallback(remoteCallback) }
             serviceBound = true

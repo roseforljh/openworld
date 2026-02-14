@@ -17,7 +17,7 @@ import com.openworld.app.model.TunStack
 import com.openworld.app.model.VpnAppMode
 import com.openworld.app.model.VpnRouteMode
 import com.openworld.app.repository.LogRepository
-import io.nekohasekai.libbox.TunOptions
+import com.openworld.app.core.bridge.TunOptions
 import java.net.InetAddress
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong

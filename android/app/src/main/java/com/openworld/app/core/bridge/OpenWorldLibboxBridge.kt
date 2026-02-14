@@ -5,6 +5,8 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.openworld.core.OpenWorldCore
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,11 +27,43 @@ object Libbox {
 
     fun isPaused(): Boolean = runCatching { OpenWorldCore.isPaused() }.getOrDefault(false)
 
+    fun pauseService(): Boolean = runCatching { OpenWorldCore.pause() }.getOrDefault(false)
+
     fun resumeService(): Boolean = runCatching { OpenWorldCore.resume() }.getOrDefault(false)
 
     fun resetAllConnections(system: Boolean): Boolean {
         return runCatching { OpenWorldCore.resetAllConnections(system) }.getOrDefault(false)
     }
+
+    fun hasSelector(): Boolean = runCatching { OpenWorldCore.hasSelector() }.getOrDefault(false)
+
+    fun selectOutboundByTag(nodeTag: String): Boolean =
+        runCatching { OpenWorldCore.selectOutbound(nodeTag) }.getOrDefault(false)
+
+    fun getSelectedOutbound(): String = runCatching { OpenWorldCore.getSelectedOutbound().orEmpty() }.getOrDefault("")
+
+    fun listOutboundsString(): String? = runCatching { OpenWorldCore.listOutbounds() }.getOrNull()
+
+    fun getTrafficTotalUplink(): Long = runCatching { OpenWorldCore.getTrafficTotalUplink() }.getOrDefault(0L)
+
+    fun getTrafficTotalDownlink(): Long = runCatching { OpenWorldCore.getTrafficTotalDownlink() }.getOrDefault(0L)
+
+    fun resetTrafficStats(): Boolean = runCatching { OpenWorldCore.resetTrafficStats() }.getOrDefault(false)
+
+    fun getConnectionCount(): Long = runCatching { OpenWorldCore.getConnectionCount() }.getOrDefault(0L)
+
+    fun closeAllTrackedConnections(): Long =
+        runCatching { OpenWorldCore.closeAllTrackedConnections().toLong() }.getOrDefault(0L)
+
+    fun getOpenWorldVersion(): String = version()
+
+    fun recoverNetworkAuto(): Boolean = runCatching { OpenWorldCore.recoverNetworkAuto() }.getOrDefault(false)
+
+    fun checkNetworkRecoveryNeeded(): Boolean = false
+
+    fun getTrafficByOutbound(): TrafficByOutboundIterator? = null
+
+    fun newHTTPClient(): HTTPClient = HTTPClient()
 
     fun newService(configContent: String, platformInterface: PlatformInterface): BoxService {
         return BoxService(configContent, platformInterface)
@@ -346,7 +380,76 @@ interface InterfaceUpdateListener {
     fun updateDefaultInterface(name: String, index: Int, isExpensive: Boolean, isConstrained: Boolean)
 }
 
-interface LocalDNSTransport
+interface LocalDNSTransport {
+    fun raw(): Boolean
+    fun lookup(ctx: ExchangeContext, network: String, domain: String)
+    fun exchange(ctx: ExchangeContext, message: ByteArray)
+}
+
+interface ExchangeContext {
+    fun success(result: String)
+    fun errorCode(code: Int)
+}
+
+interface TrafficByOutboundIterator {
+    fun hasNext(): Boolean
+    fun next(): TrafficByOutbound?
+}
+
+data class TrafficByOutbound(
+    val tag: String,
+    val upload: Long,
+    val download: Long
+)
+
+class HTTPClient {
+    private val okHttp = OkHttpClient()
+
+    fun trySocks5(port: Int) {}
+    fun modernTLS() {}
+    fun keepAlive() {}
+    fun newRequest(): HTTPRequest = HTTPRequest(okHttp)
+    fun close() {}
+}
+
+class HTTPRequest(private val client: OkHttpClient) {
+    private var url: String = ""
+    private var method: String = "GET"
+    private val headers = linkedMapOf<String, String>()
+
+    fun setURL(url: String) {
+        this.url = url
+    }
+
+    fun setMethod(method: String) {
+        this.method = method
+    }
+
+    fun randomUserAgent() {
+        if (!headers.containsKey("User-Agent")) {
+            headers["User-Agent"] = "OpenWorld/Android"
+        }
+    }
+
+    fun setHeader(key: String, value: String) {
+        headers[key] = value
+    }
+
+    fun execute(): HTTPResponse {
+        val requestBuilder = Request.Builder().url(url)
+        headers.forEach { (k, v) -> requestBuilder.header(k, v) }
+        val request = when (method.uppercase()) {
+            "GET" -> requestBuilder.get().build()
+            else -> requestBuilder.get().build()
+        }
+        val body = client.newCall(request).execute().use { it.body?.string().orEmpty() }
+        return HTTPResponse(HTTPString(body))
+    }
+}
+
+data class HTTPResponse(val content: HTTPString?)
+
+data class HTTPString(val value: String)
 
 interface PlatformInterface {
     fun localDNSTransport(): LocalDNSTransport
@@ -375,8 +478,6 @@ interface PlatformInterface {
     fun systemCertificates(): StringIterator?
     fun writeLog(message: String?)
 }
-
-
 
 
 

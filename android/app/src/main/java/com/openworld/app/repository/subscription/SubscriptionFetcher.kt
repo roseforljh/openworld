@@ -1,7 +1,7 @@
 package com.openworld.app.repository.subscription
 
 import android.util.Log
-import com.openworld.app.model.SingBoxConfig
+import com.openworld.app.model.OpenWorldConfig
 import com.openworld.app.utils.parser.SubscriptionManager
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -69,7 +69,7 @@ class SubscriptionFetcher(
                     .header("Accept", "application/yaml,text/yaml,text/plain,application/json,*/*")
                     .build()
 
-                var parsedConfig: SingBoxConfig? = null
+                var parsedConfig: OpenWorldConfig? = null
                 var userInfo: SubscriptionUserInfo? = null
 
                 client.newCall(request).execute().use { response ->
@@ -197,7 +197,7 @@ class SubscriptionFetcher(
      * 获取结果
      */
     data class FetchResult(
-        val config: SingBoxConfig,
+        val config: OpenWorldConfig,
         val userInfo: SubscriptionUserInfo?
     )
 }

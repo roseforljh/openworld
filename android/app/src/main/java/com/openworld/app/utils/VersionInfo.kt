@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
-import io.nekohasekai.libbox.Libbox
+import com.openworld.app.core.bridge.Libbox
 
 /**
  * 版本信息工具类

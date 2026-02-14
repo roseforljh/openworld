@@ -10,10 +10,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import com.openworld.app.model.AppSettings
-import com.openworld.app.model.SingBoxConfig
+import com.openworld.app.model.OpenWorldConfig
 import com.openworld.app.repository.ConfigRepository
 import com.openworld.app.repository.ConfigRepository.ConfigGenerationResult
-import com.openworld.app.service.SingBoxService
+import com.openworld.app.service.OpenWorldService
 import com.openworld.app.utils.TcpPing
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -107,9 +107,9 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
         configRepository.generateConfigFile()
     }
 
-    private suspend fun loadRunConfig(path: String): SingBoxConfig? = withContext(Dispatchers.IO) {
+    private suspend fun loadRunConfig(path: String): OpenWorldConfig? = withContext(Dispatchers.IO) {
         try {
-            gson.fromJson(File(path).readText(), SingBoxConfig::class.java)
+            gson.fromJson(File(path).readText(), OpenWorldConfig::class.java)
         } catch (_: Exception) {
             null
         }
@@ -149,7 +149,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
     private fun buildDiagnosticMessage(
         realPath: String,
         settings: AppSettings,
-        runConfig: SingBoxConfig?,
+        runConfig: OpenWorldConfig?,
         networkType: String,
         effectiveMtu: Int,
         effectiveTunStack: String
@@ -445,7 +445,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
             _isConnOwnerStatsLoading.value = true
             _resultTitle.value = "Connection Owner Stats (findConnectionOwner)"
             try {
-                val s = SingBoxService.getConnectionOwnerStatsSnapshot()
+                val s = OpenWorldService.getConnectionOwnerStatsSnapshot()
                 _resultMessage.value = buildString {
                     appendLine("calls: ${s.calls}")
                     appendLine("invalidArgs: ${s.invalidArgs}")
@@ -470,7 +470,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun resetConnectionOwnerStats() {
-        SingBoxService.resetConnectionOwnerStats()
+        OpenWorldService.resetConnectionOwnerStats()
         _resultTitle.value = "Connection Owner Stats"
         _resultMessage.value = "findConnectionOwner stats reset."
         _showResultDialog.value = true
@@ -478,7 +478,7 @@ class DiagnosticsViewModel(application: Application) : AndroidViewModel(applicat
 
     private data class MatchResult(val rule: String, val outbound: String)
 
-    private fun findMatch(config: SingBoxConfig, domain: String): MatchResult {
+    private fun findMatch(config: OpenWorldConfig, domain: String): MatchResult {
         val rules = config.route?.rules ?: return MatchResult("Default (no rules)", config.route?.finalOutbound ?: "direct")
 
         for (rule in rules) {

@@ -21,7 +21,7 @@ import com.openworld.app.repository.RuleSetRepository
 import com.openworld.app.repository.SettingsRepository
 import com.openworld.app.model.GithubTreeResponse
 import com.openworld.app.model.AppSettings
-import com.openworld.app.ipc.SingBoxRemote
+import com.openworld.app.ipc.OpenWorldRemote
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
@@ -67,11 +67,11 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
         // 1. App 启动时，如果 VPN 没开，尝试直连加载
         // 2. 监听 VPN 状态，当 VPN 启动成功（连接建立）后，自动刷新（如果之前加载失败或为空）
         viewModelScope.launch {
-            if (!SingBoxRemote.isRunning.value) {
+            if (!OpenWorldRemote.isRunning.value) {
                 fetchRuleSets()
             }
 
-            SingBoxRemote.isRunning.collectLatest { isRunning ->
+            OpenWorldRemote.isRunning.collectLatest { isRunning ->
                 if (isRunning) {
                     // VPN 刚启动，网络环境可能正在切换 (TUN建立 -> 路由重置)
                     // 等待一段时间让 Socket 稳定，避免 "use of closed network connection"

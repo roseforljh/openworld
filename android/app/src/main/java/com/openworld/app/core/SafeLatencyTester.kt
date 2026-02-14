@@ -2,7 +2,7 @@ package com.openworld.app.core
 
 import android.util.Log
 import com.openworld.app.model.Outbound
-import com.openworld.app.service.SingBoxService
+import com.openworld.app.service.OpenWorldService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -131,9 +131,9 @@ class SafeLatencyTester private constructor() {
      * 使用 CommandManager.urlTestGroup() API
      */
     private suspend fun triggerGroupUrlTest(groupTag: String): Map<String, Int> {
-        val service = SingBoxService.instance
+        val service = OpenWorldService.instance
         if (service == null) {
-            Log.w(TAG, "SingBoxService not available")
+            Log.w(TAG, "OpenWorldService not available")
             return emptyMap()
         }
 

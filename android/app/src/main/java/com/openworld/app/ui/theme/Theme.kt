@@ -48,7 +48,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun SingBoxTheme(
+fun OpenWorldTheme(
     appTheme: AppThemeMode = AppThemeMode.SYSTEM,
     content: @Composable () -> Unit
 ) {

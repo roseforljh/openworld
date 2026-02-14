@@ -146,9 +146,9 @@ class VpnKeepaliveWorker(
             // 准备重启 Intent
             val intent = when (mode) {
                 VpnStateStore.CoreMode.VPN -> {
-                    Intent(applicationContext, SingBoxService::class.java).apply {
-                        action = SingBoxService.ACTION_START
-                        putExtra(SingBoxService.EXTRA_CONFIG_PATH,
+                    Intent(applicationContext, OpenWorldService::class.java).apply {
+                        action = OpenWorldService.ACTION_START
+                        putExtra(OpenWorldService.EXTRA_CONFIG_PATH,
                             applicationContext.filesDir.resolve("config.json").absolutePath)
                     }
                 }

@@ -12,9 +12,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * OpenWorld 核心封装�? * 负责�?OpenWorldCore (libopenworld.so) 交互
+ * OpenWorld 核心封装�? * 负责�?OpenWorldCore (libopenworld.so) 交互
  */
-class SingBoxCore private constructor(private val context: Context) {
+class OpenWorldCore private constructor(private val context: Context) {
 
     private val gson = Gson()
     private val workDir: File = File(context.filesDir, "openworld_work")
@@ -24,18 +24,18 @@ class SingBoxCore private constructor(private val context: Context) {
     private var coreAvailable = false
 
     companion object {
-        private const val TAG = "SingBoxCore"
+        private const val TAG = "OpenWorldCore"
 
         @Volatile
-        private var instance: SingBoxCore? = null
+        private var instance: OpenWorldCore? = null
 
-        fun getInstance(context: Context): SingBoxCore {
+        fun getInstance(context: Context): OpenWorldCore {
             return instance ?: synchronized(this) {
-                instance ?: SingBoxCore(context.applicationContext).also { instance = it }
+                instance ?: OpenWorldCore(context.applicationContext).also { instance = it }
             }
         }
 
-        fun ensureLibboxSetup(context: Context) {
+        fun ensureCoreSetup(context: Context) {
             getInstance(context)
         }
     }
@@ -57,8 +57,8 @@ class SingBoxCore private constructor(private val context: Context) {
     }
 
     /**
-     * 检查内核是否可�?     */
-    fun isLibboxAvailable(): Boolean = coreAvailable
+     * 检查内核是否可�?     */
+    fun isCoreAvailable(): Boolean = coreAvailable
 
     /**
      * 验证配置是否有效
@@ -75,7 +75,7 @@ class SingBoxCore private constructor(private val context: Context) {
 
         try {
             val configJson = gson.toJson(config)
-            // OpenWorldCore 没有 checkConfig，回退�?JSON 验证
+            // OpenWorldCore 没有 checkConfig，回退�?JSON 验证
             gson.fromJson(configJson, OpenWorldConfig::class.java)
             Result.success(Unit)
         } catch (e: Exception) {
@@ -90,7 +90,7 @@ class SingBoxCore private constructor(private val context: Context) {
     fun validateOutbound(outbound: Outbound): Boolean {
         if (!coreAvailable) return true
 
-        // 跳过特殊类型�?outbound
+        // 跳过特殊类型�?outbound
         if (outbound.type in listOf("direct", "block", "dns", "selector", "urltest", "url-test")) {
             return true
         }
@@ -123,7 +123,6 @@ class SingBoxCore private constructor(private val context: Context) {
         if (tag.isBlank()) return -1L
         return withContext(Dispatchers.IO) {
             runCatching {
-                OpenWorldCore.urlTest(tag, "https://www.gstatic.com/generate_204", 4500).toLong()
                 NativeCore.urlTest(tag, "https://www.gstatic.com/generate_204", 4500).toLong()
             }.getOrDefault(-1L)
         }
@@ -144,12 +143,12 @@ class SingBoxCore private constructor(private val context: Context) {
     }
 
     /**
-     * 独立延迟测试（不依赖核心启动�?     * 使用新的latencyTester API
+     * 独立延迟测试（不依赖核心启动�?     * 使用新的latencyTester API
      *
      * @param outbounds 要测试的节点列表
      * @param url 测试URL
      * @param timeoutMs 超时时间（毫秒）
-     * @return Map<节点标签, 延迟毫秒�?
+     * @return Map<节点标签, 延迟毫秒�?
      */
     suspend fun testOutboundsLatencyStandalone(
         outbounds: List<Outbound>,
@@ -172,10 +171,7 @@ class SingBoxCore private constructor(private val context: Context) {
         val initResult = NativeCore.latencyTesterInit(outboundsJson)
         if (initResult != 0) {
             Log.d(TAG, "testOutboundsLatencyStandalone: initResult=$initResult")
-
-        if (initResult != 0) {
             Log.e(TAG, "Failed to init latency tester: $initResult")
-            Log.w(TAG, "testOutboundsLatencyStandalone: resultsJson is null or empty")
             return@withContext outbounds.associate { it.tag to -1L }
         }
 
@@ -186,7 +182,7 @@ class SingBoxCore private constructor(private val context: Context) {
         val elapsed = System.currentTimeMillis() - startTime
         Log.d(TAG, "testOutboundsLatencyStandalone: Test completed in ${elapsed}ms")
         
-        // 释放测试�?        NativeCore.latencyTesterFree()
+        NativeCore.latencyTesterFree()
         Log.d(TAG, "testOutboundsLatencyStandalone: Tester freed")
 
         if (resultsJson.isNullOrEmpty()) {
@@ -203,7 +199,7 @@ class SingBoxCore private constructor(private val context: Context) {
             
             Log.d(TAG, "testOutboundsLatencyStandalone: resultsJson=$resultsJson")
 
-            results.associate {
+            val latencyMap = results.associate {
                 val tag = it["tag"] as? String ?: ""
                 val latency = (it["latency_ms"] as? Number)?.toLong() ?: -1L
                 val error = it["error"]
@@ -211,6 +207,7 @@ class SingBoxCore private constructor(private val context: Context) {
                 tag to latency
             }
             Log.d(TAG, "testOutboundsLatencyStandalone: Total ${latencyMap.size} nodes tested")
+            latencyMap
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse latency results", e)
             outbounds.associate { it.tag to -1L }
@@ -218,7 +215,7 @@ class SingBoxCore private constructor(private val context: Context) {
     }
 
     /**
-     * 检查是否有活跃的连�?     */
+     * 检查是否有活跃的连�?     */
     fun hasActiveConnections(): Boolean {
         if (!coreAvailable) return false
         return try {
@@ -235,7 +232,7 @@ class SingBoxCore private constructor(private val context: Context) {
     fun getActiveConnections(): List<ActiveConnection> = emptyList()
 
     /**
-     * 关闭指定应用的连�?     */
+     * 关闭指定应用的连�?     */
     fun closeConnectionsForApp(packageName: String): Int {
         if (!coreAvailable) return 0
         return BoxWrapperManager.closeConnectionsForApp(packageName)
@@ -264,7 +261,6 @@ class SingBoxCore private constructor(private val context: Context) {
         // 清理资源
     }
 }
-
 
 
 

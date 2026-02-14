@@ -19,7 +19,7 @@ object OpenWorldCore {
 
     /**
      * 启动内核服务
-     * @param config sing-box JSON 配置
+     * @param config OpenWorld JSON 配置
      * @return 0=成功, -1=参数错误, -2=配置无效, -3=其他错误
      */
     external fun start(config: String): Int
@@ -153,7 +153,7 @@ object OpenWorldCore {
 
     /**
      * 热重载配置
-     * @param config 新的 sing-box JSON 配置
+     * @param config 新的 OpenWorld JSON 配置
      * @return 0=成功
      */
     external fun reloadConfig(config: String): Int

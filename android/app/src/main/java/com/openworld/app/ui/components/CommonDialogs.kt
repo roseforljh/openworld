@@ -1016,8 +1016,8 @@ fun AboutDialog(onDismiss: () -> Unit) {
         singBoxVersion = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 // 确保 libbox 已初始化
-                com.openworld.app.core.SingBoxCore.ensureLibboxSetup(context)
-                val version = io.nekohasekai.libbox.Libbox.version()
+                com.openworld.app.core.OpenWorldCore.ensureCoreSetup(context)
+                val version = com.openworld.app.core.bridge.Libbox.version()
                 // 如果版本是 "unknown"，显示更友好的信息
                 when {
                     version.isNullOrBlank() -> kernelBuiltinMsg

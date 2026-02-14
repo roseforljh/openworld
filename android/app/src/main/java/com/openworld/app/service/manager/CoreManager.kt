@@ -8,19 +8,19 @@ import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.net.wifi.WifiManager
 import android.util.Log
-import com.openworld.app.core.SingBoxCore
+import com.openworld.app.core.OpenWorldCore
 import com.openworld.app.core.BoxWrapperManager
 import com.openworld.app.core.SelectorManager
 import com.openworld.app.model.AppSettings
 import com.openworld.app.repository.SettingsRepository
 import com.openworld.app.service.tun.VpnTunManager
 import com.openworld.app.utils.perf.PerfTracer
-import io.nekohasekai.libbox.CommandClient
-import io.nekohasekai.libbox.CommandServer
-import io.nekohasekai.libbox.Libbox
-import io.nekohasekai.libbox.BoxService
-import io.nekohasekai.libbox.PlatformInterface
-import io.nekohasekai.libbox.TunOptions
+import com.openworld.app.core.bridge.CommandClient
+import com.openworld.app.core.bridge.CommandServer
+import com.openworld.app.core.bridge.Libbox
+import com.openworld.app.core.bridge.BoxService
+import com.openworld.app.core.bridge.PlatformInterface
+import com.openworld.app.core.bridge.TunOptions
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import java.io.File
@@ -261,7 +261,7 @@ class CoreManager(
                 ?: throw IllegalStateException("PlatformInterface not initialized")
 
             logRepo.addLog("INFO [Startup] [STEP] startLibbox: ensureLibboxSetup...")
-            SingBoxCore.ensureLibboxSetup(context)
+            OpenWorldCore.ensureCoreSetup(context)
 
             logRepo.addLog("INFO [Startup] [STEP] startLibbox: creating BoxService...")
             val serviceStartTime = android.os.SystemClock.elapsedRealtime()

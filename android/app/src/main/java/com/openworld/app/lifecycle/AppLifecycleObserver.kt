@@ -7,7 +7,7 @@ import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
-import com.openworld.app.ipc.SingBoxRemote
+import com.openworld.app.ipc.OpenWorldRemote
 import com.openworld.app.ipc.VpnStateStore
 import com.openworld.app.model.BackgroundPowerSavingDelay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -64,7 +64,7 @@ object AppLifecycleObserver : DefaultLifecycleObserver {
         cancelKillProcess()
 
         // 通过 IPC 通知 :bg 进程
-        SingBoxRemote.notifyAppLifecycle(isForeground = true)
+        OpenWorldRemote.notifyAppLifecycle(isForeground = true)
     }
 
     override fun onStop(owner: LifecycleOwner) {
@@ -73,7 +73,7 @@ object AppLifecycleObserver : DefaultLifecycleObserver {
         backgroundAtMs = SystemClock.elapsedRealtime()
 
         // 通过 IPC 通知 :bg 进程
-        SingBoxRemote.notifyAppLifecycle(isForeground = false)
+        OpenWorldRemote.notifyAppLifecycle(isForeground = false)
 
         // 调度主进程自杀
         scheduleKillProcess()
