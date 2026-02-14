@@ -3,6 +3,7 @@ package com.openworld.app.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.JsonParser
 import com.openworld.app.R
 import com.openworld.app.config.ConfigManager
 import com.openworld.app.model.ProfileType
@@ -132,12 +133,26 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
             val url = ConfigManager.getSubscriptionUrl(context, profileId)
             
             if (url != null) {
-                // It's a subscription
                 try {
-                    val content = CoreRepository.importSubscription(url)
-                    if (!content.isNullOrBlank()) {
-                         ConfigManager.saveProfile(context, profileId, content)
-                         _updateStatus.value = "Updated"
+                    val fetchResult = com.openworld.core.OpenWorldCore.fetchUrl(url)
+                    if (fetchResult.isNullOrBlank()) {
+                        _updateStatus.value = "Failed: null response"
+                        return@launch
+                    }
+                    val fetchJson = JsonParser.parseString(fetchResult).asJsonObject
+                    if (fetchJson.has("error")) {
+                        _updateStatus.value = "Failed: ${fetchJson.get("error").asString}"
+                        return@launch
+                    }
+                    val rawContent = fetchJson.get("content")?.asString.orEmpty()
+                    if (rawContent.isNotBlank()) {
+                         val savedContent = convertViaZenOne(rawContent)
+                         if (savedContent == null) {
+                             _updateStatus.value = "Failed: ZenOne conversion failed"
+                         } else {
+                             ConfigManager.saveProfile(context, profileId, savedContent)
+                             _updateStatus.value = "Updated"
+                         }
                     } else {
                          _updateStatus.value = "Failed: Empty content"
                     }
@@ -172,24 +187,57 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
         if (_importState.value is ImportState.Loading) return
         
         importJob = viewModelScope.launch(Dispatchers.IO) {
-            _importState.value = ImportState.Loading("Importing...")
+            _importState.value = ImportState.Loading("Downloading...")
             val context = getApplication<Application>()
             
             try {
-                val content = CoreRepository.importSubscription(url)
-                if (!content.isNullOrBlank()) {
-                    ConfigManager.saveProfile(context, name, content)
-                    ConfigManager.setSubscriptionUrl(context, name, url)
-                    refreshProfiles()
-                    // Find the new profile
-                    val profile = ConfigManager.getProfiles(context).find { it.name == name }
-                    if (profile != null) {
-                        _importState.value = ImportState.Success(profile)
-                    } else {
-                        _importState.value = ImportState.Error("Profile saved but not found")
-                    }
+                // 1. 用 FFI fetchUrl 下载订阅内容（不依赖内核运行）
+                val fetchResult = com.openworld.core.OpenWorldCore.fetchUrl(url)
+                if (fetchResult.isNullOrBlank()) {
+                    _importState.value = ImportState.Error("Download failed: null response")
+                    return@launch
+                }
+                val fetchJson = JsonParser.parseString(fetchResult).asJsonObject
+                if (fetchJson.has("error")) {
+                    _importState.value = ImportState.Error("Download failed: ${fetchJson.get("error").asString}")
+                    return@launch
+                }
+                val rawContent = fetchJson.get("content")?.asString.orEmpty()
+                if (rawContent.isBlank()) {
+                    _importState.value = ImportState.Error("Subscription content is empty")
+                    return@launch
+                }
+
+                _importState.value = ImportState.Loading("Converting via ZenOne...")
+
+                // 2. 通过 ZenOne 转换订阅内容（不回退，失败直接报错）
+                val zenoneResult = com.openworld.core.OpenWorldCore.convertSubscriptionToZenone(rawContent)
+                if (zenoneResult.isNullOrBlank()) {
+                    _importState.value = ImportState.Error("ZenOne conversion returned empty result")
+                    return@launch
+                }
+                val zenoneJson = JsonParser.parseString(zenoneResult).asJsonObject
+                if (zenoneJson.has("error")) {
+                    val error = zenoneJson.get("error").asString
+                    _importState.value = ImportState.Error("ZenOne conversion failed: $error")
+                    return@launch
+                }
+                val zenoneYaml = zenoneJson.get("zenone_yaml")?.asString
+                if (zenoneYaml.isNullOrBlank()) {
+                    _importState.value = ImportState.Error("ZenOne returned no YAML content")
+                    return@launch
+                }
+                val nodeCount = zenoneJson.get("node_count")?.asInt ?: 0
+                android.util.Log.i("ProfilesVM", "ZenOne converted: $nodeCount nodes")
+                ConfigManager.saveProfile(context, name, zenoneYaml)
+
+                ConfigManager.setSubscriptionUrl(context, name, url)
+                refreshProfiles()
+                val profile = ConfigManager.getProfiles(context).find { it.name == name }
+                if (profile != null) {
+                    _importState.value = ImportState.Success(profile)
                 } else {
-                    _importState.value = ImportState.Error("Import returned empty content")
+                    _importState.value = ImportState.Error("Profile saved but not found")
                 }
             } catch (e: Exception) {
                 _importState.value = ImportState.Error(e.message ?: "Unknown error")
@@ -205,18 +253,23 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
          if (_importState.value is ImportState.Loading) return
          
          importJob = viewModelScope.launch(Dispatchers.IO) {
-             _importState.value = ImportState.Loading("Importing...")
+             _importState.value = ImportState.Loading("Converting via ZenOne...")
              val context = getApplication<Application>()
              
              try {
-                 ConfigManager.saveProfile(context, name, content)
+                 val savedContent = convertViaZenOne(content)
+                 if (savedContent == null) {
+                     _importState.value = ImportState.Error("ZenOne conversion failed")
+                     return@launch
+                 }
+                 ConfigManager.saveProfile(context, name, savedContent)
                  refreshProfiles()
-                  val profile = ConfigManager.getProfiles(context).find { it.name == name }
-                    if (profile != null) {
-                        _importState.value = ImportState.Success(profile)
-                    } else {
-                        _importState.value = ImportState.Error("Profile saved but not found")
-                    }
+                 val profile = ConfigManager.getProfiles(context).find { it.name == name }
+                 if (profile != null) {
+                     _importState.value = ImportState.Success(profile)
+                 } else {
+                     _importState.value = ImportState.Error("Profile saved but not found")
+                 }
              } catch (e: Exception) {
                  _importState.value = ImportState.Error(e.message ?: "Unknown error")
              }
@@ -257,6 +310,42 @@ class ProfilesViewModel(application: Application) : AndroidViewModel(application
             newUrl = subscriptionUrl, 
             autoUpdateInterval = intervalMinutes
         )
+    }
+
+    /**
+     * 通过 ZenOne 转换订阅内容，返回 ZenOne YAML；失败返回 null（调用方回退用原始内容）
+     */
+    private fun convertViaZenOne(rawContent: String): String? {
+        return try {
+            val result = com.openworld.core.OpenWorldCore.convertSubscriptionToZenone(rawContent)
+                ?: return null
+            val json = JsonParser.parseString(result).asJsonObject
+            if (json.has("error")) {
+                android.util.Log.w("ProfilesVM", "ZenOne: ${json.get("error").asString}")
+                null
+            } else {
+                val yaml = json.get("zenone_yaml")?.asString
+                val count = json.get("node_count")?.asInt ?: 0
+                android.util.Log.i("ProfilesVM", "ZenOne converted: $count nodes")
+                yaml
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("ProfilesVM", "ZenOne exception: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * 从 FFI 返回的 JSON 中提取 raw_content（原始订阅内容），
+     * 如果解析失败则返回原始字符串。
+     */
+    private fun extractRawContent(ffiResponse: String): String {
+        return try {
+            val json = JsonParser.parseString(ffiResponse).asJsonObject
+            json.get("raw_content")?.asString ?: ffiResponse
+        } catch (_: Exception) {
+            ffiResponse
+        }
     }
 
     sealed class ImportState {

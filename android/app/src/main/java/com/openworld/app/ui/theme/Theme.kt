@@ -2,6 +2,7 @@ package com.openworld.app.ui.theme
 
 import android.app.Activity
 import android.graphics.Color
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -66,6 +67,10 @@ fun OpenWorldTheme(
             // 设置透明状态栏和导航栏，让内容延伸到系统栏下方
             window.statusBarColor = Color.TRANSPARENT
             window.navigationBarColor = Color.TRANSPARENT
+            // 禁用导航栏对比度强制（防止系统添加黑色遮罩）
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isNavigationBarContrastEnforced = false
+            }
             // 确保边到边显示正确配置
             WindowCompat.setDecorFitsSystemWindows(window, false)
             // 亮色模式下使用深色图标

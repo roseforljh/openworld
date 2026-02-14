@@ -948,7 +948,10 @@ pub extern "C" fn openworld_clear_log_callback() -> i32 {
 // 订阅管理
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// 导入订阅 URL，返回解析出的节点列表（JSON）
+/// 导入订阅 URL，返回包含原始内容和解析摘要的 JSON
+///
+/// 返回格式: `{"count": N, "nodes": [...], "raw_content": "原始订阅内容"}`
+/// 安卓端应使用 `raw_content` 字段保存为 profile 配置文件。
 ///
 /// # Safety
 /// `sub_url` 必须是合法的 C 字符串指针
@@ -967,7 +970,6 @@ pub unsafe extern "C" fn openworld_import_subscription(sub_url: *const c_char) -
     match guard.as_ref() {
         Some(inst) => {
             let result = inst.runtime.block_on(async {
-                // 下载订阅内容
                 let resp = match reqwest::get(&url).await {
                     Ok(r) => r,
                     Err(e) => return serde_json::json!({"error": e.to_string()}).to_string(),
@@ -976,13 +978,13 @@ pub unsafe extern "C" fn openworld_import_subscription(sub_url: *const c_char) -
                     Ok(b) => b,
                     Err(e) => return serde_json::json!({"error": e.to_string()}).to_string(),
                 };
-                // 解析订阅
                 match crate::app::proxy_provider::parse_provider_content(&body) {
                     Ok(nodes) => {
                         let names: Vec<&str> = nodes.iter().map(|n| n.name.as_str()).collect();
                         serde_json::json!({
                             "count": nodes.len(),
                             "nodes": names,
+                            "raw_content": body,
                         })
                         .to_string()
                     }
@@ -2154,6 +2156,171 @@ pub extern "C" fn openworld_notification_content() -> *mut c_char {
             to_c_string(&json.to_string())
         }
         None => to_c_string("{\"status\":\"stopped\"}"),
+    }
+}
+
+// ─── 独立 HTTP 下载（不依赖内核运行） ────────────────────────────────────
+
+/// 用独立的 tokio runtime 下载 URL 内容，不需要内核在运行
+///
+/// 返回 JSON: `{"content":"...","status":200}`
+/// 失败时返回 `{"error":"..."}`
+///
+/// # Safety
+/// `url` 必须是合法的 C 字符串指针
+#[no_mangle]
+pub unsafe extern "C" fn openworld_fetch_url(url: *const c_char) -> *mut c_char {
+    let url_str = match from_c_str(url) {
+        Some(s) => s.to_string(),
+        None => return to_c_string("{\"error\":\"null url\"}"),
+    };
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => return to_c_string(&serde_json::json!({"error": e.to_string()}).to_string()),
+    };
+
+    let result = rt.block_on(async {
+        let resp = match reqwest::get(&url_str).await {
+            Ok(r) => r,
+            Err(e) => return serde_json::json!({"error": e.to_string()}).to_string(),
+        };
+        let status = resp.status().as_u16();
+        let body = match resp.text().await {
+            Ok(b) => b,
+            Err(e) => return serde_json::json!({"error": e.to_string()}).to_string(),
+        };
+        serde_json::json!({"content": body, "status": status}).to_string()
+    });
+    to_c_string(&result)
+}
+
+// ─── ZenOne 统一配置 API ─────────────────────────────────────────────────
+
+/// 将订阅内容（Clash YAML / Base64 等）转换为 ZenOne YAML
+///
+/// 返回 JSON: `{"zenone_yaml":"...","node_count":N,"diagnostics":[...]}`
+/// 失败时返回 `{"error":"..."}`
+///
+/// # Safety
+/// `content` 必须是合法的 C 字符串指针
+#[no_mangle]
+pub unsafe extern "C" fn openworld_convert_subscription_to_zenone(
+    content: *const c_char,
+) -> *mut c_char {
+    let raw = match from_c_str(content) {
+        Some(s) => s,
+        None => return to_c_string("{\"error\":\"null content\"}"),
+    };
+
+    let mut diags = crate::config::zenone::Diagnostics::new();
+    match crate::config::zenone::converter::convert_subscription_to_zenone(raw, &mut diags) {
+        Ok(doc) => {
+            let node_count = doc.nodes.len();
+            let yaml = match crate::config::zenone::encode_yaml(&doc) {
+                Ok(y) => y,
+                Err(e) => {
+                    return to_c_string(
+                        &serde_json::json!({"error": e.to_string()}).to_string(),
+                    )
+                }
+            };
+            let diag_list: Vec<serde_json::Value> = diags
+                .items
+                .iter()
+                .map(|d| {
+                    serde_json::json!({
+                        "level": format!("{:?}", d.level),
+                        "path": d.path,
+                        "message": d.message,
+                    })
+                })
+                .collect();
+            let result = serde_json::json!({
+                "zenone_yaml": yaml,
+                "node_count": node_count,
+                "diagnostics": diag_list,
+            });
+            to_c_string(&result.to_string())
+        }
+        Err(e) => to_c_string(&serde_json::json!({"error": e.to_string()}).to_string()),
+    }
+}
+
+/// 解析 ZenOne YAML/JSON 文档，返回内核可用的 Config JSON
+///
+/// 返回 JSON: `{"config_json":"...","node_count":N,"diagnostics":[...]}`
+/// 失败时返回 `{"error":"..."}`
+///
+/// # Safety
+/// `zenone_content` 必须是合法的 C 字符串指针
+#[no_mangle]
+pub unsafe extern "C" fn openworld_zenone_to_config(
+    zenone_content: *const c_char,
+) -> *mut c_char {
+    let raw = match from_c_str(zenone_content) {
+        Some(s) => s,
+        None => return to_c_string("{\"error\":\"null content\"}"),
+    };
+
+    let mut diags = crate::config::zenone::Diagnostics::new();
+    match crate::config::zenone::parse_and_validate(raw, None) {
+        Ok((doc, parse_diags)) => {
+            diags.merge(parse_diags);
+            let _config = crate::config::zenone::zenone_to_config(&doc, &mut diags);
+            let zenone_yaml = match crate::config::zenone::encode_yaml(&doc) {
+                Ok(y) => y,
+                Err(e) => {
+                    return to_c_string(
+                        &serde_json::json!({"error": e.to_string()}).to_string(),
+                    )
+                }
+            };
+            let node_names: Vec<&str> = doc.nodes.iter().map(|n| n.name.as_str()).collect();
+            let diag_list: Vec<serde_json::Value> = diags
+                .items
+                .iter()
+                .map(|d| {
+                    serde_json::json!({
+                        "level": format!("{:?}", d.level),
+                        "path": d.path,
+                        "message": d.message,
+                    })
+                })
+                .collect();
+            let result = serde_json::json!({
+                "zenone_yaml": zenone_yaml,
+                "node_count": doc.nodes.len(),
+                "node_names": node_names,
+                "valid": true,
+                "diagnostics": diag_list,
+            });
+            to_c_string(&result.to_string())
+        }
+        Err(e) => to_c_string(&serde_json::json!({"error": e.to_string()}).to_string()),
+    }
+}
+
+/// 检测内容是否为 ZenOne 格式
+///
+/// 返回 1 = 是 ZenOne, 0 = 不是, -3 = 参数错误
+///
+/// # Safety
+/// `content` 必须是合法的 C 字符串指针
+#[no_mangle]
+pub unsafe extern "C" fn openworld_is_zenone_format(content: *const c_char) -> i32 {
+    match from_c_str(content) {
+        Some(s) => {
+            if crate::config::zenone::is_zenone(s) {
+                1
+            } else {
+                0
+            }
+        }
+        None => -3,
     }
 }
 

@@ -565,6 +565,7 @@
     <string name="custom_rules_content_hint">内容</string>
 
     <!-- Logs -->
+    <string name="logs_title">日志</string>
     <string name="logs_export">导出</string>
     <string name="logs_clear">清空</string>
     <string name="logs_debug_disabled">调试模式未开启</string>
@@ -788,7 +789,19 @@
     <!-- RuleSet Hub -->
     <string name="ruleset_hub_rule_count">规则数量: %d</string>
 
-    <!-- RuleSets Screen -->
+    <!-- RuleSets Screen (additional) -->
     <string name="rulesets_selection_mode">已选择 %d 个</string>
+
+    <!-- App Routing Screen (additional) -->
+    <string name="app_routing_title">应用分流</string>
+    <string name="app_rules_tab_rules">规则</string>
+    <string name="app_rules_tab_groups">分组</string>
+    <string name="app_rules_app">应用</string>
+
+    <!-- Outbound Names (short form, used by AppRulesScreen) -->
+    <string name="outbound_direct">直连</string>
+    <string name="outbound_block">拦截</string>
+    <string name="outbound_proxy">代理</string>
+    <string name="unknown">未知</string>
 
 </resources>

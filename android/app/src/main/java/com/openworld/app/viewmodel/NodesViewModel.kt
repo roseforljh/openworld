@@ -397,15 +397,27 @@ class NodesViewModel(app: Application) : AndroidViewModel(app) {
     @Suppress("UNCHECKED_CAST")
     private fun fallbackFromYaml(content: String): List<GroupInfo> {
         val yaml = Yaml().load<Any>(content) as? Map<String, Any?> ?: return emptyList()
-        val proxies = yaml["proxies"] as? List<Map<String, Any?>> ?: emptyList()
-        val groups = yaml["proxy-groups"] as? List<Map<String, Any?>> ?: emptyList()
+
+        // ZenOne 格式: nodes / groups（groups 里成员字段也叫 nodes）
+        // Clash 格式: proxies / proxy-groups（groups 里成员字段叫 proxies）
+        val isZenOne = yaml.containsKey("zen-version")
+
+        val proxies = (yaml["nodes"] as? List<Map<String, Any?>>)
+            ?: (yaml["proxies"] as? List<Map<String, Any?>>)
+            ?: emptyList()
+
+        val groups = (yaml["groups"] as? List<Map<String, Any?>>)
+            ?: (yaml["proxy-groups"] as? List<Map<String, Any?>>)
+            ?: emptyList()
 
         if (groups.isNotEmpty()) {
             return groups.mapNotNull { g ->
                 val name = g["name"]?.toString().orEmpty()
                 if (name.isBlank()) return@mapNotNull null
                 val type = g["type"]?.toString().orEmpty().ifBlank { "select" }
-                val members = (g["proxies"] as? List<*>)?.mapNotNull { it?.toString() }.orEmpty()
+                // ZenOne groups 用 "nodes" 字段，Clash 用 "proxies" 字段
+                val members = ((g["nodes"] as? List<*>) ?: (g["proxies"] as? List<*>))
+                    ?.mapNotNull { it?.toString() }.orEmpty()
                 GroupInfo(
                     name = name,
                     type = type,

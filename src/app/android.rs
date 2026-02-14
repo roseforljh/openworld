@@ -920,6 +920,88 @@ mod jni_exports {
     ) -> jstring {
         ffi_str_to_jstring(&env, ffi::openworld_notification_content())
     }
+
+    // ─── ZenOne 统一配置 API ─────────────────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_convertSubscriptionToZenone(
+        mut env: JNIEnv,
+        _c: JClass,
+        content: JString,
+    ) -> jstring {
+        let s: String = match env.get_string(&content) {
+            Ok(s) => s.into(),
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let cs = match std::ffi::CString::new(s) {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        ffi_str_to_jstring(&env, unsafe {
+            ffi::openworld_convert_subscription_to_zenone(cs.as_ptr())
+        })
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_zenoneToConfig(
+        mut env: JNIEnv,
+        _c: JClass,
+        zenone_content: JString,
+    ) -> jstring {
+        let s: String = match env.get_string(&zenone_content) {
+            Ok(s) => s.into(),
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let cs = match std::ffi::CString::new(s) {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        ffi_str_to_jstring(&env, unsafe {
+            ffi::openworld_zenone_to_config(cs.as_ptr())
+        })
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_isZenoneFormat(
+        mut env: JNIEnv,
+        _c: JClass,
+        content: JString,
+    ) -> jboolean {
+        let s: String = match env.get_string(&content) {
+            Ok(s) => s.into(),
+            Err(_) => return JNI_FALSE,
+        };
+        let cs = match std::ffi::CString::new(s) {
+            Ok(s) => s,
+            Err(_) => return JNI_FALSE,
+        };
+        if unsafe { ffi::openworld_is_zenone_format(cs.as_ptr()) } == 1 {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    }
+
+    // ─── 独立 HTTP 下载（不依赖内核运行） ─────────────────────────────────
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_fetchUrl(
+        mut env: JNIEnv,
+        _c: JClass,
+        url: JString,
+    ) -> jstring {
+        let s: String = match env.get_string(&url) {
+            Ok(s) => s.into(),
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let cs = match std::ffi::CString::new(s) {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        ffi_str_to_jstring(&env, unsafe {
+            ffi::openworld_fetch_url(cs.as_ptr())
+        })
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1111,6 +1193,27 @@ pub fn core_jni_methods() -> Vec<JniMethodSignature> {
         JniMethodSignature::new(c, "wakelockSet", "(Z)Z", true),
         JniMethodSignature::new(c, "wakelockHeld", "()Z", true),
         JniMethodSignature::new(c, "notificationContent", "()Ljava/lang/String;", true),
+        // ZenOne 统一配置 API
+        JniMethodSignature::new(
+            c,
+            "convertSubscriptionToZenone",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            true,
+        ),
+        JniMethodSignature::new(
+            c,
+            "zenoneToConfig",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            true,
+        ),
+        JniMethodSignature::new(c, "isZenoneFormat", "(Ljava/lang/String;)Z", true),
+        // 独立 HTTP 下载（不依赖内核运行）
+        JniMethodSignature::new(
+            c,
+            "fetchUrl",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            true,
+        ),
     ]
 }
 

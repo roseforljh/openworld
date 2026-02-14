@@ -1,10 +1,12 @@
-package com.openworld.app.ui.screens
+﻿package com.openworld.app.ui.screens
 
 import com.openworld.app.R
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -168,6 +170,9 @@ fun TunSettingsScreen(
     }
 
     Scaffold(
+
+
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
@@ -185,8 +190,9 @@ fun TunSettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
                 .verticalScroll(scrollState)
+                .padding(16.dp)
+                .navigationBarsPadding()
         ) {
             StandardCard {
                 SettingSwitchItem(

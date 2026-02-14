@@ -230,15 +230,7 @@ fun AppNavigation(navController: NavHostController) {
             exitTransition = exitTransition,
             popEnterTransition = popEnterTransition,
             popExitTransition = popExitTransition
-        ) {
-            RoutingScreen(
-                onBack = { navController.popBackStack() },
-                onRuleSets = { navController.navigate(Screen.RuleSets.route) },
-                onRuleSetHub = { navController.navigate(Screen.RuleSetHub.route) },
-                onDomainRules = { navController.navigate(Screen.DomainRules.route) },
-                onAppRules = { navController.navigate(Screen.AppRules.route) }
-            )
-        }
+        ) { RoutingScreen(navController = navController) }
         composable(
             route = Screen.DnsSettings.route,
             enterTransition = enterTransition,
@@ -280,28 +272,28 @@ fun AppNavigation(navController: NavHostController) {
             exitTransition = exitTransition,
             popEnterTransition = popEnterTransition,
             popExitTransition = popExitTransition
-        ) { RuleSetsScreen(onBack = { navController.popBackStack() }) }
+        ) { RuleSetsScreen(navController = navController) }
         composable(
             route = Screen.RuleSetHub.route,
             enterTransition = enterTransition,
             exitTransition = exitTransition,
             popEnterTransition = popEnterTransition,
             popExitTransition = popExitTransition
-        ) { RuleSetHubScreen(onBack = { navController.popBackStack() }) }
+        ) { RuleSetHubScreen(navController = navController) }
         composable(
             route = Screen.DomainRules.route,
             enterTransition = enterTransition,
             exitTransition = exitTransition,
             popEnterTransition = popEnterTransition,
             popExitTransition = popExitTransition
-        ) { DomainRulesScreen(onBack = { navController.popBackStack() }) }
+        ) { DomainRulesScreen(navController = navController) }
         composable(
             route = Screen.AppRules.route,
             enterTransition = enterTransition,
             exitTransition = exitTransition,
             popEnterTransition = popEnterTransition,
             popExitTransition = popExitTransition
-        ) { AppRulesScreen(onBack = { navController.popBackStack() }) }
+        ) { AppRulesScreen(navController = navController) }
         composable(
             route = Screen.Connections.route,
             enterTransition = enterTransition,

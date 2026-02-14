@@ -1,10 +1,12 @@
-package com.openworld.app.ui.screens
+﻿package com.openworld.app.ui.screens
 
 import com.openworld.app.R
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -34,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import com.openworld.app.model.DefaultRule
 import com.openworld.app.model.RoutingMode
 import com.openworld.app.model.GhProxyMirror
@@ -44,17 +47,14 @@ import com.openworld.app.ui.components.SettingItem
 import com.openworld.app.ui.components.SettingSwitchItem
 import com.openworld.app.ui.components.SingleSelectDialog
 import com.openworld.app.ui.components.StandardCard
+import com.openworld.app.ui.navigation.Screen
 import com.openworld.app.ui.theme.Neutral500
 import com.openworld.app.viewmodel.SettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RoutingScreen(
-    onBack: () -> Unit = {},
-    onRuleSets: () -> Unit = {},
-    onRuleSetHub: () -> Unit = {},
-    onDomainRules: () -> Unit = {},
-    onAppRules: () -> Unit = {},
+    navController: NavController,
     settingsViewModel: SettingsViewModel = viewModel()
 ) {
     val scrollState = rememberScrollState()
@@ -154,12 +154,13 @@ fun RoutingScreen(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.routing_settings_title), color = MaterialTheme.colorScheme.onBackground) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
@@ -171,8 +172,9 @@ fun RoutingScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
                 .verticalScroll(scrollState)
+                .padding(16.dp)
+                .navigationBarsPadding()
         ) {
             StandardCard {
                 SettingItem(title = stringResource(R.string.routing_settings_mode), value = stringResource(settings.routingMode.displayNameRes), onClick = { showModeDialog = true })
@@ -231,7 +233,7 @@ fun RoutingScreen(
                 SettingItem(
                     title = stringResource(R.string.routing_settings_app_routing),
                     value = stringResource(R.string.routing_settings_app_routing_rules, settings.appRules.size + settings.appGroups.size),
-                    onClick = onAppRules
+                    onClick = { navController.navigate(Screen.AppRules.route) }
                 )
                 val domainRuleCount = settings.customRules.count {
                     it.enabled && it.type in listOf(
@@ -243,10 +245,9 @@ fun RoutingScreen(
                 SettingItem(
                     title = stringResource(R.string.routing_settings_domain_routing),
                     value = stringResource(R.string.routing_settings_app_routing_rules, domainRuleCount),
-                    onClick = onDomainRules
+                    onClick = { navController.navigate(Screen.DomainRules.route) }
                 )
-                SettingItem(title = stringResource(R.string.routing_settings_manage_rulesets), onClick = onRuleSets)
-                 SettingItem(title = stringResource(R.string.routing_settings_ruleset_hub), onClick = onRuleSetHub)
+                SettingItem(title = stringResource(R.string.routing_settings_manage_rulesets), onClick = { navController.navigate(Screen.RuleSets.route) })
             }
         }
     }

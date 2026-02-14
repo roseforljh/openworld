@@ -2,7 +2,6 @@
 # 编译 Rust 内核为 Android .so 并复制到 jniLibs
 
 param(
-    [switch]$Release,
     [switch]$Clean
 )
 
@@ -42,22 +41,17 @@ if ($installed -notmatch $Target) {
     rustup target add $Target
 }
 
-# 编译
+# 编译（仅 release）
 $buildArgs = @(
     "build",
     "--lib",
     "--target", $Target,
     "--no-default-features",
-    "--features", "android"
+    "--features", "android",
+    "--release"
 )
-if ($Release) {
-    $buildArgs += "--release"
-    $Profile = "release"
-    Write-Host "Building RELEASE..." -ForegroundColor Green
-} else {
-    $Profile = "debug"
-    Write-Host "Building DEBUG..." -ForegroundColor Yellow
-}
+$Profile = "release"
+Write-Host "Building RELEASE..." -ForegroundColor Green
 
 Push-Location $ProjectRoot
 try {

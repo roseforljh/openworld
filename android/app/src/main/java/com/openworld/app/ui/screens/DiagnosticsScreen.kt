@@ -1,21 +1,26 @@
-package com.openworld.app.ui.screens
+﻿package com.openworld.app.ui.screens
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.net.VpnService
-import android.widget.Toast
-import androidx.compose.foundation.layout.Arrangement
+import com.openworld.app.R
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.rounded.Analytics
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.InsertDriveFile
+import androidx.compose.material.icons.rounded.NetworkCheck
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Route
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,29 +30,57 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.openworld.app.repository.CoreRepository
-import com.openworld.core.OpenWorldCore
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.openworld.app.ui.components.ConfirmDialog
+import com.openworld.app.ui.components.SettingItem
+import com.openworld.app.ui.components.StandardCard
+import com.openworld.app.viewmodel.DiagnosticsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DiagnosticsScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
-    var result by remember { mutableStateOf(buildResult(context)) }
+fun DiagnosticsScreen(
+    onBack: () -> Unit,
+    viewModel: DiagnosticsViewModel = viewModel()
+) {
+    val scrollState = rememberScrollState()
+    val showResultDialog by viewModel.showResultDialog.collectAsState()
+    val resultTitle by viewModel.resultTitle.collectAsState()
+    val resultMessage by viewModel.resultMessage.collectAsState()
+
+    val isConnectivityLoading by viewModel.isConnectivityLoading.collectAsState()
+    val isPingLoading by viewModel.isPingLoading.collectAsState()
+    val isDnsLoading by viewModel.isDnsLoading.collectAsState()
+    val isRoutingLoading by viewModel.isRoutingLoading.collectAsState()
+    val isRunConfigLoading by viewModel.isRunConfigLoading.collectAsState()
+    val isAppRoutingDiagLoading by viewModel.isAppRoutingDiagLoading.collectAsState()
+    val isConnOwnerStatsLoading by viewModel.isConnOwnerStatsLoading.collectAsState()
+
+    if (showResultDialog) {
+        ConfirmDialog(
+            title = resultTitle,
+            message = resultMessage,
+            confirmText = stringResource(R.string.common_ok),
+            onConfirm = { viewModel.dismissDialog() },
+            onDismiss = { viewModel.dismissDialog() }
+        )
+    }
 
     Scaffold(
+
+
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("诊断") },
+                title = { Text(stringResource(R.string.diagnostics_title), color = MaterialTheme.colorScheme.onBackground) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -58,45 +91,78 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(scrollState)
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .navigationBarsPadding()
         ) {
-            Text(result, style = MaterialTheme.typography.bodySmall)
+            StandardCard {
+                SettingItem(
+                    title = stringResource(R.string.diagnostics_view_config),
+                    subtitle = if (isRunConfigLoading) stringResource(R.string.diagnostics_view_config_loading) else stringResource(R.string.diagnostics_view_config_subtitle),
+                    icon = Icons.Rounded.InsertDriveFile,
+                    onClick = { viewModel.showRunningConfigSummary() },
+                    enabled = !isRunConfigLoading
+                )
+                SettingItem(
+                    title = stringResource(R.string.diagnostics_export_config),
+                    subtitle = if (isRunConfigLoading) stringResource(R.string.diagnostics_export_config_loading) else stringResource(R.string.diagnostics_export_config_subtitle),
+                    icon = Icons.Rounded.FileDownload,
+                    onClick = { viewModel.exportRunningConfigToExternalFiles() },
+                    enabled = !isRunConfigLoading
+                )
+                SettingItem(
+                    title = stringResource(R.string.diagnostics_app_routing),
+                    subtitle = if (isAppRoutingDiagLoading) stringResource(R.string.diagnostics_app_routing_loading) else stringResource(R.string.diagnostics_app_routing_subtitle),
+                    icon = Icons.Rounded.Storage,
+                    onClick = { viewModel.runAppRoutingDiagnostics() },
+                    enabled = !isAppRoutingDiagLoading
+                )
+                SettingItem(
+                    title = stringResource(R.string.diagnostics_conn_owner),
+                    subtitle = if (isConnOwnerStatsLoading) stringResource(R.string.diagnostics_conn_owner_loading) else stringResource(R.string.diagnostics_conn_owner_subtitle),
+                    icon = Icons.Rounded.Analytics,
+                    onClick = { viewModel.showConnectionOwnerStats() },
+                    enabled = !isConnOwnerStatsLoading
+                )
+                SettingItem(
+                    title = stringResource(R.string.diagnostics_reset_conn_owner),
+                    subtitle = stringResource(R.string.diagnostics_reset_conn_owner_subtitle),
+                    icon = Icons.Rounded.Refresh,
+                    onClick = { viewModel.resetConnectionOwnerStats() },
+                    enabled = true
+                )
 
-            Button(onClick = { result = buildResult(context) }, modifier = Modifier.fillMaxWidth()) {
-                Text("重新检测")
-            }
-            Button(onClick = {
-                copyText(context, result)
-                Toast.makeText(context, "诊断结果已复制", Toast.LENGTH_SHORT).show()
-            }, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Filled.ContentCopy, contentDescription = null)
-                Text("  复制结果")
+                Spacer(modifier = Modifier.height(12.dp))
+
+                SettingItem(
+                    title = stringResource(R.string.diagnostics_connectivity),
+                    subtitle = if (isConnectivityLoading) stringResource(R.string.diagnostics_connectivity_loading) else stringResource(R.string.diagnostics_connectivity_subtitle),
+                    icon = Icons.Rounded.NetworkCheck,
+                    onClick = { viewModel.runConnectivityCheck() },
+                    enabled = !isConnectivityLoading
+                )
+                SettingItem(
+                    title = stringResource(R.string.diagnostics_ping_test),
+                    subtitle = if (isPingLoading) stringResource(R.string.diagnostics_routing_test_loading) else stringResource(R.string.diagnostics_ping_test_subtitle),
+                    icon = Icons.Rounded.Speed,
+                    onClick = { viewModel.runPingTest() },
+                    enabled = !isPingLoading
+                )
+                SettingItem(
+                    title = stringResource(R.string.diagnostics_dns_query),
+                    subtitle = if (isDnsLoading) stringResource(R.string.common_loading) else stringResource(R.string.diagnostics_dns_query_subtitle),
+                    icon = Icons.Rounded.Dns,
+                    onClick = { viewModel.runDnsQuery() },
+                    enabled = !isDnsLoading
+                )
+                SettingItem(
+                    title = stringResource(R.string.diagnostics_routing_test),
+                    subtitle = if (isRoutingLoading) stringResource(R.string.diagnostics_routing_test_loading) else stringResource(R.string.diagnostics_routing_test_subtitle),
+                    icon = Icons.Rounded.Route,
+                    onClick = { viewModel.runRoutingTest() },
+                    enabled = !isRoutingLoading
+                )
             }
         }
     }
-}
-
-private fun buildResult(context: Context): String {
-    val dnsCheck = runCatching { CoreRepository.dnsQuery("example.com", "A") }.getOrDefault("")
-    val dnsOk = dnsCheck.contains("answer", true) || dnsCheck.contains("93.184.216.34")
-    val status = runCatching { CoreRepository.getStatus() }.getOrDefault(CoreRepository.CoreStatus())
-    val vpnPrepared = VpnService.prepare(context) == null
-    val running = runCatching { OpenWorldCore.isRunning() }.getOrDefault(false)
-
-    return buildString {
-        appendLine("[DNS 可达性] ${if (dnsOk) "OK" else "FAILED"}")
-        appendLine("[Core 运行状态] ${if (running) "RUNNING" else "STOPPED"}")
-        appendLine("[VPN 权限] ${if (vpnPrepared) "GRANTED" else "REQUIRED"}")
-        appendLine("[连接数] ${status.connections}")
-        appendLine("[模式] ${status.mode}")
-        appendLine("[上传] ${status.upload}")
-        appendLine("[下载] ${status.download}")
-    }
-}
-
-private fun copyText(context: Context, text: String) {
-    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    cm.setPrimaryClip(ClipData.newPlainText("diagnostics", text))
 }

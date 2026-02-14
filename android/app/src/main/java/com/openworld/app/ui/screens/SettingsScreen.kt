@@ -1,5 +1,6 @@
 package com.openworld.app.ui.screens
 
+import com.openworld.app.R
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,29 +35,43 @@ import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import com.openworld.app.R
 import com.openworld.app.model.AppThemeMode
 import com.openworld.app.model.AppLanguage
+import com.openworld.app.model.ExportDataSummary
+import com.openworld.app.model.ImportOptions
+import com.openworld.app.repository.RuleSetRepository
+import com.openworld.app.ui.components.AboutDialog
+import com.openworld.app.ui.components.EditableTextItem
+import com.openworld.app.ui.components.ExportProgressDialog
+import com.openworld.app.ui.components.ImportPreviewDialog
+import com.openworld.app.ui.components.ImportProgressDialog
 import com.openworld.app.ui.components.SettingItem
 import com.openworld.app.ui.components.SettingSwitchItem
+import com.openworld.app.ui.components.SingleSelectDialog
 import com.openworld.app.ui.components.StandardCard
+import com.openworld.app.ui.components.ValidatingDialog
 import com.openworld.app.ui.navigation.Screen
+import com.openworld.app.viewmodel.ImportState
 import com.openworld.app.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun SettingsScreen(
@@ -67,15 +82,109 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
     val settings by viewModel.settings.collectAsState()
-    // val exportState by viewModel.exportState.collectAsState()
-    // val importState by viewModel.importState.collectAsState()
+    val exportState by viewModel.exportState.collectAsState()
+    val importState by viewModel.importState.collectAsState()
 
+    var showAboutDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var isUpdatingRuleSets by remember { mutableStateOf(false) }
+    var updateMessage by remember { mutableStateOf("") }
 
-    // Placeholder for About/Theme/Language Dialogs which reuse SingleSelectDialog or others
-    
+    // 文件选择器 - 导出
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri?.let { viewModel.exportData(it) }
+    }
+
+    // 文件选择器 - 导入
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { viewModel.validateImportFile(it) }
+    }
+
+    // 生成导出文件名
+    fun generateExportFileName(): String {
+        val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+        return "openworld_backup_${dateFormat.format(Date())}.json"
+    }
+
+    if (showAboutDialog) {
+        AboutDialog(
+            onDismiss = { showAboutDialog = false }
+        )
+    }
+
+    if (showThemeDialog) {
+        SingleSelectDialog(
+            title = stringResource(R.string.settings_app_theme),
+            options = AppThemeMode.entries.map { stringResource(it.displayNameRes) },
+            selectedIndex = AppThemeMode.entries.indexOf(settings.appTheme),
+            onSelect = { index ->
+                viewModel.setAppTheme(AppThemeMode.entries[index])
+                showThemeDialog = false
+            },
+            onDismiss = { showThemeDialog = false }
+        )
+    }
+
+    if (showLanguageDialog) {
+        SingleSelectDialog(
+            title = stringResource(R.string.settings_app_language),
+            options = AppLanguage.entries.map { stringResource(it.displayNameRes) },
+            selectedIndex = AppLanguage.entries.indexOf(settings.appLanguage),
+            onSelect = { index ->
+                viewModel.setAppLanguage(AppLanguage.entries[index])
+                showLanguageDialog = false
+                // 提示用户需要重启应用
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.settings_restart_needed),
+                    Toast.LENGTH_LONG
+                ).show()
+            },
+            onDismiss = { showLanguageDialog = false }
+        )
+    }
+
+    // 导出状态对话框
+    ExportProgressDialog(
+        state = exportState,
+        onDismiss = { viewModel.resetExportState() }
+    )
+
+    // 导入预览对话框
+    if (importState is ImportState.Preview) {
+        val previewState = importState as ImportState.Preview
+        ImportPreviewDialog(
+            summary = previewState.summary as ExportDataSummary,
+            onConfirm = {
+                viewModel.confirmImport(previewState.uri, ImportOptions(overwriteExisting = true))
+            },
+            onDismiss = { viewModel.resetImportState() }
+        )
+    }
+
+    // 导入进度/结果对话框
+    ImportProgressDialog(
+        state = importState,
+        onDismiss = { viewModel.resetImportState() }
+    )
+
+    // 验证中对话框
+    if (importState is ImportState.Validating) {
+        ValidatingDialog()
+    }
+
+    // 导入错误处理（如果在 Preview 之前就出错）
+    LaunchedEffect(importState) {
+        if (importState is ImportState.Error) {
+            // 错误会在 ImportProgressDialog 中显示
+        }
+    }
+
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
 
     Column(
@@ -114,7 +223,7 @@ fun SettingsScreen(
                 subtitle = "启动应用时自动检查新版本",
                 icon = Icons.Rounded.SystemUpdate,
                 checked = settings.autoCheckUpdate,
-                onCheckedChange = { viewModel.setAutoCheckUpdate(it) }
+                onCheckedChange = { scope.launch { viewModel.setAutoCheckUpdate(it) } }
             )
             SettingItem(
                 title = stringResource(R.string.settings_connection_startup),
@@ -152,8 +261,61 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // 3. Tools
+        // Pre-define string resources for use in click handlers
+        val preparingUpdateMsg = stringResource(R.string.settings_preparing_update)
+        val updateSuccessMsg = stringResource(R.string.settings_update_success)
+        val updateFailedMsg = stringResource(R.string.settings_update_failed)
+        val rulesetUpdateSuccessMsg = stringResource(R.string.settings_ruleset_update_success)
+        val rulesetUpdateFailedMsg = stringResource(R.string.settings_ruleset_update_failed)
+
         SettingsGroupTitle(stringResource(R.string.settings_tools))
         StandardCard {
+            SettingItem(
+                title = if (isUpdatingRuleSets) updateMessage else stringResource(R.string.settings_update_rulesets),
+                subtitle = if (isUpdatingRuleSets) stringResource(R.string.settings_updating) else stringResource(R.string.settings_update_rulesets_subtitle),
+                icon = Icons.Rounded.Sync,
+                trailing = {
+                    if (isUpdatingRuleSets) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp).padding(end = 8.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.dp
+                        )
+                    }
+                },
+                onClick = {
+                    if (!isUpdatingRuleSets) {
+                        isUpdatingRuleSets = true
+                        updateMessage = preparingUpdateMsg
+                        scope.launch {
+                            try {
+                                val success = RuleSetRepository.getInstance(context).ensureRuleSetsReady(
+                                    forceUpdate = true,
+                                    allowNetwork = true
+                                ) {
+                                    updateMessage = it
+                                }
+                                updateMessage = if (success) updateSuccessMsg else updateFailedMsg
+                                Toast.makeText(
+                                    context,
+                                    if (success) rulesetUpdateSuccessMsg else rulesetUpdateFailedMsg,
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } catch (e: Exception) {
+                                updateMessage = "Error: ${e.message}"
+                                Toast.makeText(
+                                    context,
+                                    "$rulesetUpdateFailedMsg: ${e.message}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } finally {
+                                kotlinx.coroutines.delay(1000)
+                                isUpdatingRuleSets = false
+                            }
+                        }
+                    }
+                }
+            )
             SettingSwitchItem(
                 title = stringResource(R.string.settings_ruleset_auto_update),
                 subtitle = if (settings.ruleSetAutoUpdateEnabled)
@@ -164,7 +326,22 @@ fun SettingsScreen(
                 checked = settings.ruleSetAutoUpdateEnabled,
                 onCheckedChange = { viewModel.setRuleSetAutoUpdateEnabled(it) }
             )
-             SettingSwitchItem(
+            if (settings.ruleSetAutoUpdateEnabled) {
+                val intervalMinMsg = stringResource(R.string.settings_update_interval_min)
+                EditableTextItem(
+                    title = stringResource(R.string.settings_update_interval),
+                    value = stringResource(R.string.settings_update_interval_value, settings.ruleSetAutoUpdateInterval),
+                    onValueChange = { newValue ->
+                        val interval = newValue.filter { char -> char.isDigit() }.toIntOrNull()
+                        if (interval != null && interval >= 15) {
+                            viewModel.setRuleSetAutoUpdateInterval(interval)
+                        } else {
+                            Toast.makeText(context, intervalMinMsg, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+            }
+            SettingSwitchItem(
                 title = stringResource(R.string.settings_debug_mode),
                 subtitle = stringResource(R.string.settings_debug_mode_subtitle),
                 icon = Icons.Rounded.BugReport,
@@ -185,7 +362,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 4. Data
+        // 4. 数据管理
         SettingsGroupTitle(stringResource(R.string.settings_data_management))
         StandardCard {
             SettingItem(
@@ -199,7 +376,7 @@ fun SettingsScreen(
                 subtitle = stringResource(R.string.settings_export_data_subtitle),
                 icon = Icons.Rounded.Upload,
                 onClick = {
-                    Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
+                    exportLauncher.launch(generateExportFileName())
                 }
             )
             SettingItem(
@@ -207,7 +384,7 @@ fun SettingsScreen(
                 subtitle = stringResource(R.string.settings_import_data_subtitle),
                 icon = Icons.Rounded.Download,
                 onClick = {
-                     Toast.makeText(context, "Coming soon", Toast.LENGTH_SHORT).show()
+                    importLauncher.launch(arrayOf("application/json", "*/*"))
                 }
             )
         }
@@ -220,19 +397,11 @@ fun SettingsScreen(
             SettingItem(
                 title = stringResource(R.string.settings_about_app),
                 icon = Icons.Rounded.Info,
-                onClick = { 
-                     // showAboutDialog = true 
-                     Toast.makeText(context, "OpenWorld v0.1.0", Toast.LENGTH_SHORT).show()
-                }
+                onClick = { showAboutDialog = true }
             )
         }
 
         Spacer(modifier = Modifier.height(32.dp))
-    }
-    
-    // Dialogs placeholders
-    if (showThemeDialog) {
-        // Implement Theme Dialog or use SingleSelectDialog if replicated
     }
 }
 

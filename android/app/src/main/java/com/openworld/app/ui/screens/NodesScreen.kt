@@ -1,4 +1,4 @@
-package com.openworld.app.ui.screens
+﻿package com.openworld.app.ui.screens
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility

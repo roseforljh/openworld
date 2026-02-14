@@ -1,240 +1,222 @@
-package com.openworld.app.ui.screens
+﻿package com.openworld.app.ui.screens
 
-import android.widget.Toast
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.openworld.app.ui.components.ConfirmDialog
-import com.openworld.app.ui.components.InputDialog
-import com.openworld.app.ui.components.SingleSelectDialog
-import com.openworld.app.ui.components.StandardCard
-import com.openworld.app.viewmodel.RuleRoutingViewModel
+import androidx.navigation.NavController
+import com.openworld.app.R
+import com.openworld.app.model.*
+import com.openworld.app.viewmodel.SettingsViewModel
+import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun AppRulesScreen(
-    onBack: () -> Unit = {},
-    viewModel: RuleRoutingViewModel = viewModel()
+    navController: NavController,
+    viewModel: SettingsViewModel = viewModel()
 ) {
-    val state by viewModel.state.collectAsState()
-    val context = LocalContext.current
-    var showAddDialog by remember { mutableStateOf(false) }
-    var editTarget by remember { mutableStateOf<RuleRoutingViewModel.AppRuleUi?>(null) }
-    var deleteId by remember { mutableStateOf<String?>(null) }
-    var showModeDialog by remember { mutableStateOf(false) }
+    val appGroups by viewModel.appGroups.collectAsStateWithLifecycle()
+    val appRules by viewModel.appRules.collectAsStateWithLifecycle()
+    val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
 
-    LaunchedEffect(Unit) {
-        viewModel.toast.collect {
-            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
-        }
-    }
+    // TEMPORARY FIX: OpenWorld SettingsViewModel does not expose nodes/profiles yet.
+    val nodes = emptyList<NodeUi>()
+    val profiles = emptyList<ProfileUi>()
+
+    val pagerState = rememberPagerState(pageCount = { 2 })
+    val scope = rememberCoroutineScope()
+    val titles = listOf(stringResource(R.string.app_rules_tab_rules), stringResource(R.string.app_rules_tab_groups))
+
+    var showRuleEditor by remember { mutableStateOf(false) }
+    var showGroupEditor by remember { mutableStateOf(false) }
+    var editingRule by remember { mutableStateOf<AppRule?>(null) }
+    var editingGroup by remember { mutableStateOf<AppGroup?>(null) }
+
+    var searchQuery by remember { mutableStateOf("") }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text("应用分流") },
+                title = { Text(stringResource(R.string.app_routing_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
                     }
                 },
-                actions = {
-                    IconButton(onClick = { showModeDialog = true }) {
-                        Text(if (state.appRoutingMode == "whitelist") "白名单" else "黑名单")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
-                Icon(Icons.Filled.Add, contentDescription = "新增应用规则")
-            }
+            ExtendedFloatingActionButton(
+                onClick = {
+                    if (pagerState.currentPage == 0) {
+                        editingRule = null
+                        showRuleEditor = true
+                    } else {
+                        editingGroup = null
+                        showGroupEditor = true
+                    }
+                },
+                icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
+                text = { Text(text = if (pagerState.currentPage == 0) stringResource(R.string.app_rules_add) else stringResource(R.string.app_groups_create)) }
+            )
         }
-    ) { padding ->
-        LazyColumn(
+    ) { paddingValues ->
+        Column(
             modifier = Modifier
+                .padding(paddingValues)
                 .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            item {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "当前模式：${if (state.appRoutingMode == "whitelist") "白名单（仅列表走代理）" else "黑名单（仅列表直连）"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 6.dp)
+            Box(modifier = Modifier.padding(16.dp)) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(stringResource(R.string.common_search)) },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp)
                 )
             }
-            items(state.appRules, key = { it.id }) { rule ->
-                StandardCard {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+
+            TabRow(
+                selectedTabIndex = pagerState.currentPage,
+                containerColor = Color.Transparent,
+                divider = {}
+            ) {
+                titles.forEachIndexed { index, title ->
+                    Tab(
+                        selected = pagerState.currentPage == index,
+                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                        text = { Text(title, fontWeight = if (pagerState.currentPage == index) FontWeight.Bold else FontWeight.Normal) }
+                    )
+                }
+            }
+
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                if (page == 0) {
+                    val filteredRules = appRules.filter {
+                        it.appName.contains(searchQuery, ignoreCase = true) || it.packageName.contains(searchQuery, ignoreCase = true)
+                    }
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 80.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(rule.packageName, style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                text = "出站：${rule.outbound}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                        items(filteredRules, key = { it.id }) { rule ->
+                            val outboundText = when (rule.outboundMode) {
+                                RuleSetOutboundMode.DIRECT -> stringResource(R.string.outbound_direct)
+                                RuleSetOutboundMode.BLOCK -> stringResource(R.string.outbound_block)
+                                RuleSetOutboundMode.PROXY -> stringResource(R.string.outbound_proxy)
+                                RuleSetOutboundMode.NODE -> rule.outboundValue ?: stringResource(R.string.unknown)
+                                RuleSetOutboundMode.PROFILE -> rule.outboundValue ?: stringResource(R.string.unknown)
+                                else -> stringResource(R.string.outbound_direct)
+                            }
+
+                            AppRuleItem(
+                                rule = rule,
+                                outboundText = outboundText,
+                                onClick = {
+                                    editingRule = rule
+                                    showRuleEditor = true
+                                },
+                                onDelete = { viewModel.deleteAppRule(rule.id) }
                             )
                         }
-                        IconButton(onClick = { editTarget = rule }) {
-                            Icon(Icons.Filled.Edit, contentDescription = "编辑")
-                        }
-                        IconButton(onClick = { deleteId = rule.id }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
+                    }
+                } else {
+                    val filteredGroups = appGroups.filter {
+                        it.name.contains(searchQuery, ignoreCase = true)
+                    }
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 80.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(filteredGroups, key = { it.id }) { group ->
+                             val outboundText = when (group.outboundMode) {
+                                RuleSetOutboundMode.DIRECT -> stringResource(R.string.outbound_direct)
+                                RuleSetOutboundMode.BLOCK -> stringResource(R.string.outbound_block)
+                                RuleSetOutboundMode.PROXY -> stringResource(R.string.outbound_proxy)
+                                RuleSetOutboundMode.NODE -> group.outboundValue ?: stringResource(R.string.unknown)
+                                RuleSetOutboundMode.PROFILE -> group.outboundValue ?: stringResource(R.string.unknown)
+                                else -> stringResource(R.string.outbound_direct)
+                            }
+
+                            AppGroupItem(
+                                group = group,
+                                outboundText = outboundText,
+                                onClick = {
+                                    editingGroup = group
+                                    showGroupEditor = true
+                                },
+                                onToggle = { viewModel.toggleAppGroupEnabled(group.id) },
+                                onDelete = { viewModel.deleteAppGroup(group.id) }
+                            )
                         }
                     }
                 }
             }
-            item { Spacer(modifier = Modifier.height(80.dp)) }
         }
     }
 
-    if (showModeDialog) {
-        val options = listOf("whitelist", "blacklist")
-        SingleSelectDialog(
-            title = "应用分流模式",
-            options = options,
-            selectedIndex = options.indexOf(state.appRoutingMode).coerceAtLeast(0),
-            onSelect = { index ->
-                viewModel.setAppRoutingMode(options[index])
-                showModeDialog = false
-            },
-            onDismiss = { showModeDialog = false }
-        )
-    }
-
-    if (showAddDialog) {
+    if (showRuleEditor) {
         AppRuleEditorDialog(
-            title = "新增应用规则",
-            outbounds = state.outbounds,
-            onDismiss = { showAddDialog = false },
-            onConfirm = { pkg, outbound ->
-                viewModel.addAppRule(pkg, outbound)
-                showAddDialog = false
+            initialRule = editingRule,
+            installedApps = installedApps,
+            nodes = nodes,
+            profiles = profiles,
+            onDismiss = { showRuleEditor = false },
+            onConfirm = { rule ->
+                if (editingRule == null) {
+                    viewModel.addAppRule(rule)
+                } else {
+                    viewModel.updateAppRule(rule)
+                }
+                showRuleEditor = false
             }
         )
     }
 
-    if (editTarget != null) {
-        AppRuleEditorDialog(
-            title = "编辑应用规则",
-            initialPackageName = editTarget!!.packageName,
-            initialOutbound = editTarget!!.outbound,
-            outbounds = state.outbounds,
-            onDismiss = { editTarget = null },
-            onConfirm = { pkg, outbound ->
-                viewModel.updateAppRule(editTarget!!.id, pkg, outbound)
-                editTarget = null
+    if (showGroupEditor) {
+        AppGroupEditorDialog(
+            initialGroup = editingGroup,
+            installedApps = installedApps,
+            nodes = nodes,
+            profiles = profiles,
+            onDismiss = { showGroupEditor = false },
+            onConfirm = { group ->
+                if (editingGroup == null) {
+                    viewModel.addAppGroup(group)
+                } else {
+                    viewModel.updateAppGroup(group)
+                }
+                showGroupEditor = false
             }
         )
-    }
-
-    if (deleteId != null) {
-        ConfirmDialog(
-            title = "删除应用规则",
-            message = "确认删除该应用规则？",
-            confirmText = "删除",
-            onConfirm = {
-                viewModel.removeAppRule(deleteId!!)
-                deleteId = null
-            },
-            onDismiss = { deleteId = null }
-        )
-    }
-}
-
-@Composable
-private fun AppRuleEditorDialog(
-    title: String,
-    initialPackageName: String = "",
-    initialOutbound: String = "direct",
-    outbounds: List<String>,
-    onDismiss: () -> Unit,
-    onConfirm: (packageName: String, outbound: String) -> Unit
-) {
-    var step by remember { mutableStateOf(0) }
-    var packageName by remember { mutableStateOf(initialPackageName) }
-    var outbound by remember { mutableStateOf(initialOutbound) }
-    var showOutboundDialog by remember { mutableStateOf(false) }
-
-    if (step == 0) {
-        InputDialog(
-            title = "$title - 包名",
-            initialValue = packageName,
-            placeholder = "例如 com.android.chrome",
-            confirmText = "下一步",
-            onConfirm = {
-                packageName = it
-                step = 1
-            },
-            onDismiss = onDismiss
-        )
-    } else {
-        InputDialog(
-            title = "$title - 出站",
-            initialValue = outbound,
-            placeholder = "direct / proxy / reject",
-            confirmText = "选择",
-            onConfirm = { showOutboundDialog = true },
-            onDismiss = onDismiss
-        )
-        if (showOutboundDialog) {
-            val options = outbounds.ifEmpty { listOf("direct", "proxy", "reject") }
-            SingleSelectDialog(
-                title = "目标出站",
-                options = options,
-                selectedIndex = options.indexOf(outbound).coerceAtLeast(0),
-                onSelect = { index ->
-                    outbound = options[index]
-                    showOutboundDialog = false
-                    onConfirm(packageName, outbound)
-                },
-                onDismiss = { showOutboundDialog = false }
-            )
-        }
     }
 }

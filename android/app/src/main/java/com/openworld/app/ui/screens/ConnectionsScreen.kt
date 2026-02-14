@@ -1,9 +1,13 @@
-package com.openworld.app.ui.screens
+﻿package com.openworld.app.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -59,6 +63,8 @@ fun ConnectionsScreen(onBack: () -> Unit = {}) {
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text("活跃连接 (${connections.size})") },
@@ -119,6 +125,9 @@ fun ConnectionsScreen(onBack: () -> Unit = {}) {
                             try { OpenWorldCore.closeConnectionById(conn.id) } catch (_: Exception) {}
                         }
                     )
+                }
+                item {
+                    androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(16.dp).navigationBarsPadding())
                 }
             }
         }

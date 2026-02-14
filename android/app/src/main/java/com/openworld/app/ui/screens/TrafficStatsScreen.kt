@@ -1,11 +1,15 @@
-package com.openworld.app.ui.screens
+﻿package com.openworld.app.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -82,6 +86,8 @@ fun TrafficStatsScreen(onBack: () -> Unit = {}) {
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = { Text("流量统计") },
@@ -208,6 +214,9 @@ fun TrafficStatsScreen(onBack: () -> Unit = {}) {
                         )
                     }
                 }
+            }
+            item {
+                Spacer(Modifier.height(16.dp).navigationBarsPadding())
             }
         }
     }

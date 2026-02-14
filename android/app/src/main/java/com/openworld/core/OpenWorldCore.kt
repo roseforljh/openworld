@@ -117,4 +117,12 @@ object OpenWorldCore {
     @JvmStatic external fun wakelockSet(acquire: Boolean): Boolean
     @JvmStatic external fun wakelockHeld(): Boolean
     @JvmStatic external fun notificationContent(): String?
+
+    // ── ZenOne 统一配置 API ──
+    @JvmStatic external fun convertSubscriptionToZenone(content: String): String?
+    @JvmStatic external fun zenoneToConfig(zenoneContent: String): String?
+    @JvmStatic external fun isZenoneFormat(content: String): Boolean
+
+    // ── 独立 HTTP 下载（不依赖内核运行） ──
+    @JvmStatic external fun fetchUrl(url: String): String?
 }

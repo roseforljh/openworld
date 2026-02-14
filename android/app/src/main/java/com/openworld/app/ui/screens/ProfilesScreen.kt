@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -35,7 +36,9 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Link
@@ -45,6 +48,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -204,7 +208,32 @@ fun ProfilesScreen(
         contract = ScanContract()
     ) { result ->
         if (result.contents != null) {
-            viewModel.importSubscription(context.getString(R.string.profiles_qrcode_subscription), result.contents, 0)
+            val scannedContent = result.contents
+            val isNodeLink = scannedContent.let {
+                it.startsWith("vmess://") || it.startsWith("vless://") ||
+                    it.startsWith("ss://") || it.startsWith("ssr://") ||
+                    it.startsWith("trojan://") || it.startsWith("hysteria://") ||
+                    it.startsWith("hysteria2://") || it.startsWith("hy2://") ||
+                    it.startsWith("tuic://") || it.startsWith("wireguard://") ||
+                    it.startsWith("ssh://") || it.startsWith("anytls://")
+            }
+            val isSubscriptionUrl = scannedContent.startsWith("http://") ||
+                scannedContent.startsWith("https://")
+
+            when {
+                isNodeLink -> {
+                    viewModel.importFromContent(context.getString(R.string.profiles_qrcode_import), scannedContent)
+                }
+                isSubscriptionUrl -> {
+                    viewModel.importSubscription(context.getString(R.string.profiles_qrcode_subscription), scannedContent, 0)
+                }
+                scannedContent.trim().startsWith("{") || scannedContent.trim().startsWith("proxies:") -> {
+                    viewModel.importFromContent(context.getString(R.string.profiles_qrcode_import), scannedContent)
+                }
+                else -> {
+                    viewModel.importFromContent(context.getString(R.string.profiles_qrcode_import), scannedContent)
+                }
+            }
         }
     }
 
@@ -318,9 +347,9 @@ fun ProfilesScreen(
         SubscriptionInputDialog(
             initialName = profile.name,
             initialUrl = profile.url ?: "",
-            // initialAutoUpdateInterval = profile.autoUpdateInterval,
-            // initialDnsPreResolve = profile.dnsPreResolve,
-            // initialDnsServer = profile.dnsServer,
+            initialAutoUpdateInterval = profile.autoUpdateInterval,
+            initialDnsPreResolve = profile.dnsPreResolve,
+            initialDnsServer = profile.dnsServer,
             title = stringResource(R.string.profiles_edit_profile),
             onDismiss = { editingProfile = null },
             onConfirm = { name, url, autoUpdateInterval, dnsPreResolve, dnsServer ->
@@ -469,10 +498,7 @@ private fun ImportSelectionDialog(
 ) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
-                .padding(24.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             ImportOptionCard(
@@ -505,7 +531,23 @@ private fun ImportSelectionDialog(
 
 @Composable
 private fun ImportLoadingDialog(message: String, onCancel: () -> Unit = {}) {
-     androidx.compose.ui.window.Dialog(onDismissRequest = {}) {
+    val progress = remember(message) {
+        val regex = Regex(".*?\\((\\d+)/(\\d+)\\).*")
+        val match = regex.find(message)
+        if (match != null) {
+            val (current, total) = match.destructured
+            val totalFloat = total.toFloat()
+            if (totalFloat > 0) {
+                current.toFloat() / totalFloat
+            } else {
+                null
+            }
+        } else {
+            null
+        }
+    }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = {}) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -514,9 +556,19 @@ private fun ImportLoadingDialog(message: String, onCancel: () -> Unit = {}) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-             androidx.compose.material3.CircularProgressIndicator(
+            if (progress != null) {
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth().height(8.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.outline,
+                    strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
+            } else {
+                androidx.compose.material3.CircularProgressIndicator(
                     color = MaterialTheme.colorScheme.primary
-             )
+                )
+            }
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyLarge,
@@ -574,19 +626,31 @@ private fun ImportOptionCard(
     }
 }
 
+@Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
 @Composable
 private fun SubscriptionInputDialog(
     initialName: String = "",
     initialUrl: String = "",
-    // initialAutoUpdateInterval: Int = 0,
-    // initialDnsPreResolve: Boolean = false,
-    // initialDnsServer: String? = null,
+    initialAutoUpdateInterval: Int = 0,
+    initialDnsPreResolve: Boolean = false,
+    initialDnsServer: String? = null,
     title: String = stringResource(R.string.profiles_add_subscription),
     onDismiss: () -> Unit,
     onConfirm: (name: String, url: String, autoUpdateInterval: Int, dnsPreResolve: Boolean, dnsServer: String?) -> Unit
 ) {
     var name by remember { mutableStateOf(initialName) }
     var url by remember { mutableStateOf(initialUrl) }
+    var autoUpdateEnabled by remember { mutableStateOf(initialAutoUpdateInterval > 0) }
+    var autoUpdateMinutes by remember { mutableStateOf(if (initialAutoUpdateInterval > 0) initialAutoUpdateInterval.toString() else "60") }
+    var dnsPreResolveEnabled by remember { mutableStateOf(initialDnsPreResolve) }
+    var selectedDnsServer by remember { mutableStateOf(initialDnsServer ?: "https://cloudflare-dns.com/dns-query") }
+    var dnsDropdownExpanded by remember { mutableStateOf(false) }
+
+    val dnsServerOptions = listOf(
+        "https://cloudflare-dns.com/dns-query" to stringResource(R.string.profiles_dns_server_cloudflare),
+        "https://dns.google/dns-query" to stringResource(R.string.profiles_dns_server_google),
+        "https://dns.alidns.com/dns-query" to stringResource(R.string.profiles_dns_server_alidns)
+    )
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Column(
@@ -609,7 +673,15 @@ private fun SubscriptionInputDialog(
                 label = { Text(stringResource(R.string.profiles_name_label)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(16.dp),
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    focusedLabelColor = MaterialTheme.colorScheme.primary,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -620,19 +692,273 @@ private fun SubscriptionInputDialog(
                 label = { Text(stringResource(R.string.profiles_url_label)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(16.dp),
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    focusedLabelColor = MaterialTheme.colorScheme.primary,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 自动更新开关
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = stringResource(R.string.profiles_auto_update),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                androidx.compose.material3.Switch(
+                    checked = autoUpdateEnabled,
+                    onCheckedChange = { autoUpdateEnabled = it },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedThumbColor = MaterialTheme.colorScheme.primary,
+                        checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                )
+            }
+
+            AnimatedVisibility(
+                visible = autoUpdateEnabled,
+                enter = expandVertically(animationSpec = tween(durationMillis = 300)) + fadeIn(animationSpec = tween(durationMillis = 300)),
+                exit = shrinkVertically(animationSpec = tween(durationMillis = 300)) + fadeOut(animationSpec = tween(durationMillis = 300))
+            ) {
+                Column {
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    androidx.compose.material3.OutlinedTextField(
+                        value = autoUpdateMinutes,
+                        onValueChange = { newValue ->
+                            if (newValue.isEmpty() || newValue.all { it.isDigit() }) {
+                                autoUpdateMinutes = newValue
+                            }
+                        },
+                        label = { Text(stringResource(R.string.profiles_auto_update_interval)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        ),
+                        supportingText = {
+                            Text(
+                                text = stringResource(R.string.profiles_auto_update_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                            focusedLabelColor = MaterialTheme.colorScheme.primary,
+                            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // DNS 预解析开关
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.profiles_dns_preresolve),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.profiles_dns_preresolve_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = dnsPreResolveEnabled,
+                    onCheckedChange = { dnsPreResolveEnabled = it },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedThumbColor = MaterialTheme.colorScheme.primary,
+                        checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                )
+            }
+
+            AnimatedVisibility(
+                visible = dnsPreResolveEnabled,
+                enter = expandVertically(animationSpec = tween(durationMillis = 300)) + fadeIn(animationSpec = tween(durationMillis = 300)),
+                exit = shrinkVertically(animationSpec = tween(durationMillis = 300)) + fadeOut(animationSpec = tween(durationMillis = 300))
+            ) {
+                Column {
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    androidx.compose.material3.OutlinedTextField(
+                        value = dnsServerOptions.find { it.first == selectedDnsServer }?.second ?: selectedDnsServer,
+                        onValueChange = {},
+                        readOnly = true,
+                        enabled = false,
+                        label = { Text(stringResource(R.string.profiles_dns_server)) },
+                        trailingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.ArrowDropDown,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { dnsDropdownExpanded = true },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                            disabledBorderColor = MaterialTheme.colorScheme.outline,
+                            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                }
+            }
+
+            // DNS 服务器选择弹窗
+            if (dnsDropdownExpanded) {
+                androidx.compose.ui.window.Dialog(
+                    onDismissRequest = { dnsDropdownExpanded = false }
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                MaterialTheme.colorScheme.surface,
+                                RoundedCornerShape(24.dp)
+                            )
+                            .padding(vertical = 16.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.profiles_dns_server),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        dnsServerOptions.forEach { (serverUrl, label) ->
+                            val isSelected = selectedDnsServer == serverUrl
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selectedDnsServer = serverUrl
+                                        dnsDropdownExpanded = false
+                                    }
+                                    .background(
+                                        if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                                        else Color.Transparent
+                                    )
+                                    .padding(horizontal = 24.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurface
+                                )
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Check,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.common_cancel))
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                TextButton(onClick = { onConfirm(name, url, 0, false, null) }) {
-                    Text(stringResource(R.string.common_confirm))
-                }
+            val context = LocalContext.current
+
+            androidx.compose.material3.Button(
+                onClick = {
+                    val isNodeLink = url.trim().let {
+                        it.startsWith("vmess://") || it.startsWith("vless://") ||
+                            it.startsWith("ss://") || it.startsWith("ssr://") ||
+                            it.startsWith("trojan://") || it.startsWith("hysteria://") ||
+                            it.startsWith("hysteria2://") || it.startsWith("hy2://") ||
+                            it.startsWith("tuic://") || it.startsWith("bean://") ||
+                            it.startsWith("wireguard://") || it.startsWith("ssh://")
+                    }
+
+                    if (isNodeLink) {
+                        Toast.makeText(context,
+                            context.getString(R.string.profiles_subscription_node_warning),
+                            Toast.LENGTH_LONG).show()
+                        return@Button
+                    }
+
+                    if (name.contains("://")) {
+                        Toast.makeText(context, context.getString(R.string.profiles_name_invalid), Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+
+                    val finalInterval = if (autoUpdateEnabled) {
+                        val minutes = autoUpdateMinutes.toIntOrNull() ?: 0
+                        if (minutes < 15) {
+                            Toast.makeText(context, context.getString(R.string.settings_update_interval_min), Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        minutes
+                    } else {
+                        0
+                    }
+
+                    onConfirm(
+                        name,
+                        url,
+                        finalInterval,
+                        dnsPreResolveEnabled,
+                        if (dnsPreResolveEnabled) selectedDnsServer else null
+                    )
+                },
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                shape = RoundedCornerShape(25.dp)
+            ) {
+                Text(stringResource(R.string.common_ok), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+            ) {
+                Text(stringResource(R.string.common_cancel))
             }
         }
     }

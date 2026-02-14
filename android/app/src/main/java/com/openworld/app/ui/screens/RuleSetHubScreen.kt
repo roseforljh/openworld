@@ -1,127 +1,300 @@
-package com.openworld.app.ui.screens
+﻿package com.openworld.app.ui.screens
 
-import android.widget.Toast
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import com.openworld.app.R
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material3.*
+import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
+import com.openworld.app.model.RuleSet
+import com.openworld.app.model.RuleSetType
+import com.openworld.app.model.HubRuleSet
 import com.openworld.app.ui.components.StandardCard
-import com.openworld.app.viewmodel.RuleRoutingViewModel
+import com.openworld.app.viewmodel.RuleSetViewModel
+import com.openworld.app.viewmodel.SettingsViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RuleSetHubScreen(
-    onBack: () -> Unit = {},
-    viewModel: RuleRoutingViewModel = viewModel()
+    navController: NavController,
+    settingsViewModel: SettingsViewModel = viewModel(),
+    ruleSetViewModel: RuleSetViewModel = viewModel()
 ) {
-    val state by viewModel.state.collectAsState()
-    val context = LocalContext.current
+    var searchQuery by remember { mutableStateOf("") }
+    val ruleSets by ruleSetViewModel.ruleSets.collectAsState()
+    val isLoading by ruleSetViewModel.isLoading.collectAsState()
+    val error by ruleSetViewModel.error.collectAsState()
+    val downloadingRuleSets by settingsViewModel.downloadingRuleSets.collectAsState()
+    val ruleSetSettings by ruleSetViewModel.settings.collectAsState()
 
-    val presets = listOf(
-        Triple("geosite-cn", "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs", "国内域名规则"),
-        Triple("geosite-geolocation-!cn", "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-geolocation-!cn.srs", "海外域名规则"),
-        Triple("geoip-cn", "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs", "国内 IP 规则"),
-        Triple("geoip-private", "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-private.srs", "私网 IP 规则")
-    )
+    val addedRuleSetTags = remember(ruleSetSettings.ruleSets) {
+        ruleSetSettings.ruleSets.map { it.tag }.toSet()
+    }
 
-    LaunchedEffect(Unit) {
-        viewModel.toast.collect {
-            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
-        }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    val filteredRuleSets = remember(searchQuery, ruleSets) {
+        if (searchQuery.isBlank()) ruleSets
+        else ruleSets.filter { it.name.contains(searchQuery, ignoreCase = true) }
     }
 
     Scaffold(
+
+
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("规则库") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            item {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "一键导入常用规则源，若名称重复会提示冲突。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 6.dp)
-                )
-            }
-            items(presets, key = { it.first }) { preset ->
-                val exists = state.ruleSets.any { it.name.equals(preset.first, ignoreCase = true) }
-                StandardCard {
-                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-                        Text(preset.first, style = MaterialTheme.typography.titleSmall)
+                title = {
+                    Column {
+                        Text(stringResource(R.string.ruleset_hub_title), color = MaterialTheme.colorScheme.onBackground)
                         Text(
-                            text = preset.third,
+                            text = stringResource(R.string.import_count_items, filteredRuleSets.size),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Text(
-                            text = preset.second,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.common_back), tint = MaterialTheme.colorScheme.onBackground)
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { ruleSetViewModel.fetchRuleSets() }) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.common_refresh), tint = MaterialTheme.colorScheme.onBackground)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            // Search Bar
+            StandardCard(modifier = Modifier.padding(16.dp)) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text(stringResource(R.string.common_search), color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Rounded.Search,
+                            contentDescription = stringResource(R.string.common_search),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        androidx.compose.material3.Button(
-                            onClick = {
-                                if (exists) {
-                                    Toast.makeText(context, "已存在同名规则集", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    viewModel.addRuleSet(preset.first, preset.second, 24)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(4.dp),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        cursorColor = MaterialTheme.colorScheme.onSurface,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+            }
+
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+            } else if (error != null) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(text = error!!, color = MaterialTheme.colorScheme.error)
+                        Button(onClick = { ruleSetViewModel.fetchRuleSets() }) {
+                            Text(stringResource(R.string.common_retry))
+                        }
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(minSize = 300.dp),
+                    contentPadding = PaddingValues(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(filteredRuleSets) { ruleSet ->
+                        HubRuleSetItem(
+                            ruleSet = ruleSet,
+                            isDownloading = downloadingRuleSets.contains(ruleSet.name),
+                            isDownloaded = addedRuleSetTags.contains(ruleSet.name),
+                            onAddSource = {
+                                settingsViewModel.addRuleSet(
+                                    RuleSet(
+                                        tag = ruleSet.name,
+                                        type = RuleSetType.REMOTE,
+                                        format = "source",
+                                        url = ruleSet.sourceUrl
+                                    )
+                                ) { _, message ->
+                                    scope.launch { snackbarHostState.showSnackbar(message) }
                                 }
                             },
-                            enabled = !exists && !state.saving,
-                            modifier = Modifier.fillMaxWidth()
+                            onAddBinary = {
+                                settingsViewModel.addRuleSet(
+                                    RuleSet(
+                                        tag = ruleSet.name,
+                                        type = RuleSetType.REMOTE,
+                                        format = "binary",
+                                        url = ruleSet.binaryUrl
+                                    )
+                                ) { _, message ->
+                                    scope.launch { snackbarHostState.showSnackbar(message) }
+                                }
+                            }
+                        )
+                    }
+                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                        androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.height(16.dp).navigationBarsPadding())
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HubRuleSetItem(
+    ruleSet: HubRuleSet,
+    isDownloading: Boolean = false,
+    onAddSource: () -> Unit,
+    onAddBinary: () -> Unit,
+    isDownloaded: Boolean
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = ruleSet.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (isDownloading) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else if (isDownloaded) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            color = Color(0xFF2E7D32),
+                            shape = RoundedCornerShape(4.dp)
                         ) {
-                            Icon(Icons.Filled.Download, contentDescription = null)
-                            Text(if (exists) "  已导入" else "  导入")
+                            Text(
+                                text = stringResource(R.string.common_downloaded),
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ruleSet.tags.forEach { tag ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondary,
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.padding(start = 4.dp)
+                        ) {
+                            Text(
+                                text = tag,
+                                color = MaterialTheme.colorScheme.onSecondary,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
                         }
                     }
                 }
             }
-            item { Spacer(modifier = Modifier.height(16.dp)) }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Visibility,
+                    contentDescription = stringResource(R.string.common_view),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = onAddSource,
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Text(stringResource(R.string.common_add) + " Source", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                }
+
+                TextButton(
+                    onClick = onAddBinary,
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Text(stringResource(R.string.common_add) + " Binary", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                }
+            }
         }
     }
 }

@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.openworld.app.R
 import com.openworld.app.model.AppSettings
 import com.openworld.app.model.CustomRule
 import com.openworld.app.model.DefaultRule
@@ -22,29 +23,50 @@ import com.openworld.app.model.VpnRouteMode
 import com.openworld.app.model.GhProxyMirror
 import com.openworld.app.model.BackgroundPowerSavingDelay
 import com.openworld.app.repository.SettingsRepository
+import com.openworld.app.repository.RuleSetRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.CancellationException
+
+data class DefaultRuleSetDownloadState(
+    val isActive: Boolean = false,
+    val total: Int = 0,
+    val completed: Int = 0,
+    val currentTag: String? = null,
+    val cancelled: Boolean = false
+)
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = SettingsRepository.getInstance(application)
+    private val ruleSetRepository = RuleSetRepository.getInstance(application)
     
-    // Stubbed repositories/classes for now
-    // private val ruleSetRepository = RuleSetRepository.getInstance(application)
-    // private val dataExportRepository = DataExportRepository.getInstance(application)
+    // private val dataExportRepository = DataExportRepository.getInstance(application) // Still missing
 
     private val _downloadingRuleSets = MutableStateFlow<Set<String>>(emptySet())
     val downloadingRuleSets: StateFlow<Set<String>> = _downloadingRuleSets.asStateFlow()
+
+    private val _defaultRuleSetDownloadState = MutableStateFlow(DefaultRuleSetDownloadState())
+    val defaultRuleSetDownloadState: StateFlow<DefaultRuleSetDownloadState> = _defaultRuleSetDownloadState.asStateFlow()
+
+    private var defaultRuleSetDownloadJob: Job? = null
+    private val defaultRuleSetDownloadTags = mutableSetOf<String>()
 
     private val _exportState = MutableStateFlow<ExportState>(ExportState.Idle)
     val exportState: StateFlow<ExportState> = _exportState.asStateFlow()
 
     private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
     val importState: StateFlow<ImportState> = _importState.asStateFlow()
+
+    private val installedAppsRepository = com.openworld.app.repository.InstalledAppsRepository.getInstance(application)
+    val installedApps: StateFlow<List<com.openworld.app.model.InstalledApp>> = installedAppsRepository.installedApps
 
     val settings: StateFlow<AppSettings> = repository.settings
         .stateIn(
@@ -53,11 +75,116 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             initialValue = AppSettings()
         )
 
-    fun ensureDefaultRuleSetsReady() {
-        // Todo: Implement RuleSet download logic
+    val appRules: StateFlow<List<AppRule>> = settings.map { it.appRules }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+    
+    val appGroups: StateFlow<List<AppGroup>> = settings.map { it.appGroups }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    init {
         viewModelScope.launch {
-            if (repository.getRuleSets().isEmpty()) {
-                repository.setRuleSets(repository.getDefaultRuleSets(), notify = false)
+             installedAppsRepository.loadApps()
+        }
+    }
+
+    fun ensureDefaultRuleSetsReady() {
+        viewModelScope.launch {
+            if (defaultRuleSetDownloadJob?.isActive == true) return@launch
+            val currentRuleSets = repository.getRuleSets()
+            if (currentRuleSets.isNotEmpty()) return@launch
+
+            val defaultRuleSets = repository.getDefaultRuleSets()
+            repository.setRuleSets(defaultRuleSets, notify = false)
+            startDefaultRuleSetDownload(defaultRuleSets)
+        }
+    }
+    
+    fun cancelDefaultRuleSetDownload() {
+        defaultRuleSetDownloadJob?.cancel()
+        defaultRuleSetDownloadJob = null
+        defaultRuleSetDownloadTags.forEach { tag ->
+             val current = _downloadingRuleSets.value.toMutableSet()
+             current.remove(tag)
+             _downloadingRuleSets.value = current
+        }
+        defaultRuleSetDownloadTags.clear()
+        _defaultRuleSetDownloadState.value = _defaultRuleSetDownloadState.value.copy(
+            isActive = false,
+            currentTag = null,
+            cancelled = true
+        )
+    }
+
+    private fun startDefaultRuleSetDownload(ruleSets: List<RuleSet>) {
+        defaultRuleSetDownloadJob?.cancel()
+        defaultRuleSetDownloadTags.clear()
+
+        defaultRuleSetDownloadJob = viewModelScope.launch {
+            val remoteRuleSets = ruleSets.filter { it.type == RuleSetType.REMOTE }
+            if (remoteRuleSets.isEmpty()) {
+                _defaultRuleSetDownloadState.value = DefaultRuleSetDownloadState()
+                return@launch
+            }
+
+            var completedCount = 0
+            _defaultRuleSetDownloadState.value = DefaultRuleSetDownloadState(
+                isActive = true,
+                total = remoteRuleSets.size,
+                completed = 0
+            )
+
+            try {
+                for (ruleSet in remoteRuleSets) {
+                    ensureActive()
+                    _defaultRuleSetDownloadState.value = _defaultRuleSetDownloadState.value.copy(
+                        currentTag = ruleSet.tag
+                    )
+
+                    defaultRuleSetDownloadTags.add(ruleSet.tag)
+                    val currentDownloading = _downloadingRuleSets.value.toMutableSet()
+                    currentDownloading.add(ruleSet.tag)
+                    _downloadingRuleSets.value = currentDownloading
+                    
+                    try {
+                        ruleSetRepository.prefetchRuleSet(ruleSet, forceUpdate = false, allowNetwork = true)
+                    } finally {
+                        val current = _downloadingRuleSets.value.toMutableSet()
+                        current.remove(ruleSet.tag)
+                        _downloadingRuleSets.value = current
+                        defaultRuleSetDownloadTags.remove(ruleSet.tag)
+                    }
+
+                    completedCount += 1
+                    _defaultRuleSetDownloadState.value = _defaultRuleSetDownloadState.value.copy(
+                        completed = completedCount
+                    )
+                }
+
+                _defaultRuleSetDownloadState.value = _defaultRuleSetDownloadState.value.copy(
+                    isActive = false,
+                    currentTag = null,
+                    cancelled = false
+                )
+            } catch (e: CancellationException) {
+                defaultRuleSetDownloadTags.forEach { tag ->
+                     val current = _downloadingRuleSets.value.toMutableSet()
+                     current.remove(tag)
+                     _downloadingRuleSets.value = current
+                }
+                defaultRuleSetDownloadTags.clear()
+                _defaultRuleSetDownloadState.value = _defaultRuleSetDownloadState.value.copy(
+                    isActive = false,
+                    currentTag = null,
+                    cancelled = true
+                )
             }
         }
     }
@@ -83,8 +210,54 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setTunEnabled(value: Boolean) {
         viewModelScope.launch { repository.setTunEnabled(value) }
     }
+    
+    fun setTunStack(value: TunStack) {
+        viewModelScope.launch { repository.setTunStack(value) }
+    }
 
-    // ... Other simple setters ...
+    fun setTunMtu(value: Int) {
+        viewModelScope.launch { repository.setTunMtu(value) }
+    }
+
+    fun setTunMtuAuto(value: Boolean) { 
+        viewModelScope.launch { repository.setTunMtuAuto(value) }
+    }
+
+    fun setTunInterfaceName(value: String) {
+        viewModelScope.launch { repository.setTunInterfaceName(value) }
+    }
+
+    fun setAutoRoute(value: Boolean) {
+        viewModelScope.launch { repository.setAutoRoute(value) }
+    }
+
+    fun setStrictRoute(value: Boolean) {
+        viewModelScope.launch { repository.setStrictRoute(value) }
+    }
+
+    fun setEndpointIndependentNat(value: Boolean) {
+        viewModelScope.launch { repository.setEndpointIndependentNat(value) }
+    }
+
+    fun setVpnRouteMode(value: VpnRouteMode) {
+        viewModelScope.launch { repository.setVpnRouteMode(value) }
+    }
+
+    fun setVpnRouteIncludeCidrs(value: String) {
+        viewModelScope.launch { repository.setVpnRouteIncludeCidrs(value) }
+    }
+
+    fun setVpnAppMode(value: VpnAppMode) {
+        viewModelScope.launch { repository.setVpnAppMode(value) }
+    }
+
+    fun setVpnAllowlist(value: String) {
+        viewModelScope.launch { repository.setVpnAllowlist(value) }
+    }
+    
+    fun setVpnBlocklist(value: String) {
+        viewModelScope.launch { repository.setVpnBlocklist(value) }
+    }
     
     fun setDebugLoggingEnabled(value: Boolean) {
         viewModelScope.launch { repository.setDebugLoggingEnabled(value) }
@@ -115,23 +288,23 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { repository.setShowNotificationSpeed(value) }
     }
 
-    fun setProxyPort(value: Int) { // Renamed from updateProxyPort
+    fun setProxyPort(value: Int) { 
         viewModelScope.launch { repository.setProxyPort(value) }
     }
 
-    fun setAllowLan(value: Boolean) { // Renamed from updateAllowLan
+    fun setAllowLan(value: Boolean) { 
         viewModelScope.launch { repository.setAllowLan(value) }
     }
 
-    fun setAppendHttpProxy(value: Boolean) { // Renamed from updateAppendHttpProxy
+    fun setAppendHttpProxy(value: Boolean) { 
         viewModelScope.launch { repository.setAppendHttpProxy(value) }
     }
 
-    fun setLatencyTestConcurrency(value: Int) { // Renamed from updateLatencyTestConcurrency
+    fun setLatencyTestConcurrency(value: Int) { 
         viewModelScope.launch { repository.setLatencyTestConcurrency(value) }
     }
 
-    fun setLatencyTestTimeout(value: Int) { // Renamed from updateLatencyTestTimeout
+    fun setLatencyTestTimeout(value: Int) { 
         viewModelScope.launch { repository.setLatencyTestTimeout(value) }
     }
 
@@ -204,60 +377,211 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setDnsCacheEnabled(value: Boolean) {
         viewModelScope.launch { repository.setDnsCacheEnabled(value) }
     }
-
-    // ==================== Tun/VPN Settings ====================
-    fun setTunStack(value: TunStack) {
-        viewModelScope.launch { repository.setTunStack(value) }
+    
+    // ==================== Advanced Routing ====================
+    fun addCustomRule(rule: CustomRule) {
+        viewModelScope.launch {
+            val currentRules = settings.value.customRules.toMutableList()
+            currentRules.add(rule)
+            repository.setCustomRules(currentRules)
+        }
     }
 
-    fun setTunMtu(value: Int) {
-        viewModelScope.launch { repository.setTunMtu(value) }
+    fun updateCustomRule(rule: CustomRule) {
+        viewModelScope.launch {
+            val currentRules = settings.value.customRules.toMutableList()
+            val index = currentRules.indexOfFirst { it.id == rule.id }
+            if (index != -1) {
+                currentRules[index] = rule
+                repository.setCustomRules(currentRules)
+            }
+        }
     }
 
-    fun setTunMtuAuto(value: Boolean) { // Note: Existing code might have this? No, it wasn't in list.
-        viewModelScope.launch { repository.setTunMtuAuto(value) }
+    fun deleteCustomRule(ruleId: String) {
+        viewModelScope.launch {
+            val currentRules = settings.value.customRules.toMutableList()
+            currentRules.removeAll { it.id == ruleId }
+            repository.setCustomRules(currentRules)
+        }
+    }
+    
+    fun addRuleSet(ruleSet: RuleSet, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            // Simplified logic compared to KunBox
+             val currentSets = repository.getRuleSets().toMutableList()
+            val exists = currentSets.any { it.tag == ruleSet.tag }
+            if (exists) {
+                onResult(false, "Rule set exists")
+            } else {
+                currentSets.add(ruleSet)
+                repository.setRuleSets(currentSets)
+
+                if (ruleSet.type == RuleSetType.REMOTE) {
+                     val currentDownloading = _downloadingRuleSets.value.toMutableSet()
+                     currentDownloading.add(ruleSet.tag)
+                     _downloadingRuleSets.value = currentDownloading
+                }
+
+                val downloadOk = try {
+                    ruleSetRepository.prefetchRuleSet(ruleSet, forceUpdate = false, allowNetwork = true)
+                } finally {
+                    if (ruleSet.type == RuleSetType.REMOTE) {
+                        val currentDownloading = _downloadingRuleSets.value.toMutableSet()
+                        currentDownloading.remove(ruleSet.tag)
+                        _downloadingRuleSets.value = currentDownloading
+                    }
+                }
+
+                if (downloadOk) {
+                    onResult(true, "Rule set added and downloaded")
+                } else {
+                    onResult(true, "Rule set added but download failed")
+                }
+            }
+        }
     }
 
-    fun setTunInterfaceName(value: String) {
-        viewModelScope.launch { repository.setTunInterfaceName(value) }
+    fun updateRuleSet(ruleSet: RuleSet) {
+        viewModelScope.launch {
+            val currentSets = settings.value.ruleSets.toMutableList()
+            val index = currentSets.indexOfFirst { it.id == ruleSet.id }
+            if (index != -1) {
+                val previous = currentSets[index]
+                currentSets[index] = ruleSet
+                repository.setRuleSets(currentSets)
+
+                if (!previous.enabled && ruleSet.enabled && ruleSet.type == RuleSetType.REMOTE) {
+                    if (!_downloadingRuleSets.value.contains(ruleSet.tag)) {
+                         val currentDownloading = _downloadingRuleSets.value.toMutableSet()
+                         currentDownloading.add(ruleSet.tag)
+                         _downloadingRuleSets.value = currentDownloading
+                         
+                        launch {
+                            try {
+                                ruleSetRepository.prefetchRuleSet(ruleSet, forceUpdate = false, allowNetwork = true)
+                            } finally {
+                                 val current = _downloadingRuleSets.value.toMutableSet()
+                                 current.remove(ruleSet.tag)
+                                 _downloadingRuleSets.value = current
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    fun deleteRuleSet(ruleSetId: String) {
+        viewModelScope.launch {
+            val currentSets = settings.value.ruleSets.toMutableList()
+            currentSets.removeAll { it.id == ruleSetId }
+            repository.setRuleSets(currentSets)
+        }
     }
 
-    fun setAutoRoute(value: Boolean) {
-        viewModelScope.launch { repository.setAutoRoute(value) }
+    fun deleteRuleSets(ruleSetIds: List<String>) {
+        viewModelScope.launch {
+            val idsToDelete = ruleSetIds.toSet()
+            val currentSets = settings.value.ruleSets.toMutableList()
+            currentSets.removeAll { it.id in idsToDelete }
+            repository.setRuleSets(currentSets)
+        }
+    }
+    
+    fun reorderRuleSets(newOrder: List<RuleSet>) {
+        viewModelScope.launch {
+            repository.setRuleSets(newOrder)
+        }
+    }
+    
+    // App Rules
+    fun addAppRule(rule: AppRule) {
+        viewModelScope.launch {
+            val currentRules = settings.value.appRules.toMutableList()
+            currentRules.removeAll { it.packageName == rule.packageName }
+            currentRules.add(rule)
+            repository.setAppRules(currentRules)
+        }
     }
 
-    fun setStrictRoute(value: Boolean) {
-        viewModelScope.launch { repository.setStrictRoute(value) }
+    fun updateAppRule(rule: AppRule) {
+        viewModelScope.launch {
+            val currentRules = settings.value.appRules.toMutableList()
+            val index = currentRules.indexOfFirst { it.id == rule.id }
+            if (index != -1) {
+                currentRules[index] = rule
+                repository.setAppRules(currentRules)
+            }
+        }
     }
 
-    fun setEndpointIndependentNat(value: Boolean) {
-        viewModelScope.launch { repository.setEndpointIndependentNat(value) }
+    fun deleteAppRule(ruleId: String) {
+        viewModelScope.launch {
+            val currentRules = settings.value.appRules.toMutableList()
+            currentRules.removeAll { it.id == ruleId }
+            repository.setAppRules(currentRules)
+        }
     }
 
-    fun setVpnRouteMode(value: VpnRouteMode) {
-        viewModelScope.launch { repository.setVpnRouteMode(value) }
+    fun toggleAppRuleEnabled(ruleId: String) {
+        viewModelScope.launch {
+            val currentRules = settings.value.appRules.toMutableList()
+            val index = currentRules.indexOfFirst { it.id == ruleId }
+            if (index != -1) {
+                val rule = currentRules[index]
+                currentRules[index] = rule.copy(enabled = !rule.enabled)
+                repository.setAppRules(currentRules)
+            }
+        }
     }
 
-    fun setVpnRouteIncludeCidrs(value: String) {
-        viewModelScope.launch { repository.setVpnRouteIncludeCidrs(value) }
+    // App Groups
+    fun addAppGroup(group: AppGroup) {
+        viewModelScope.launch {
+            val currentGroups = settings.value.appGroups.toMutableList()
+            currentGroups.add(group)
+            repository.setAppGroups(currentGroups)
+        }
     }
 
-    fun setVpnAppMode(value: VpnAppMode) {
-        viewModelScope.launch { repository.setVpnAppMode(value) }
+    fun updateAppGroup(group: AppGroup) {
+        viewModelScope.launch {
+            val currentGroups = settings.value.appGroups.toMutableList()
+            val index = currentGroups.indexOfFirst { it.id == group.id }
+            if (index != -1) {
+                currentGroups[index] = group
+                repository.setAppGroups(currentGroups)
+            }
+        }
     }
 
-    fun setVpnAllowlist(value: String) {
-        viewModelScope.launch { repository.setVpnAllowlist(value) }
+    fun deleteAppGroup(groupId: String) {
+        viewModelScope.launch {
+            val currentGroups = settings.value.appGroups.toMutableList()
+            currentGroups.removeAll { it.id == groupId }
+            repository.setAppGroups(currentGroups)
+        }
+    }
+
+    fun toggleAppGroupEnabled(groupId: String) {
+        viewModelScope.launch {
+            val currentGroups = settings.value.appGroups.toMutableList()
+            val index = currentGroups.indexOfFirst { it.id == groupId }
+            if (index != -1) {
+                val group = currentGroups[index]
+                currentGroups[index] = group.copy(enabled = !group.enabled)
+                repository.setAppGroups(currentGroups)
+            }
+        }
     }
 
     // ==================== Export/Import Stubs ====================
     fun exportData(uri: Uri) {
-         // Placeholder
          _exportState.value = ExportState.Error("Not implemented yet")
     }
     
     fun validateImportFile(uri: Uri) {
-         // Placeholder
          _importState.value = ImportState.Error("Not implemented yet")
     }
 

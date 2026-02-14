@@ -5,6 +5,7 @@ pub mod json_compat;
 pub mod profile;
 pub mod subscription;
 pub mod types;
+pub mod zenone;
 
 use anyhow::Result;
 use std::path::Path;
