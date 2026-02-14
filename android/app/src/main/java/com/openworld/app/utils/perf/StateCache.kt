@@ -7,15 +7,18 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * 状态缓�? * 缓存频繁访问的状态，减少 IPC 调用
+ * 状态缓存
+ * 缓存频繁访问的状态，减少 IPC 调用
  */
 object StateCache {
     private const val TAG = "StateCache"
 
-    // 网络状态缓�?    private val cachedNetwork = AtomicReference<NetworkCache?>(null)
+    // 网络状态缓存
+    private val cachedNetwork = AtomicReference<NetworkCache?>(null)
     private val networkCacheTtlMs = 5000L // 5秒缓存有效期
 
-    // VPN 状态缓�?    private val cachedVpnState = AtomicReference<VpnStateCache?>(null)
+    // VPN 状态缓存
+    private val cachedVpnState = AtomicReference<VpnStateCache?>(null)
     private val vpnStateCacheTtlMs = 1000L // 1秒缓存有效期
 
     // 设置缓存
@@ -45,7 +48,8 @@ object StateCache {
     )
 
     /**
-     * 获取缓存的网络，如果缓存有效则返回缓存�?     * @param fetcher 当缓存无效时获取新值的函数
+     * 获取缓存的网络，如果缓存有效则返回缓存值
+     * @param fetcher 当缓存无效时获取新值的函数
      * @return 网络对象
      */
     fun getNetwork(fetcher: () -> Network?): Network? {
@@ -76,13 +80,15 @@ object StateCache {
     }
 
     /**
-     * 使网络缓存失�?     */
+     * 使网络缓存失效
+     */
     fun invalidateNetworkCache() {
         cachedNetwork.set(null)
     }
 
     /**
-     * 获取缓存�?VPN 状�?     * @param fetcher 当缓存无效时获取新值的函数
+     * 获取缓存的 VPN 状态
+     * @param fetcher 当缓存无效时获取新值的函数
      */
     fun getVpnState(fetcher: () -> VpnStateCache): VpnStateCache {
         ipcTotalCount.incrementAndGet()
@@ -101,7 +107,8 @@ object StateCache {
     }
 
     /**
-     * 更新 VPN 状态缓�?     */
+     * 更新 VPN 状态缓存
+     */
     fun updateVpnState(isRunning: Boolean, isConnecting: Boolean, activeNode: String?) {
         cachedVpnState.set(VpnStateCache(
             isRunning = isRunning,
@@ -112,13 +119,15 @@ object StateCache {
     }
 
     /**
-     * �?VPN 状态缓存失�?     */
+     * 使 VPN 状态缓存失效
+     */
     fun invalidateVpnState() {
         cachedVpnState.set(null)
     }
 
     /**
-     * 获取缓存的设�?     * @param fetcher 当缓存无效时获取新值的函数
+     * 获取缓存的设置
+     * @param fetcher 当缓存无效时获取新值的函数
      */
     @Suppress("UNCHECKED_CAST")
     fun <T> getSettings(fetcher: () -> T): T {
@@ -138,13 +147,15 @@ object StateCache {
     }
 
     /**
-     * 使设置缓存失�?     */
+     * 使设置缓存失效
+     */
     fun invalidateSettings() {
         cachedSettings.set(null)
     }
 
     /**
-     * 清除所有缓�?     */
+     * 清除所有缓存
+     */
     fun clearAll() {
         cachedNetwork.set(null)
         cachedVpnState.set(null)
@@ -160,7 +171,8 @@ object StateCache {
     }
 
     /**
-     * 获取 IPC 节省百分�?     */
+     * 获取 IPC 节省百分比
+     */
     fun getIpcSavedPercent(): Int {
         val total = ipcTotalCount.get()
         if (total == 0L) return 0
@@ -184,10 +196,3 @@ object StateCache {
         ipcTotalCount.set(0)
     }
 }
-
-
-
-
-
-
-

@@ -70,7 +70,8 @@ class ProfilePersistence(private val context: Context) {
     )
 
     /**
-     * �?Room 数据库加载配�?     * 如果 Room 为空，尝试从旧的 JSON 文件迁移
+     * 从 Room 数据库加载配置
+     * 如果 Room 为空，尝试从旧的 JSON 文件迁移
      */
     fun loadSync(): LoadResult {
         val startTime = System.currentTimeMillis()
@@ -158,7 +159,7 @@ class ProfilePersistence(private val context: Context) {
     }
 
     /**
-     * 保存配置 (带防�?
+     * 保存配置 (带防抖)
      */
     fun save(
         profiles: List<ProfileUi>,
@@ -189,7 +190,7 @@ class ProfilePersistence(private val context: Context) {
     }
 
     /**
-     * 仅保存活跃状�?(同步，用于关键操�?
+     * 仅保存活跃状态 (同步，用于关键操作)
      */
     fun saveActiveStateSync(activeProfileId: String?, activeNodeId: String?) {
         try {
@@ -241,7 +242,8 @@ class ProfilePersistence(private val context: Context) {
     }
 
     /**
-     * 保存单个节点的延�?     */
+     * 保存单个节点的延迟
+     */
     fun saveNodeLatency(nodeId: String, latencyMs: Long) {
         scope.launch {
             try {
@@ -276,10 +278,3 @@ class ProfilePersistence(private val context: Context) {
         }
     }
 }
-
-
-
-
-
-
-

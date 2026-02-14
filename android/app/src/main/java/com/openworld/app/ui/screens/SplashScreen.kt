@@ -162,10 +162,3 @@ fun SplashScreen(
         }
     }
 }
-
-
-
-
-
-
-

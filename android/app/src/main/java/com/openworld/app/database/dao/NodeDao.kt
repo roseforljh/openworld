@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.Flow
 /**
  * Node 数据访问对象
  *
- * 提供 Node �?CRUD 操作�?Flow 查询
+ * 提供 Node 的 CRUD 操作和 Flow 查询
  */
 @Dao
 interface NodeDao {
@@ -105,10 +105,3 @@ interface NodeDao {
     @Query("UPDATE nodes SET sortOrder = :order WHERE id = :id")
     suspend fun setSortOrder(id: String, order: Int)
 }
-
-
-
-
-
-
-

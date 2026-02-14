@@ -61,7 +61,8 @@ fun AppGroupsScreen(
         installedAppsViewModel.loadAppsIfNeeded()
     }
 
-    // 显示加载对话�?    AppListLoadingDialog(loadingState = loadingState)
+    // 显示加载对话框
+    AppListLoadingDialog(loadingState = loadingState)
 
     if (showAddDialog) {
         AppGroupEditorDialog(
@@ -205,7 +206,7 @@ fun AppGroupsScreen(
                         }
                         AppGroupCard(
                             group = group,
-                            outboundText = "${stringResource(mode.displayNameRes)} �?$outboundText",
+                            outboundText = "${stringResource(mode.displayNameRes)} → $outboundText",
                             onClick = { editingGroup = group },
                             onToggle = { settingsViewModel.toggleAppGroupEnabled(group.id) },
                             onDelete = { showDeleteConfirm = group }
@@ -216,10 +217,3 @@ fun AppGroupsScreen(
         }
     }
 }
-
-
-
-
-
-
-

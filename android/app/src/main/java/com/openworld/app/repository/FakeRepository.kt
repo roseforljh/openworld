@@ -32,14 +32,15 @@ object FakeRepository {
     private val _activeNodeId = MutableStateFlow<String?>(null)
     val activeNodeId: StateFlow<String?> = _activeNodeId.asStateFlow()
 
-    // 用于管理统计模拟协程，避免泄�?    private var statsJob: Job? = null
+    // 用于管理统计模拟协程，避免泄漏
+    private var statsJob: Job? = null
     private val repositoryScope = CoroutineScope(Dispatchers.Default)
 
     init {
         // Initialize with some mock data
         val mockProfiles = listOf(
             ProfileUi("p1", "香港优质线路", ProfileType.Subscription, "https://sub.example.com/1", System.currentTimeMillis(), true),
-            ProfileUi("p2", "美国流媒体解�?, ProfileType.Subscription, "https://sub.example.com/2", System.currentTimeMillis() - 86400000, true),
+            ProfileUi("p2", "美国流媒体解锁", ProfileType.Subscription, "https://sub.example.com/2", System.currentTimeMillis() - 86400000, true),
             ProfileUi("p3", "本地配置", ProfileType.LocalFile, null, System.currentTimeMillis() - 10000000, false)
         )
         _profiles.value = mockProfiles
@@ -48,9 +49,9 @@ object FakeRepository {
         val mockNodes = listOf(
             NodeUi("n1", "香港-01 [VLESS]", "vless", "HK", "🇭🇰", 45, true, "p1"),
             NodeUi("n2", "香港-02 [Trojan]", "trojan", "HK", "🇭🇰", 52, false, "p1"),
-            NodeUi("n3", "美国-洛杉�?[VMess]", "vmess", "US", "🇺🇸", 180, false, "p2"),
+            NodeUi("n3", "美国-洛杉矶 [VMess]", "vmess", "US", "🇺🇸", 180, false, "p2"),
             NodeUi("n4", "日本-东京 [AnyTLS]", "anytls", "JP", "🇯🇵", 80, true, "p1"),
-            NodeUi("n5", "新加�?直连 [Hysteria2]", "hysteria2", "SG", "🇸🇬", 60, false, "p1")
+            NodeUi("n5", "新加坡-直连 [Hysteria2]", "hysteria2", "SG", "🇸🇬", 60, false, "p1")
         )
         _nodes.value = mockNodes
         _activeNodeId.value = "n1"
@@ -126,7 +127,7 @@ object FakeRepository {
         // Update nodes based on profile (Mock)
         if (profileId == "p2") {
             val newNodes = listOf(
-                NodeUi("n3", "美国-洛杉�?[VMess]", "vmess", "自动选择", "🇺🇸", 180, false, "p2"),
+                NodeUi("n3", "美国-洛杉矶 [VMess]", "vmess", "自动选择", "🇺🇸", 180, false, "p2"),
                 NodeUi("n6", "美国-纽约 [AnyTLS]", "anytls", "自动选择", "🇺🇸", 200, false, "p2"),
                 NodeUi("n7", "手动-美国", "vmess", "手动选择", "🇺🇸", 190, false, "p2")
             )
@@ -137,7 +138,7 @@ object FakeRepository {
                 NodeUi("n1", "香港-01 [VLESS]", "vless", "HK", "🇭🇰", 45, true, "p1"),
                 NodeUi("n2", "香港-02 [Trojan]", "trojan", "HK", "🇭🇰", 52, false, "p1"),
                 NodeUi("n4", "日本-东京 [AnyTLS]", "anytls", "JP", "🇯🇵", 80, true, "p1"),
-                NodeUi("n5", "新加�?直连 [Hysteria2]", "hysteria2", "SG", "🇸🇬", 60, false, "p1")
+                NodeUi("n5", "新加坡-直连 [Hysteria2]", "hysteria2", "SG", "🇸🇬", 60, false, "p1")
             )
             _nodes.value = newNodes
             _activeNodeId.value = "n1"
@@ -190,10 +191,3 @@ object FakeRepository {
         }
     }
 }
-
-
-
-
-
-
-

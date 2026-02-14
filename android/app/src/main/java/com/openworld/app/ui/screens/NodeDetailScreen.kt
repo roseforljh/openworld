@@ -794,14 +794,14 @@ fun NodeDetailScreen(
                             )
 
                             EditableTextItem(
-                                title = "客户端证�?(PEM)",
+                                title = "客户端证书 (PEM)",
                                 value = tls.certificate ?: "",
                                 icon = Icons.Rounded.Security,
                                 onValueChange = { editingOutbound = outbound.copy(tls = tls.copy(certificate = if (it.isEmpty()) null else it)) }
                             )
 
                             EditableTextItem(
-                                title = "客户端私�?(PEM)",
+                                title = "客户端私钥 (PEM)",
                                 value = tls.key ?: "",
                                 icon = Icons.Rounded.Key,
                                 onValueChange = { editingOutbound = outbound.copy(tls = tls.copy(key = if (it.isEmpty()) null else it)) }
@@ -991,10 +991,3 @@ private fun createEmptyOutbound(protocol: String): Outbound {
         tls = if (needsTls) TlsConfig(enabled = true) else null
     )
 }
-
-
-
-
-
-
-

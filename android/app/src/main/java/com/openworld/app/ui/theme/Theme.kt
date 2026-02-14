@@ -48,7 +48,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun OpenWorldTheme(
+fun SingBoxTheme(
     appTheme: AppThemeMode = AppThemeMode.SYSTEM,
     content: @Composable () -> Unit
 ) {
@@ -71,8 +71,10 @@ fun OpenWorldTheme(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 window.isNavigationBarContrastEnforced = false
             }
-            // 确保边到边显示正确配�?            WindowCompat.setDecorFitsSystemWindows(window, false)
-            // 亮色模式下使用深色图�?            val insetsController = WindowCompat.getInsetsController(window, view)
+            // 确保边到边显示正确配置
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            // 亮色模式下使用深色图标
+            val insetsController = WindowCompat.getInsetsController(window, view)
             insetsController.isAppearanceLightStatusBars = !useDarkTheme
             insetsController.isAppearanceLightNavigationBars = !useDarkTheme
         }
@@ -84,10 +86,3 @@ fun OpenWorldTheme(
         content = content
     )
 }
-
-
-
-
-
-
-

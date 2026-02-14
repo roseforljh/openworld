@@ -18,11 +18,16 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * 设置存储 - 使用 Room 数据库存�? *
+ * 设置存储 - 使用 Room 数据库存储
+ *
  * 设计优势:
  * - 单次读写整个设置对象 vs N 次键值对操作
- * - JSON 序列化类型安�?vs 字符串手动转�? * - Flow 实时观察 vs 手动刷新
- * - 内置版本控制支持迁移 vs 无版�? * - Room 数据库在重装后保�? * - 事务支持保证数据一致�? */
+ * - JSON 序列化类型安全 vs 字符串手动转换
+ * - Flow 实时观察 vs 手动刷新
+ * - 内置版本控制支持迁移 vs 无版本
+ * - Room 数据库在重装后保留
+ * - 事务支持保证数据一致性
+ */
 class SettingsStore private constructor(context: Context) {
     companion object {
         private const val TAG = "SettingsStore"
@@ -59,7 +64,7 @@ class SettingsStore private constructor(context: Context) {
         try {
             val startTime = System.currentTimeMillis()
 
-            // �?Room 加载设置
+            // 从 Room 加载设置
             val entity = settingsDao.getSettingsSync()
             if (entity != null) {
                 val loaded = gson.fromJson(entity.data, AppSettings::class.java)
@@ -94,8 +99,11 @@ class SettingsStore private constructor(context: Context) {
             result = result.copy(tunMtuAuto = true)
         }
 
-        // v3: DNS 配置优化（去大厂 + 隐私增强�?        // 仅当用户使用的是旧默认值时才迁移，保留用户自定义配�?        if (version < 3) {
-            // 旧版本可能的默认值列�?            val oldLocalDefaults = listOf(
+        // v3: DNS 配置优化（去大厂 + 隐私增强）
+        // 仅当用户使用的是旧默认值时才迁移，保留用户自定义配置
+        if (version < 3) {
+            // 旧版本可能的默认值列表
+            val oldLocalDefaults = listOf(
                 "https://dns.alidns.com/dns-query",
                 "https://1.1.1.1/dns-query",
                 "223.5.5.5",
@@ -112,8 +120,9 @@ class SettingsStore private constructor(context: Context) {
             var newLocal = result.localDns
             var newRemote = result.remoteDns
 
-            // 如果是旧默认值，迁移到新默认�?            if (result.localDns in oldLocalDefaults) {
-                newLocal = "local" // 系统/运营�?DNS
+            // 如果是旧默认值，迁移到新默认值
+            if (result.localDns in oldLocalDefaults) {
+                newLocal = "local" // 系统/运营商 DNS
                 Log.i(TAG, "Migrating localDns from '${result.localDns}' to 'local'")
             }
             if (result.remoteDns in oldRemoteDefaults) {
@@ -128,7 +137,8 @@ class SettingsStore private constructor(context: Context) {
     }
 
     /**
-     * 更新设置 - 同步更新内存，异步保存到数据�?     */
+     * 更新设置 - 同步更新内存，异步保存到数据库
+     */
     fun updateSettings(update: (AppSettings) -> AppSettings) {
         val newSettings = update(_settings.value)
         _settings.value = newSettings
@@ -140,7 +150,8 @@ class SettingsStore private constructor(context: Context) {
     }
 
     /**
-     * 更新设置并等待保存完�?     */
+     * 更新设置并等待保存完成
+     */
     suspend fun updateSettingsAndWait(update: (AppSettings) -> AppSettings) {
         val newSettings = update(_settings.value)
         _settings.value = newSettings
@@ -168,7 +179,7 @@ class SettingsStore private constructor(context: Context) {
     }
 
     /**
-     * 同步保存设置 (仅用于迁�?
+     * 同步保存设置 (仅用于迁移)
      */
     private fun saveSettingsSync(settings: AppSettings) {
         try {
@@ -217,10 +228,3 @@ class SettingsStore private constructor(context: Context) {
         }
     }
 }
-
-
-
-
-
-
-

@@ -32,11 +32,14 @@ class ScreenStateManager(
         val isRunning: Boolean
 
         /**
-         * 通知远程 UI 强制刷新状�?         * 用于 Doze 唤醒后确�?IPC 状态同�?         */
+         * 通知远程 UI 强制刷新状态
+         * 用于 Doze 唤醒后确保 IPC 状态同步
+         */
         fun notifyRemoteStateUpdate(force: Boolean)
 
         /**
-         * 请求核心网络恢复（由 Service 网关统一决策�?         */
+         * 请求核心网络恢复（由 Service 网关统一决策）
+         */
         fun requestCoreNetworkRecovery(reason: String, force: Boolean = false)
     }
 
@@ -59,7 +62,8 @@ class ScreenStateManager(
     }
 
     /**
-     * 设置省电管理器引�?     */
+     * 设置省电管理器引用
+     */
     fun setPowerManager(manager: BackgroundPowerManager?) {
         powerManager = manager
         Log.d(TAG, "PowerManager ${if (manager != null) "set" else "cleared"}")
@@ -151,9 +155,10 @@ class ScreenStateManager(
     /**
      * 注册 Activity 生命周期回调
      *
-     * 注意：此方法�?VPN 进程 (:vpn_service) 中运行，只能监听同进程内�?Activity
-     * (�?ShortcutActivity)。主进程�?MainActivity 生命周期�?IPC 路径
-     * (AppLifecycleObserver -> OpenWorldIpcHub -> BackgroundPowerManager) 处理�?     */
+     * 注意：此方法在 VPN 进程 (:vpn_service) 中运行，只能监听同进程内的 Activity
+     * (如 ShortcutActivity)。主进程的 MainActivity 生命周期由 IPC 路径
+     * (AppLifecycleObserver -> SingBoxIpcHub -> BackgroundPowerManager) 处理。
+     */
     @Suppress("CognitiveComplexMethod")
     fun registerActivityLifecycleCallbacks(application: Application?) {
         try {
@@ -172,7 +177,8 @@ class ScreenStateManager(
                             SystemClock.elapsedRealtime() - appBackgroundAtMs
                         } else 0L
 
-                        // 网络恢复�?BackgroundPowerManager 统一处理（通过 IPC 路径�?                        // 此处不再重复触发，避免多�?wakeAndResetNetwork 导致连接中断
+                        // 网络恢复由 BackgroundPowerManager 统一处理（通过 IPC 路径）
+                        // 此处不再重复触发，避免多次 wakeAndResetNetwork 导致连接中断
                         if (wasInBackground && backgroundDuration >= ACTIVITY_RESUME_RECOVERY_MIN_AWAY_MS) {
                             val seconds = backgroundDuration / 1000
                             Log.i(TAG, "[ActivityResume] Background ${seconds}s, recovery delegated to PowerManager")
@@ -237,7 +243,8 @@ class ScreenStateManager(
     }
 
     /**
-     * 设备退出空闲模�?     */
+     * 设备退出空闲模式
+     */
     private suspend fun handleDeviceWake() {
         if (callbacks?.isRunning != true) return
 
@@ -265,10 +272,3 @@ class ScreenStateManager(
         callbacks = null
     }
 }
-
-
-
-
-
-
-

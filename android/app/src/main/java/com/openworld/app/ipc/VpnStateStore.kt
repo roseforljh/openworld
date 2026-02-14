@@ -4,10 +4,12 @@ import android.util.Log
 import com.tencent.mmkv.MMKV
 
 /**
- * VPN 状态存�?- 使用 MMKV 实现跨进程安全访�? *
+ * VPN 状态存储 - 使用 MMKV 实现跨进程安全访问
+ *
  * MMKV 优势:
- * - 跨进程安�?(MULTI_PROCESS_MODE)
- * - 原子写入，无竞态条�? * - 性能�?SharedPreferences �?100x
+ * - 跨进程安全 (MULTI_PROCESS_MODE)
+ * - 原子写入，无竞态条件
+ * - 性能比 SharedPreferences 快 100x
  */
 @Suppress("TooManyFunctions")
 object VpnStateStore {
@@ -186,16 +188,9 @@ object VpnStateStore {
     }
 
     /**
-     * 清除所有状�?(用于重置)
+     * 清除所有状态 (用于重置)
      */
     fun clear() {
         mmkv.clearAll()
     }
 }
-
-
-
-
-
-
-

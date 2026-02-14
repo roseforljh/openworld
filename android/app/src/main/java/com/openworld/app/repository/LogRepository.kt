@@ -24,10 +24,12 @@ class LogRepository private constructor() {
     private val _logs = MutableStateFlow<List<String>>(emptyList())
     val logs: StateFlow<List<String>> = _logs.asStateFlow()
 
-    // 当前过滤的日志类别（null = 显示全部�?    private val _currentFilter = MutableStateFlow<String?>(null)
+    // 当前过滤的日志类别（null = 显示全部）
+    private val _currentFilter = MutableStateFlow<String?>(null)
     val currentFilter: StateFlow<String?> = _currentFilter.asStateFlow()
 
-    // 可用的日志类别列�?    val availableCategories = listOf("CONN", "VPN", "CFG", "NET", "ERR", "DBG", "INFO")
+    // 可用的日志类别列表
+    val availableCategories = listOf("CONN", "VPN", "CFG", "NET", "ERR", "DBG", "INFO")
 
     private val maxLogSize = 500
     private val maxLogLineLength = 2000
@@ -68,7 +70,8 @@ class LogRepository private constructor() {
     @Suppress("CyclomaticComplexMethod", "ComplexCondition")
     fun addLog(message: String) {
         val timestamp = synchronized(dateFormat) { dateFormat.format(Date()) }
-        // 过滤掉过于频繁的无用日志，保留关键的启动和状态日�?        // 1. TRACE 级别日志 (sing-box 内核的详细追踪日�?
+        // 过滤掉过于频繁的无用日志，保留关键的启动和状态日志
+        // 1. TRACE 级别日志 (sing-box 内核的详细追踪日志)
         if (message.contains("TRACE")) {
             return
         }
@@ -193,7 +196,9 @@ class LogRepository private constructor() {
 
     /**
      * 搜索日志
-     * @param keyword 关键�?     * @return 匹配的日志列�?     */
+     * @param keyword 关键词
+     * @return 匹配的日志列表
+     */
     fun searchLogs(keyword: String): List<String> {
         if (keyword.isBlank()) return getFilteredLogs()
 
@@ -209,7 +214,7 @@ class LogRepository private constructor() {
     fun getErrorSummary(): List<String> {
         return synchronized(buffer) {
             buffer.filter { log ->
-                log.contains("[ERR]") || log.contains("[E]") || log.contains("�?)
+                log.contains("[ERR]") || log.contains("[E]") || log.contains("❌")
             }.toList()
         }
     }
@@ -346,10 +351,3 @@ class LogRepository private constructor() {
         return deque.toList()
     }
 }
-
-
-
-
-
-
-

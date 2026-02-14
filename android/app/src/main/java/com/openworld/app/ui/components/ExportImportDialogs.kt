@@ -25,7 +25,8 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * 导出进度对话�? */
+ * 导出进度对话框
+ */
 @Composable
 fun ExportProgressDialog(
     state: ExportState,
@@ -121,7 +122,8 @@ fun ExportProgressDialog(
 }
 
 /**
- * 导入预览对话�? */
+ * 导入预览对话框
+ */
 @Composable
 fun ImportPreviewDialog(
     summary: ExportDataSummary,
@@ -256,13 +258,15 @@ private fun SummaryRow(label: String, value: String) {
 }
 
 /**
- * 导入进度/结果对话�? */
+ * 导入进度/结果对话框
+ */
 @Composable
 fun ImportProgressDialog(
     state: ImportState,
     onDismiss: () -> Unit
 ) {
-    // 只处理正在导入、成功、部分成功、错误状�?    val shouldShow = when (state) {
+    // 只处理正在导入、成功、部分成功、错误状态
+    val shouldShow = when (state) {
         is ImportState.Importing,
         is ImportState.Success,
         is ImportState.PartialSuccess,
@@ -382,14 +386,14 @@ fun ImportProgressDialog(
                                 ) {
                                     state.errors.take(3).forEach { error ->
                                         Text(
-                                            text = "�?$error",
+                                            text = "• $error",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.error
                                         )
                                     }
                                     if (state.errors.size > 3) {
                                         Text(
-                                            text = "... 还有 ${state.errors.size - 3} 个错�?,
+                                            text = "... 还有 ${state.errors.size - 3} 个错误",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.error
                                         )
@@ -467,10 +471,3 @@ fun ValidatingDialog() {
         }
     }
 }
-
-
-
-
-
-
-

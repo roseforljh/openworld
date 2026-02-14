@@ -15,16 +15,18 @@ import java.net.InetSocketAddress
 import java.net.Socket
 
 /**
- * VPN 链路探测管理�? *
+ * VPN 链路探测管理器
+ *
  * 功能:
  * - 通过 VPN 网络发起 TCP 连接探测
  * - 支持多个探测目标并行探测
  * - 返回结构化的探测结果
  *
  * 使用场景:
- * - 检�?VPN 链路是否正常工作
+ * - 检测 VPN 链路是否正常工作
  * - 诊断网络连接问题
- * - 验证代理节点可达�? */
+ * - 验证代理节点可达性
+ */
 object ProbeManager {
     private const val TAG = "ProbeManager"
 
@@ -53,7 +55,8 @@ object ProbeManager {
     )
 
     /**
-     * 探测结果密封�?     */
+     * 探测结果密封类
+     */
     sealed class ProbeResult {
         /**
          * 探测成功
@@ -79,7 +82,7 @@ object ProbeManager {
          * 探测错误
          * @param target 探测目标
          * @param error 错误信息
-         * @param exception 异常对象 (可�?
+         * @param exception 异常对象 (可选)
          */
         data class Error(
             val target: ProbeTarget,
@@ -133,7 +136,8 @@ object ProbeManager {
      * 通过 VPN 网络批量探测多个目标
      *
      * @param context Android Context
-     * @param targets 探测目标列表，默认使用内置目�?     * @param timeoutMs 单个探测的超时时�?(毫秒)
+     * @param targets 探测目标列表，默认使用内置目标
+     * @param timeoutMs 单个探测的超时时间 (毫秒)
      * @return 批量探测结果
      */
     suspend fun probeAllViaVpn(
@@ -162,7 +166,8 @@ object ProbeManager {
 
         Log.d(TAG, "probeAllViaVpn: found VPN network $vpnNetwork")
 
-        // 并行探测所有目�?        val results = coroutineScope {
+        // 并行探测所有目标
+        val results = coroutineScope {
             targets.map { target ->
                 async {
                     probeTarget(vpnNetwork, target, timeoutMs)
@@ -188,7 +193,8 @@ object ProbeManager {
     }
 
     /**
-     * 快速探�?- 任一目标成功即返�?     *
+     * 快速探测 - 任一目标成功即返回
+     *
      * @param context Android Context
      * @param targets 探测目标列表
      * @param timeoutMs 超时时间 (毫秒)
@@ -207,7 +213,8 @@ object ProbeManager {
             return@withContext null
         }
 
-        // 2026-fix: 并行探测所有目标，任一成功即返�?        // 避免串行探测时前面的目标超时导致整体耗时过长
+        // 2026-fix: 并行探测所有目标，任一成功即返回
+        // 避免串行探测时前面的目标超时导致整体耗时过长
         val result = coroutineScope {
             val deferred = targets.map { target ->
                 async { probeTarget(vpnNetwork, target, timeoutMs) }
@@ -234,11 +241,12 @@ object ProbeManager {
     }
 
     /**
-     * 检�?VPN 链路是否可用
+     * 检查 VPN 链路是否可用
      *
      * @param context Android Context
      * @param timeoutMs 超时时间 (毫秒)
-     * @return true 如果至少一个探测目标可�?     */
+     * @return true 如果至少一个探测目标可达
+     */
     suspend fun isVpnLinkAvailable(
         context: Context,
         timeoutMs: Long = DEFAULT_TIMEOUT_MS
@@ -297,11 +305,12 @@ object ProbeManager {
             try {
                 val socket = Socket()
                 try {
-                    // �?socket 绑定�?VPN 网络
+                    // 将 socket 绑定到 VPN 网络
                     network.bindSocket(socket)
                     Log.d(TAG, "probeTarget: socket bound to VPN network")
 
-                    // 连接到目�?                    socket.connect(
+                    // 连接到目标
+                    socket.connect(
                         InetSocketAddress(target.host, target.port),
                         timeoutMs.toInt()
                     )
@@ -339,15 +348,9 @@ object ProbeManager {
     fun getDefaultTargets(): List<ProbeTarget> = DEFAULT_PROBE_TARGETS.toList()
 
     /**
-     * 创建自定义探测目�?     */
+     * 创建自定义探测目标
+     */
     fun createTarget(host: String, port: Int, name: String? = null): ProbeTarget {
         return ProbeTarget(host, port, name ?: "$host:$port")
     }
 }
-
-
-
-
-
-
-

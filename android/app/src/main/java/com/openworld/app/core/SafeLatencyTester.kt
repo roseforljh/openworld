@@ -2,7 +2,7 @@ package com.openworld.app.core
 
 import android.util.Log
 import com.openworld.app.model.Outbound
-import com.openworld.app.service.OpenWorldService
+import com.openworld.app.service.SingBoxService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -12,7 +12,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * 安全延迟测试�?- 保护主网络连接不受测试影�? *
+ * 安全延迟测试器 - 保护主网络连接不受测试影响
+ *
  * v1.12.20 适配:
  * - 使用 CommandClient.urlTest(groupTag) 触发整组测试
  * - 通过 CommandManager.urlTestGroup() 获取结果
@@ -47,19 +48,23 @@ class SafeLatencyTester private constructor() {
         }
     }
 
-    // 状态追�?    private val isTestingActive = AtomicBoolean(false)
+    // 状态追踪
+    private val isTestingActive = AtomicBoolean(false)
     private val consecutiveFailures = AtomicInteger(0)
     private val lastCircuitBreakerTrip = AtomicLong(0)
 
-    // 主连接保�?    private var guardJob: Job? = null
+    // 主连接保护
+    private var guardJob: Job? = null
 
     /**
-     * 安全的批量延迟测�?     * v1.12.20: 使用 CommandClient.urlTest(groupTag) 触发整组测试
+     * 安全的批量延迟测试
+     * v1.12.20: 使用 CommandClient.urlTest(groupTag) 触发整组测试
      *
      * @param outbounds 待测试的节点列表
      * @param targetUrl 测试 URL (v1.12.20 中忽略，使用配置中的 URL)
      * @param timeoutMs 超时时间
-     * @param onResult 每个节点测试完成的回�?     */
+     * @param onResult 每个节点测试完成的回调
+     */
     @Suppress("UNUSED_PARAMETER")
     suspend fun testOutboundsLatencySafe(
         outbounds: List<Outbound>,
@@ -84,7 +89,8 @@ class SafeLatencyTester private constructor() {
         try {
             Log.i(TAG, "Starting URL test for ${outbounds.size} nodes via group API")
 
-            // 触发整组测试并获取结�?            val results = triggerGroupUrlTest(DEFAULT_GROUP_TAG)
+            // 触发整组测试并获取结果
+            val results = triggerGroupUrlTest(DEFAULT_GROUP_TAG)
 
             if (results.isEmpty()) {
                 Log.w(TAG, "URL test returned no results, marking all as failed")
@@ -125,9 +131,9 @@ class SafeLatencyTester private constructor() {
      * 使用 CommandManager.urlTestGroup() API
      */
     private suspend fun triggerGroupUrlTest(groupTag: String): Map<String, Int> {
-        val service = OpenWorldService.instance
+        val service = SingBoxService.instance
         if (service == null) {
-            Log.w(TAG, "OpenWorldService not available")
+            Log.w(TAG, "SingBoxService not available")
             return emptyMap()
         }
 
@@ -155,7 +161,8 @@ class SafeLatencyTester private constructor() {
     }
 
     /**
-     * 检查熔断器状�?     */
+     * 检查熔断器状态
+     */
     private fun isCircuitBreakerOpen(): Boolean {
         val lastTrip = lastCircuitBreakerTrip.get()
         if (lastTrip == 0L) return false
@@ -181,13 +188,7 @@ class SafeLatencyTester private constructor() {
     }
 
     /**
-     * 检查是否正在测�?     */
+     * 检查是否正在测试
+     */
     fun isTesting(): Boolean = isTestingActive.get()
 }
-
-
-
-
-
-
-

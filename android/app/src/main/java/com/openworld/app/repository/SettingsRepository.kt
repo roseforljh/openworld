@@ -31,8 +31,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * 设置仓库 - 提供设置的读写接�? *
- * 内部使用 SettingsStore (Room 数据�? 存储设置
+ * 设置仓库 - 提供设置的读写接口
+ *
+ * 内部使用 SettingsStore (Room 数据库) 存储设置
  */
 class SettingsRepository(private val context: Context) {
 
@@ -81,13 +82,14 @@ class SettingsRepository(private val context: Context) {
     }
 
     /**
-     * 设置 Flow - 直接�?SettingsStore 获取
-     * 相比旧版每次都解�?JSON，性能提升显著
+     * 设置 Flow - 直接从 SettingsStore 获取
+     * 相比旧版每次都解析 JSON，性能提升显著
      */
     val settings: StateFlow<AppSettings> = settingsStore.settings
 
     /**
-     * 在多进程场景下强制从 Room 重新加载设置，避免使用到进程内旧缓存�?     */
+     * 在多进程场景下强制从 Room 重新加载设置，避免使用到进程内旧缓存。
+     */
     fun reloadFromStorage() {
         settingsStore.reload()
     }
@@ -325,7 +327,7 @@ class SettingsRepository(private val context: Context) {
         notifyRestartRequired()
     }
 
-    // ==================== 规则集自动更�?====================
+    // ==================== 规则集自动更新 ====================
 
     suspend fun setRuleSetAutoUpdateEnabled(value: Boolean) {
         settingsStore.updateSettingsAndWait { it.copy(ruleSetAutoUpdateEnabled = value) }
@@ -383,7 +385,7 @@ class SettingsRepository(private val context: Context) {
         return settings.map { it.customNodeOrder }
     }
 
-    // ==================== 迁移检�?====================
+    // ==================== 迁移检查 ====================
 
     suspend fun checkAndMigrateRuleSets() {
         try {
@@ -404,16 +406,17 @@ class SettingsRepository(private val context: Context) {
                 var updatedUrl = ruleSet.url
                 var updatedTag = ruleSet.tag
 
-                // 修复旧标�?                if (updatedTag.equals("geosite-ads", ignoreCase = true)) {
+                // 修复旧标签
+                if (updatedTag.equals("geosite-ads", ignoreCase = true)) {
                     updatedTag = "geosite-category-ads-all"
                 }
 
-                // 修复�?URL
+                // 修复旧 URL
                 if (updatedUrl.contains("geosite-ads.srs")) {
                     updatedUrl = updatedUrl.replace("geosite-ads.srs", "geosite-category-ads-all.srs")
                 }
 
-                // 还原到原�?URL
+                // 还原到原始 URL
                 var rawUrl = updatedUrl
                 if (rawUrl.startsWith(cdnPrefix)) {
                     val path = rawUrl.removePrefix(cdnPrefix)
@@ -494,10 +497,3 @@ class SettingsRepository(private val context: Context) {
         }
     }
 }
-
-
-
-
-
-
-

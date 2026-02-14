@@ -83,10 +83,3 @@ object ProxyAwareOkHttpClient {
         )
     }
 }
-
-
-
-
-
-
-

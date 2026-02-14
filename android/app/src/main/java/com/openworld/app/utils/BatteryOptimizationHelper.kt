@@ -9,13 +9,16 @@ import android.provider.Settings
 import android.util.Log
 
 /**
- * 电池优化帮助�? * 用于检测和引导用户关闭电池优化,防止 VPN 服务在息屏时被系统杀�? */
+ * 电池优化帮助类
+ * 用于检测和引导用户关闭电池优化,防止 VPN 服务在息屏时被系统杀死
+ */
 object BatteryOptimizationHelper {
     private const val TAG = "BatteryOptHelper"
 
     /**
      * 检查应用是否在电池优化白名单中
-     * @return true = 已豁�?不受电池优化限制), false = 受限�?     */
+     * @return true = 已豁免(不受电池优化限制), false = 受限制
+     */
     fun isIgnoringBatteryOptimizations(context: Context): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -50,7 +53,8 @@ object BatteryOptimizationHelper {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to request battery optimization exemption", e)
-            // 降级方案: 打开电池优化设置页面让用户手动设�?            try {
+            // 降级方案: 打开电池优化设置页面让用户手动设置
+            try {
                 openBatteryOptimizationSettings(context)
                 true
             } catch (e2: Exception) {
@@ -71,7 +75,8 @@ object BatteryOptimizationHelper {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             } else {
-                // 旧版本打开应用详情�?                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                // 旧版本打开应用详情页
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                     data = Uri.parse("package:${context.packageName}")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
@@ -84,8 +89,9 @@ object BatteryOptimizationHelper {
     }
 
     /**
-     * 获取厂商定制的电池管理页�?Intent
-     * 不同厂商的电池优化设置页面路径不�?     */
+     * 获取厂商定制的电池管理页面 Intent
+     * 不同厂商的电池优化设置页面路径不同
+     */
     fun getManufacturerBatteryIntent(context: Context): Intent? {
         val packageName = context.packageName
         val manufacturer = Build.MANUFACTURER.lowercase()
@@ -154,7 +160,7 @@ object BatteryOptimizationHelper {
 
     /**
      * 检测并引导用户关闭电池优化
-     * @return true = 需要用户操�? false = 已豁免或操作失败
+     * @return true = 需要用户操作, false = 已豁免或操作失败
      */
     fun checkAndRequestBatteryOptimization(context: Context): Boolean {
         if (isIgnoringBatteryOptimizations(context)) {
@@ -166,10 +172,3 @@ object BatteryOptimizationHelper {
         return requestIgnoreBatteryOptimizations(context)
     }
 }
-
-
-
-
-
-
-

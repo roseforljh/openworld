@@ -8,8 +8,9 @@ import com.openworld.app.database.entity.ActiveStateEntity
 import kotlinx.coroutines.flow.Flow
 
 /**
- * 活跃状态数据访问对�? *
- * 管理当前活跃�?Profile �?Node
+ * 活跃状态数据访问对象
+ *
+ * 管理当前活跃的 Profile 和 Node
  */
 @Dao
 interface ActiveStateDao {
@@ -38,10 +39,3 @@ interface ActiveStateDao {
     @Query("DELETE FROM active_state")
     suspend fun clear()
 }
-
-
-
-
-
-
-

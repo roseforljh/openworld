@@ -3,11 +3,13 @@ package com.openworld.app.utils
 import android.util.Log
 
 /**
- * 应用日志工具�? *
+ * 应用日志工具类
+ *
  * 优化说明:
  * - Release 构建默认关闭 DEBUG/VERBOSE 级别日志
  * - 减少字符串拼接和日志输出开销
- * - 支持动态调整日志级�? */
+ * - 支持动态调整日志级别
+ */
 object AppLogger {
 
     /**
@@ -23,7 +25,8 @@ object AppLogger {
     }
 
     /**
-     * 当前最低日志级�?     * 可通过 Application 初始化时根据 BuildConfig.DEBUG 设置
+     * 当前最低日志级别
+     * 可通过 Application 初始化时根据 BuildConfig.DEBUG 设置
      */
     @Volatile
     var minLevel: Level = Level.INFO
@@ -35,7 +38,8 @@ object AppLogger {
     var enabled: Boolean = true
 
     /**
-     * 检查指定级别是否可以输�?     * 使用 @PublishedApi 允许 inline 函数访问
+     * 检查指定级别是否可以输出
+     * 使用 @PublishedApi 允许 inline 函数访问
      */
     @PublishedApi
     internal fun isLoggable(level: Level): Boolean {
@@ -79,7 +83,8 @@ object AppLogger {
     }
 
     /**
-     * WARN 级别日志（带异常�?     */
+     * WARN 级别日志（带异常）
+     */
     inline fun w(tag: String, throwable: Throwable?, message: () -> String) {
         if (isLoggable(Level.WARN)) {
             Log.w(tag, message(), throwable)
@@ -96,7 +101,8 @@ object AppLogger {
     }
 
     /**
-     * ERROR 级别日志（带异常�?     */
+     * ERROR 级别日志（带异常）
+     */
     inline fun e(tag: String, throwable: Throwable?, message: () -> String) {
         if (isLoggable(Level.ERROR)) {
             Log.e(tag, message(), throwable)
@@ -104,7 +110,8 @@ object AppLogger {
     }
 
     /**
-     * 直接输出日志（兼容旧代码，不推荐使用�?     */
+     * 直接输出日志（兼容旧代码，不推荐使用）
+     */
     fun v(tag: String, message: String) {
         if (isLoggable(Level.VERBOSE)) Log.v(tag, message)
     }
@@ -133,10 +140,3 @@ object AppLogger {
         if (isLoggable(Level.ERROR)) Log.e(tag, message, throwable)
     }
 }
-
-
-
-
-
-
-

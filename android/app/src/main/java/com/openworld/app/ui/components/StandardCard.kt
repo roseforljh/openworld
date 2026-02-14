@@ -41,10 +41,3 @@ fun StandardCard(
         )
     }
 }
-
-
-
-
-
-
-

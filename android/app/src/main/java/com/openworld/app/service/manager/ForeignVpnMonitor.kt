@@ -9,7 +9,9 @@ import android.os.Build
 import android.util.Log
 
 /**
- * 外部 VPN 监控�? * 监测是否有其�?VPN 应用在运行，并在启动前清�? */
+ * 外部 VPN 监控器
+ * 监测是否有其他 VPN 应用在运行，并在启动前清理
+ */
 class ForeignVpnMonitor(
     private val context: Context
 ) {
@@ -54,7 +56,8 @@ class ForeignVpnMonitor(
 
     /**
      * 检测并尝试请求接管外部 VPN
-     * 如果检测到外部 VPN，会记录日志。prepare() 机制会确保用户确认接管�?     * @return true 如果有外�?VPN 存在
+     * 如果检测到外部 VPN，会记录日志。prepare() 机制会确保用户确认接管。
+     * @return true 如果有外部 VPN 存在
      */
     fun hasExistingVpn(): Boolean {
         val vpnNetworks = detectExistingVpnNetworks()
@@ -125,10 +128,3 @@ class ForeignVpnMonitor(
         callbacks = null
     }
 }
-
-
-
-
-
-
-

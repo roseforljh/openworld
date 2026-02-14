@@ -17,14 +17,17 @@ import com.openworld.app.service.notification.VpnNotificationManager
 import com.openworld.app.service.network.NetworkManager
 import com.openworld.app.service.network.TrafficMonitor
 import com.openworld.app.utils.NetworkClient
-import com.openworld.app.core.bridge.InterfaceUpdateListener
+import io.nekohasekai.libbox.InterfaceUpdateListener
 import kotlinx.coroutines.*
 
 /**
- * VPN 关闭管理�? * 负责完整�?VPN 关闭流程，包括：
- * - 状态重�? * - 资源清理
+ * VPN 关闭管理器
+ * 负责完整的 VPN 关闭流程，包括：
+ * - 状态重置
+ * - 资源清理
  * - 异步关闭
- * - 跨配置切换支�? */
+ * - 跨配置切换支持
+ */
 class ShutdownManager(
     private val context: Context,
     private val cleanupScope: CoroutineScope
@@ -38,7 +41,8 @@ class ShutdownManager(
      * 关闭回调接口
      */
     interface Callbacks {
-        // 状态管�?        fun updateServiceState(state: ServiceState)
+        // 状态管理
+        fun updateServiceState(state: ServiceState)
         fun updateTileState()
         fun stopForegroundService()
         fun stopSelf()
@@ -55,12 +59,14 @@ class ShutdownManager(
         fun unregisterScreenStateReceiver()
         fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener?)
 
-        // 获取状�?        fun isServiceRunning(): Boolean
+        // 获取状态
+        fun isServiceRunning(): Boolean
         fun getVpnInterface(): ParcelFileDescriptor?
         fun getCurrentInterfaceListener(): InterfaceUpdateListener?
         fun getConnectivityManager(): ConnectivityManager?
 
-        // 设置状�?        fun setVpnInterface(fd: ParcelFileDescriptor?)
+        // 设置状态
+        fun setVpnInterface(fd: ParcelFileDescriptor?)
         fun setIsRunning(running: Boolean)
         fun setRealTimeNodeName(name: String?)
         fun setVpnLinkValidated(validated: Boolean)
@@ -75,7 +81,8 @@ class ShutdownManager(
         fun clearPendingStartConfigPath()
         fun startVpn(configPath: String)
 
-        // 检�?VPN 接口是否可复�?        fun hasExistingTunInterface(): Boolean
+        // 检查 VPN 接口是否可复用
+        fun hasExistingTunInterface(): Boolean
     }
 
     /**
@@ -89,7 +96,7 @@ class ShutdownManager(
     )
 
     /**
-     * 执行完整�?VPN 关闭流程
+     * 执行完整的 VPN 关闭流程
      */
     @Suppress("LongParameterList", "LongMethod", "CognitiveComplexMethod")
     fun stopVpn(
@@ -116,17 +123,20 @@ class ShutdownManager(
         VpnKeepaliveWorker.cancel(context)
         Log.i(TAG, "VPN keepalive worker cancelled")
 
-        // 4. 重置通知管理器状�?        notificationManager.resetState()
+        // 4. 重置通知管理器状态
+        notificationManager.resetState()
 
         // 5. 停止流量监控
         trafficMonitor.stop()
 
-        // 6. 重置网络管理�?        networkManager?.reset()
+        // 6. 重置网络管理器
+        networkManager?.reset()
 
         // 7. 停止外部 VPN 监控
         callbacks.stopForeignVpnMonitor()
 
-        // 8. 重置关键网络状�?        callbacks.setVpnLinkValidated(false)
+        // 8. 重置关键网络状态
+        callbacks.setVpnLinkValidated(false)
         callbacks.setNoPhysicalNetworkWarningLogged(false)
         callbacks.setDefaultInterfaceName("")
 
@@ -142,13 +152,16 @@ class ShutdownManager(
         callbacks.tryClearRunningServiceForLibbox()
 
         // 10. 释放 BoxWrapperManager (移到 CommandManager.stop 内部处理)
-        // BoxWrapperManager.release() -- 已在 CommandManager.stop() 中调�?
-        // 11. 清除 SelectorManager 状�?        CoreSelectorManager.clear()
+        // BoxWrapperManager.release() -- 已在 CommandManager.stop() 中调用
+
+        // 11. 清除 SelectorManager 状态
+        CoreSelectorManager.clear()
         selectorManager.clear()
 
         Log.i(TAG, "stopVpn(stopService=$stopService, proxyPort=$proxyPort)")
 
-        // 12. 重置节点名称和运行状�?        callbacks.setRealTimeNodeName(null)
+        // 12. 重置节点名称和运行状态
+        callbacks.setRealTimeNodeName(null)
         callbacks.setIsRunning(false)
         NetworkClient.onVpnStateChanged(false)
 
@@ -165,7 +178,8 @@ class ShutdownManager(
             Log.i(TAG, "Keeping vpnInterface for reuse")
         }
 
-        // 14. 释放�?        if (stopService) {
+        // 14. 释放锁
+        if (stopService) {
             coreManager.releaseLocks()
             callbacks.unregisterScreenStateReceiver()
         }
@@ -191,7 +205,8 @@ class ShutdownManager(
                 }
             }
 
-            // 关键修复：先关闭 CoreManager 中的 BoxService（这是真正持有端口的对象�?            // 然后再调�?CommandManager 等待端口释放
+            // 关键修复：先关闭 CoreManager 中的 BoxService（这是真正持有端口的对象）
+            // 然后再调用 CommandManager 等待端口释放
             val boxCloseStart = SystemClock.elapsedRealtime()
             val hasBoxService = coreManager.boxService != null
             Log.i(TAG, "Closing CoreManager.BoxService (exists=$hasBoxService)...")
@@ -200,7 +215,7 @@ class ShutdownManager(
             Log.i(TAG, "CoreManager.BoxService closed in ${SystemClock.elapsedRealtime() - boxCloseStart}ms")
 
             // 快速关闭：先尝试正常关闭，如果端口没释放则杀进程
-            // �?stopService=true 时，必须确保端口释放，否则下次启动会失败
+            // 当 stopService=true 时，必须确保端口释放，否则下次启动会失败
             commandManager.stopAndWaitPortRelease(
                 proxyPort = proxyPort,
                 waitTimeoutMs = FAST_PORT_RELEASE_WAIT_MS,
@@ -210,7 +225,7 @@ class ShutdownManager(
                 Log.w(TAG, "Error closing command server/client", e)
             }
 
-            // 跨配置切换时不关�?interface monitor
+            // 跨配置切换时不关闭 interface monitor
             if (stopService) {
                 try {
                     platformInterfaceImpl.closeDefaultInterfaceMonitor(listener)
@@ -227,8 +242,9 @@ class ShutdownManager(
                 Log.w(TAG, "Graceful close failed or timed out", e)
             }
 
-            // 使用 stopService 参数决定是否完全停止，而非依赖 vpnInterface 是否�?null
-            // 这确保用户明确请求停止时，通知总会被取�?            withContext(Dispatchers.Main) {
+            // 使用 stopService 参数决定是否完全停止，而非依赖 vpnInterface 是否为 null
+            // 这确保用户明确请求停止时，通知总会被取消
+            withContext(Dispatchers.Main) {
                 if (stopService) {
                     callbacks.stopSelf()
                     Log.i(TAG, "VPN stopped")
@@ -237,7 +253,8 @@ class ShutdownManager(
                 }
             }
 
-            // 处理排队的启动请�?            val startAfterStop = callbacks.getPendingStartConfigPath()
+            // 处理排队的启动请求
+            val startAfterStop = callbacks.getPendingStartConfigPath()
             callbacks.clearPendingStartConfigPath()
 
             if (!startAfterStop.isNullOrBlank()) {
@@ -273,10 +290,3 @@ class ShutdownManager(
         }
     }
 }
-
-
-
-
-
-
-

@@ -15,7 +15,7 @@ import okhttp3.OkHttpClient
 import java.io.File
 
 /**
- * 规则集仓�?- 负责规则集的下载、缓存和管理
+ * 规则集仓库 - 负责规则集的下载、缓存和管理
  */
 class RuleSetRepository(private val context: Context) {
 
@@ -33,7 +33,8 @@ class RuleSetRepository(private val context: Context) {
     }
 
     // 2026-01-27 修复: 代理优先+直连回退，解决被墙和代理崩溃问题
-    // 规则�?URL 通常�?GitHub/jsDelivr，已有镜像机�?
+    // 规则集 URL 通常是 GitHub/jsDelivr，已有镜像机制
+
     private val ruleSetDir: File
         get() = File(context.filesDir, "rulesets").also { it.mkdirs() }
 
@@ -68,11 +69,14 @@ class RuleSetRepository(private val context: Context) {
 
     /**
      * 快速检查所有启用的规则集是否有本地缓存
-     * 用于 VPN 启动优化: 快速返回，不阻塞启�?     * @return true 如果所有启用的规则集都有本地缓�?     */
+     * 用于 VPN 启动优化: 快速返回，不阻塞启动
+     * @return true 如果所有启用的规则集都有本地缓存
+     */
     suspend fun hasLocalCache(): Boolean = withContext(Dispatchers.IO) {
         val settings = settingsRepository.settings.first()
 
-        // 检查所有启用的远程规则�?        settings.ruleSets.filter { it.enabled && it.type == RuleSetType.REMOTE }.forEach { ruleSet ->
+        // 检查所有启用的远程规则集
+        settings.ruleSets.filter { it.enabled && it.type == RuleSetType.REMOTE }.forEach { ruleSet ->
             if (!getRuleSetFile(ruleSet.tag).exists()) {
                 return@withContext false
             }
@@ -82,8 +86,11 @@ class RuleSetRepository(private val context: Context) {
     }
 
     /**
-     * 确保所有需要的规则集都已就绪（本地存在�?     * 如果不存在，尝试�?assets 复制或下�?     * @param forceUpdate 是否强制更新（忽略过期时间）
-     * @return 是否所有规则集都可用（至少有旧缓存�?     */
+     * 确保所有需要的规则集都已就绪（本地存在）
+     * 如果不存在，尝试从 assets 复制或下载
+     * @param forceUpdate 是否强制更新（忽略过期时间）
+     * @return 是否所有规则集都可用（至少有旧缓存）
+     */
     suspend fun ensureRuleSetsReady(
         forceUpdate: Boolean = false,
         allowNetwork: Boolean = false,
@@ -92,7 +99,8 @@ class RuleSetRepository(private val context: Context) {
         val settings = settingsRepository.settings.first()
         var allReady = true
 
-        // 处理所有启用的远程规则�?        settings.ruleSets.filter { it.enabled && it.type == RuleSetType.REMOTE }.forEach { ruleSet ->
+        // 处理所有启用的远程规则集
+        settings.ruleSets.filter { it.enabled && it.type == RuleSetType.REMOTE }.forEach { ruleSet ->
             val file = getRuleSetFile(ruleSet.tag)
 
             if (!file.exists()) {
@@ -100,7 +108,7 @@ class RuleSetRepository(private val context: Context) {
             }
 
             if (allowNetwork && (!file.exists() || (forceUpdate && isExpired(file)))) {
-                onProgress("正在更新规则�? ${ruleSet.tag}...")
+                onProgress("正在更新规则集: ${ruleSet.tag}...")
                 val success = downloadCustomRuleSet(ruleSet, settings)
                 if (!success && !file.exists()) {
                     allReady = false
@@ -147,7 +155,8 @@ class RuleSetRepository(private val context: Context) {
     }
 
     /**
-     * �?assets 安装基础规则�?     */
+     * 从 assets 安装基础规则集
+     */
     private fun installBaselineRuleSet(tag: String, targetFile: File): Boolean {
         return try {
             val assetPath = "rulesets/$tag.srs"
@@ -160,13 +169,15 @@ class RuleSetRepository(private val context: Context) {
             Log.i(TAG, "Baseline rule set installed: ${targetFile.name}")
             true
         } catch (e: Exception) {
-            // 可能�?assets 里没有这个文件，这是正常的（比如自定义规则集�?            Log.w(TAG, "Baseline rule set not found in assets: $tag")
+            // 可能是 assets 里没有这个文件，这是正常的（比如自定义规则集）
+            Log.w(TAG, "Baseline rule set not found in assets: $tag")
             false
         }
     }
 
     /**
-     * 获取规则集本地文件路�?     */
+     * 获取规则集本地文件路径
+     */
     fun getRuleSetPath(tag: String): String {
         return getRuleSetFile(tag).absolutePath
     }
@@ -177,7 +188,8 @@ class RuleSetRepository(private val context: Context) {
 
     private fun isExpired(file: File): Boolean {
         // 简单策略：超过 24 小时视为过期
-        // 实际生产中可以配�?ETag �?Last-Modified 检查，这里简化处�?        val lastModified = file.lastModified()
+        // 实际生产中可以配合 ETag 或 Last-Modified 检查，这里简化处理
+        val lastModified = file.lastModified()
         val now = System.currentTimeMillis()
         return (now - lastModified) > 24 * 60 * 60 * 1000
     }
@@ -211,7 +223,7 @@ class RuleSetRepository(private val context: Context) {
         // 先还原到原始 URL (raw.githubusercontent.com)
         var rawUrl = url
 
-        // 1. 如果�?jsDelivr 格式，还原为 raw 格式
+        // 1. 如果是 jsDelivr 格式，还原为 raw 格式
         // 示例: https://cdn.jsdelivr.net/gh/{owner}/{repo}@rule-set/geosite-cn.srs
         if (rawUrl.startsWith(cdnPrefix)) {
             val path = rawUrl.removePrefix(cdnPrefix)
@@ -224,10 +236,11 @@ class RuleSetRepository(private val context: Context) {
             }
         }
 
-        // 2. 如果包含 raw.githubusercontent.com，无论是否有其他前缀，都提取出原始路�?        // 示例: https://ghproxy.com/https://raw.githubusercontent.com/{owner}/{repo}/rule-set/geosite-cn.srs
-        // 或�? https://raw.githubusercontent.com/{owner}/{repo}/rule-set/geosite-cn.srs
+        // 2. 如果包含 raw.githubusercontent.com，无论是否有其他前缀，都提取出原始路径
+        // 示例: https://ghproxy.com/https://raw.githubusercontent.com/{owner}/{repo}/rule-set/geosite-cn.srs
+        // 或者: https://raw.githubusercontent.com/{owner}/{repo}/rule-set/geosite-cn.srs
         if (rawUrl.contains("raw.githubusercontent.com")) {
-            // 关键修复: 这里不应该只�?substringAfter，还要看 path 是否已经是完整的 URL
+            // 关键修复: 这里不应该只看 substringAfter，还要看 path 是否已经是完整的 URL
             // rawUrl: https://raw.githubusercontent.com/https://raw.githubusercontent.com/... 这种错误情况
             var path = rawUrl.substringAfter("raw.githubusercontent.com/")
 
@@ -236,8 +249,10 @@ class RuleSetRepository(private val context: Context) {
                 path = path.substringAfter("raw.githubusercontent.com/")
             }
 
-            // 如果 path �?http 开头，说明截取错了位置，这里假设正常路径不包含协议�?            if (path.startsWith("https://") || path.startsWith("http://")) {
-                // 这通常意味着 substringAfter 取到了参数或者错误的部分，尝试更严格的清�?                path = path.replace("https://", "").replace("http://", "")
+            // 如果 path 以 http 开头，说明截取错了位置，这里假设正常路径不包含协议头
+            if (path.startsWith("https://") || path.startsWith("http://")) {
+                // 这通常意味着 substringAfter 取到了参数或者错误的部分，尝试更严格的清洗
+                path = path.replace("https://", "").replace("http://", "")
             }
 
             rawUrl = rawPrefix + path
@@ -245,8 +260,9 @@ class RuleSetRepository(private val context: Context) {
 
         var updatedUrl = rawUrl
 
-        // 应用当前选择的镜�?        if (mirrorUrl.contains("cdn.jsdelivr.net")) {
-            // 转换�?jsDelivr 格式: https://cdn.jsdelivr.net/gh/user/repo@branch/path
+        // 应用当前选择的镜像
+        if (mirrorUrl.contains("cdn.jsdelivr.net")) {
+            // 转换为 jsDelivr 格式: https://cdn.jsdelivr.net/gh/user/repo@branch/path
             if (rawUrl.startsWith(rawPrefix)) {
                 val path = rawUrl.removePrefix(rawPrefix)
                 // path 格式: user/repo/branch/path
@@ -310,7 +326,7 @@ class RuleSetRepository(private val context: Context) {
                     }
                 }
 
-                // 校验文件内容是否有效 (不能�?HTML)
+                // 校验文件内容是否有效 (不能是 HTML)
                 val isValid = try {
                     val header = tempFile.inputStream().use { input ->
                         val buffer = ByteArray(64)
@@ -355,10 +371,3 @@ class RuleSetRepository(private val context: Context) {
         }
     }
 }
-
-
-
-
-
-
-

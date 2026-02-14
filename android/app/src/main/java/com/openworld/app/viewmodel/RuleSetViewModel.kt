@@ -21,7 +21,7 @@ import com.openworld.app.repository.RuleSetRepository
 import com.openworld.app.repository.SettingsRepository
 import com.openworld.app.model.GithubTreeResponse
 import com.openworld.app.model.AppSettings
-import com.openworld.app.ipc.OpenWorldRemote
+import com.openworld.app.ipc.SingBoxRemote
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
@@ -35,7 +35,8 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
     private val ruleSetRepository = RuleSetRepository.getInstance(application)
     private val settingsRepository = SettingsRepository.getInstance(application)
 
-    // 监听 settings 变化，用于判断规则集是否已添�?    val settings: StateFlow<AppSettings> = settingsRepository.settings
+    // 监听 settings 变化，用于判断规则集是否已添加
+    val settings: StateFlow<AppSettings> = settingsRepository.settings
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -49,7 +50,9 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     /**
-     * 检查规则集是否已添加到用户的规则集列表�?     * 这里检查的是用户配置中是否存在该规则集，而不是物理文件是否存�?     */
+     * 检查规则集是否已添加到用户的规则集列表中
+     * 这里检查的是用户配置中是否存在该规则集，而不是物理文件是否存在
+     */
     fun isDownloaded(tag: String): Boolean {
         return settings.value.ruleSets.any { it.tag == tag }
     }
@@ -60,19 +63,22 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
     private val gson = Gson()
 
     init {
-        // 自动加载逻辑优化�?        // 1. App 启动时，如果 VPN 没开，尝试直连加�?        // 2. 监听 VPN 状态，�?VPN 启动成功（连接建立）后，自动刷新（如果之前加载失败或为空�?        viewModelScope.launch {
-            if (!OpenWorldRemote.isRunning.value) {
+        // 自动加载逻辑优化：
+        // 1. App 启动时，如果 VPN 没开，尝试直连加载
+        // 2. 监听 VPN 状态，当 VPN 启动成功（连接建立）后，自动刷新（如果之前加载失败或为空）
+        viewModelScope.launch {
+            if (!SingBoxRemote.isRunning.value) {
                 fetchRuleSets()
             }
 
-            OpenWorldRemote.isRunning.collectLatest { isRunning ->
+            SingBoxRemote.isRunning.collectLatest { isRunning ->
                 if (isRunning) {
                     // VPN 刚启动，网络环境可能正在切换 (TUN建立 -> 路由重置)
-                    // 等待一段时间让 Socket 稳定，避�?"use of closed network connection"
+                    // 等待一段时间让 Socket 稳定，避免 "use of closed network connection"
                     delay(2000)
 
                     if (_ruleSets.value.isEmpty() || _error.value != null) {
-                        Log.i(TAG, "VPN 已连接，自动重试加载规则�?..")
+                        Log.i(TAG, "VPN 已连接，自动重试加载规则集...")
                         fetchRuleSets()
                     }
                 }
@@ -102,7 +108,8 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to fetch rule sets", e)
                 _error.value = getApplication<Application>().getString(R.string.ruleset_update_network_error)
-                // 即使失败，也加载内置规则集，保证页面不为�?                val current = _ruleSets.value
+                // 即使失败，也加载内置规则集，保证页面不为空
+                val current = _ruleSets.value
                 if (current.isEmpty()) {
                     Log.w(TAG, "当前列表为空，加载内置规则集作为兜底")
                     _ruleSets.value = getBuiltInRuleSets().sortedBy { it.name }
@@ -115,7 +122,8 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
 
     private fun getBuiltInRuleSets(): List<HubRuleSet> {
         val githubUrl = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set"
-        // 使用镜像加速访�?        val baseUrl = "https://ghp.ci/$githubUrl"
+        // 使用镜像加速访问
+        val baseUrl = "https://ghp.ci/$githubUrl"
         val commonRules = listOf(
             "google", "youtube", "twitter", "facebook", "instagram", "tiktok",
             "telegram", "whatsapp", "discord", "github", "microsoft", "apple",
@@ -236,10 +244,3 @@ class RuleSetViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 }
-
-
-
-
-
-
-

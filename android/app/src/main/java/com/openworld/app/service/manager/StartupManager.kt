@@ -11,7 +11,7 @@ import android.os.SystemClock
 import android.util.Log
 import com.google.gson.Gson
 import com.openworld.app.model.AppSettings
-import com.openworld.app.model.OpenWorldConfig
+import com.openworld.app.model.SingBoxConfig
 import com.openworld.app.repository.LogRepository
 import com.openworld.app.repository.RuleSetRepository
 import com.openworld.app.repository.SettingsRepository
@@ -25,9 +25,13 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 
 /**
- * VPN 启动管理�? * 负责完整�?VPN 启动流程，包括：
+ * VPN 启动管理器
+ * 负责完整的 VPN 启动流程，包括：
  * - 前台通知
- * - 权限检�? * - 并行初始�? * - 配置加载和修�? * - Libbox 启动
+ * - 权限检查
+ * - 并行初始化
+ * - 配置加载和修补
+ * - Libbox 启动
  */
 class StartupManager(
     private val context: Context,
@@ -47,7 +51,8 @@ class StartupManager(
     }
 
     /**
-     * 检测端口是否可�?     */
+     * 检测端口是否可用
+     */
     private fun isPortAvailable(port: Int): Boolean {
         if (port <= 0) return true
         return try {
@@ -66,7 +71,8 @@ class StartupManager(
      * 启动回调接口
      */
     interface Callbacks {
-        // 状态回�?        fun onStarting()
+        // 状态回调
+        fun onStarting()
         fun onStarted(configContent: String)
         fun onFailed(error: String)
         fun onCancelled()
@@ -81,11 +87,12 @@ class StartupManager(
         fun stopForeignVpnMonitor()
 
         /**
-         * 检测外�?VPN 并记录，返回是否存在外部 VPN
+         * 检测外部 VPN 并记录，返回是否存在外部 VPN
          */
         fun detectExistingVpns(): Boolean
 
-        // 组件初始�?        fun initSelectorManager(configContent: String)
+        // 组件初始化
+        fun initSelectorManager(configContent: String)
         fun createAndStartCommandServer(): Result<Unit>
         fun startCommandClients()
         fun startRouteGroupAutoSelect(configContent: String)
@@ -94,7 +101,8 @@ class StartupManager(
         fun scheduleKeepaliveWorker()
         fun startTrafficMonitor()
 
-        // 状态管�?        fun updateTileState()
+        // 状态管理
+        fun updateTileState()
         fun setIsRunning(running: Boolean)
         fun setIsStarting(starting: Boolean)
         fun setLastError(error: String?)
@@ -107,7 +115,9 @@ class StartupManager(
         fun setLastKnownNetwork(network: Network?)
         fun setNetworkCallbackReady(ready: Boolean)
         /**
-         * �?libbox 启动前恢复底层网�?         * 修复 PREPARE_RESTART -> setUnderlyingNetworks(null) �?         * libbox 在无底层网络状态下启动导致网络请求失败进入退避的问题
+         * 在 libbox 启动前恢复底层网络
+         * 修复 PREPARE_RESTART -> setUnderlyingNetworks(null) 后
+         * libbox 在无底层网络状态下启动导致网络请求失败进入退避的问题
          */
         fun restoreUnderlyingNetwork(network: Network)
 
@@ -127,7 +137,8 @@ class StartupManager(
     }
 
     /**
-     * 并行初始化结�?     */
+     * 并行初始化结果
+     */
     private data class ParallelInitResult(
         val network: Network?,
         val ruleSetReady: Boolean,
@@ -137,7 +148,7 @@ class StartupManager(
     )
 
     /**
-     * 执行完整�?VPN 启动流程
+     * 执行完整的 VPN 启动流程
      */
     @Suppress("CognitiveComplexMethod", "CyclomaticComplexMethod", "LongMethod")
     suspend fun startVpn(
@@ -152,28 +163,31 @@ class StartupManager(
         log("========== VPN STARTUP BEGIN ==========")
 
         try {
-            // 等待前一个清理任务完�?            var stepStart = SystemClock.elapsedRealtime()
+            // 等待前一个清理任务完成
+            var stepStart = SystemClock.elapsedRealtime()
             callbacks.waitForCleanupJob()
             log("[STEP] waitForCleanupJob: ${SystemClock.elapsedRealtime() - stepStart}ms")
 
             callbacks.onStarting()
 
-            // 1. 获取锁和注册监听�?            stepStart = SystemClock.elapsedRealtime()
+            // 1. 获取锁和注册监听器
+            stepStart = SystemClock.elapsedRealtime()
             coreManager.acquireLocks()
             callbacks.registerScreenStateReceiver()
             log("[STEP] acquireLocks+registerReceiver: ${SystemClock.elapsedRealtime() - stepStart}ms")
 
-            // 1.5 检测外�?VPN（在 prepare 之前�?            stepStart = SystemClock.elapsedRealtime()
+            // 1.5 检测外部 VPN（在 prepare 之前）
+            stepStart = SystemClock.elapsedRealtime()
             val hasExistingVpn = callbacks.detectExistingVpns()
             log("[STEP] detectExistingVpns: ${SystemClock.elapsedRealtime() - stepStart}ms, found=$hasExistingVpn")
 
-            // 如果检测到外部 VPN，等待一小段时间�?prepare() 能正确处�?VPN 切换
+            // 如果检测到外部 VPN，等待一小段时间让 prepare() 能正确处理 VPN 切换
             if (hasExistingVpn) {
                 log("[STEP] External VPN detected, waiting for system to prepare takeover...")
                 delay(100)
             }
 
-            // 2. 检�?VPN 权限
+            // 2. 检查 VPN 权限
             stepStart = SystemClock.elapsedRealtime()
             val prepareIntent = VpnService.prepare(context)
             log("[STEP] VpnService.prepare: ${SystemClock.elapsedRealtime() - stepStart}ms")
@@ -184,7 +198,8 @@ class StartupManager(
 
             callbacks.startForeignVpnMonitor()
 
-            // 3. 并行初始化（包括配置读取�?DNS 预热�?            stepStart = SystemClock.elapsedRealtime()
+            // 3. 并行初始化（包括配置读取和 DNS 预热）
+            stepStart = SystemClock.elapsedRealtime()
             PerfTracer.begin(PerfTracer.Phases.PARALLEL_INIT)
             val initResult = parallelInit(configPath, callbacks)
             PerfTracer.end(PerfTracer.Phases.PARALLEL_INIT)
@@ -204,10 +219,11 @@ class StartupManager(
             }
             log("[STEP] network ready: ${initResult.network}")
 
-            // 更新网络状�?            callbacks.setLastKnownNetwork(initResult.network)
+            // 更新网络状态
+            callbacks.setLastKnownNetwork(initResult.network)
             callbacks.setNetworkCallbackReady(true)
 
-            // 设置 CoreManager 的当前设�?(用于 TUN 配置中的分应用代理等)
+            // 设置 CoreManager 的当前设置 (用于 TUN 配置中的分应用代理等)
             coreManager.setCurrentSettings(initResult.settings)
 
             val configContent = initResult.configContent
@@ -219,18 +235,21 @@ class StartupManager(
                 log("[STEP] cleanCacheDb: ${SystemClock.elapsedRealtime() - stepStart}ms")
             }
 
-            // 4.5 检查代理端口是否可�?            // 正常情况下关闭时已确保端口释放，这里只是防御性检�?            val proxyPort = initResult.settings.proxyPort
+            // 4.5 检查代理端口是否可用
+            // 正常情况下关闭时已确保端口释放，这里只是防御性检查
+            val proxyPort = initResult.settings.proxyPort
             if (proxyPort > 0 && !isPortAvailable(proxyPort)) {
                 log("[STEP] Port $proxyPort unexpectedly in use, this should not happen")
                 throw IllegalStateException("Port $proxyPort is still in use")
             }
 
-            // 5. 创建并启�?CommandServer (必须�?startLibbox 之前)
+            // 5. 创建并启动 CommandServer (必须在 startLibbox 之前)
             stepStart = SystemClock.elapsedRealtime()
             callbacks.createAndStartCommandServer().getOrThrow()
             log("[STEP] createAndStartCommandServer: ${SystemClock.elapsedRealtime() - stepStart}ms")
 
-            // 5.5 �?libbox 启动前恢复底层网络（修复 PREPARE_RESTART 时序问题�?            callbacks.restoreUnderlyingNetwork(initResult.network)
+            // 5.5 在 libbox 启动前恢复底层网络（修复 PREPARE_RESTART 时序问题）
+            callbacks.restoreUnderlyingNetwork(initResult.network)
 
             // 6. 启动 Libbox
             stepStart = SystemClock.elapsedRealtime()
@@ -249,7 +268,8 @@ class StartupManager(
                 }
             }
 
-            // 8. 初始化后续组�?            stepStart = SystemClock.elapsedRealtime()
+            // 8. 初始化后续组件
+            stepStart = SystemClock.elapsedRealtime()
             if (!coreManager.isServiceRunning()) {
                 throw IllegalStateException("Service is not running after successful start")
             }
@@ -258,14 +278,16 @@ class StartupManager(
             callbacks.initSelectorManager(configContent)
             log("[STEP] postInit (clients+selector): ${SystemClock.elapsedRealtime() - stepStart}ms")
 
-            // 9. 标记运行状�?            stepStart = SystemClock.elapsedRealtime()
+            // 9. 标记运行状态
+            stepStart = SystemClock.elapsedRealtime()
             callbacks.setIsRunning(true)
             callbacks.setLastError(null)
             callbacks.persistVpnState(true)
             callbacks.stopForeignVpnMonitor()
             log("[STEP] markRunning: ${SystemClock.elapsedRealtime() - stepStart}ms")
 
-            // 10. 启动监控和辅助组�?            stepStart = SystemClock.elapsedRealtime()
+            // 10. 启动监控和辅助组件
+            stepStart = SystemClock.elapsedRealtime()
             callbacks.startTrafficMonitor()
             callbacks.startHealthMonitor()
             callbacks.scheduleKeepaliveWorker()
@@ -273,7 +295,8 @@ class StartupManager(
             callbacks.scheduleAsyncRuleSetUpdate()
             log("[STEP] startMonitors: ${SystemClock.elapsedRealtime() - stepStart}ms")
 
-            // 11. 更新 UI 状�?            stepStart = SystemClock.elapsedRealtime()
+            // 11. 更新 UI 状态
+            stepStart = SystemClock.elapsedRealtime()
             callbacks.persistVpnPending("")
             callbacks.updateTileState()
             log("[STEP] updateUI: ${SystemClock.elapsedRealtime() - stepStart}ms")
@@ -330,12 +353,14 @@ class StartupManager(
         }
         val dnsPrewarmDeferred = async { prewarmDns(rawConfigContent) }
 
-        // 4. 等待设置加载完成，然后修补配�?        stepStart = SystemClock.elapsedRealtime()
+        // 4. 等待设置加载完成，然后修补配置
+        stepStart = SystemClock.elapsedRealtime()
         val settings = settingsDeferred.await()
         val configContent = patchConfig(rawConfigContent, settings)
         log("[parallelInit] patchConfig: ${SystemClock.elapsedRealtime() - stepStart}ms")
 
-        // 等待所有并行任务完�?        val network = networkDeferred.await()
+        // 等待所有并行任务完成
+        val network = networkDeferred.await()
         val ruleSetReady = ruleSetDeferred.await()
         val dnsResult = dnsPrewarmDeferred.await()
 
@@ -391,7 +416,7 @@ class StartupManager(
         val logLevel = if (settings.debugLoggingEnabled) "debug" else "info"
 
         try {
-            val configObj = gson.fromJson(configContent, OpenWorldConfig::class.java)
+            val configObj = gson.fromJson(configContent, SingBoxConfig::class.java)
 
             val logConfig = configObj.log?.copy(level = logLevel)
                 ?: com.openworld.app.model.LogConfig(level = logLevel, timestamp = true, output = "box.log")
@@ -409,7 +434,9 @@ class StartupManager(
                 newConfig = newConfig.copy(inbounds = newInbounds)
             }
 
-            // 为代理节点设置较短的连接超时，减少启动延�?            // 非代理类型（direct, block, dns, selector, urltest）不需要设�?            val proxyTypes = setOf(
+            // 为代理节点设置较短的连接超时，减少启动延迟
+            // 非代理类型（direct, block, dns, selector, urltest）不需要设置
+            val proxyTypes = setOf(
                 "shadowsocks", "vmess", "vless", "trojan",
                 "hysteria", "hysteria2", "tuic", "wireguard",
                 "ssh", "shadowtls", "socks", "http", "anytls"
@@ -484,10 +511,3 @@ class StartupManager(
         }
     }
 }
-
-
-
-
-
-
-

@@ -98,14 +98,16 @@ fun DashboardScreen(
     val testingNodeIds by nodesViewModel.testingNodeIds.collectAsState()
 
     // 优化: 使用 derivedStateOf 避免不必要的重组
-    // 原因: profiles �?activeProfileId 变化�?只有实际名称改变才触发重�?    val activeProfileName by remember {
+    // 原因: profiles 或 activeProfileId 变化时,只有实际名称改变才触发重组
+    val activeProfileName by remember {
         derivedStateOf {
             profiles.find { it.id == activeProfileId }?.name
         }
     }
 
     // 优化: 缓存活跃节点名称计算
-    // 重要：必须依�?activeNodeId 的变化，否则节点选择后不会更新显�?    val activeNodeName by remember(activeNodeId) {
+    // 重要：必须依赖 activeNodeId 的变化，否则节点选择后不会更新显示
+    val activeNodeName by remember(activeNodeId) {
         derivedStateOf {
             viewModel.getActiveNodeName()
         }
@@ -131,7 +133,8 @@ fun DashboardScreen(
         viewModel.onVpnPermissionResult(result.resultCode == Activity.RESULT_OK)
     }
 
-    // 当需�?VPN 权限时启动请�?    LaunchedEffect(vpnPermissionNeeded) {
+    // 当需要 VPN 权限时启动请求
+    LaunchedEffect(vpnPermissionNeeded) {
         if (vpnPermissionNeeded) {
             val prepareIntent = VpnService.prepare(context)
             if (prepareIntent != null) {
@@ -143,7 +146,9 @@ fun DashboardScreen(
         }
     }
 
-    // 已移除连接状态的 Toast 提示，避免干扰用�?    // 用户可以通过 UI 上的连接状态指示器（表情、文字）来了解当前状�?    LaunchedEffect(connectionState) {
+    // 已移除连接状态的 Toast 提示，避免干扰用户
+    // 用户可以通过 UI 上的连接状态指示器（表情、文字）来了解当前状态
+    LaunchedEffect(connectionState) {
         lastConnectionState = connectionState
     }
 
@@ -332,7 +337,8 @@ fun DashboardScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = statusBarPadding.calculateTopPadding()) // 为状态栏添加顶部内边�?                .padding(24.dp),
+                .padding(top = statusBarPadding.calculateTopPadding()) // 为状态栏添加顶部内边距
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
@@ -440,13 +446,14 @@ fun DashboardScreen(
             ) {
                 // Always show InfoCard but with placeholder data when not connected
                 val isConnected = connectionState == ConnectionState.Connected
-                // 优先使用 VPN 启动后测得的实时延迟，如果没有则使用缓存的延�?                // currentNodePing: null = 未测�? -1 = 超时/失败, >0 = 实际延迟
+                // 优先使用 VPN 启动后测得的实时延迟，如果没有则使用缓存的延迟
+                // currentNodePing: null = 未测试, -1 = 超时/失败, >0 = 实际延迟
                 val displayPing = when {
                     currentNodePing != null && currentNodePing!! > 0 -> currentNodePing
                     currentNodePing == null && activeNodeLatency != null -> activeNodeLatency
-                    else -> currentNodePing // 可能�?-1（超时）�?null
+                    else -> currentNodePing // 可能是 -1（超时）或 null
                 }
-                // 使用明确�?isPingTesting 状态来控制加载动画
+                // 使用明确的 isPingTesting 状态来控制加载动画
                 val isPingLoading = isConnected && isPingTesting
                 // 格式化延迟显示：超时显示"超时"，未测试显示"-"
                 val timeoutMsg = stringResource(R.string.common_timeout)
@@ -549,10 +556,3 @@ fun QuickActionButton(
         )
     }
 }
-
-
-
-
-
-
-

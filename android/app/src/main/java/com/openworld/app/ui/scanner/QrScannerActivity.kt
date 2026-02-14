@@ -34,7 +34,8 @@ class QrScannerActivity : AppCompatActivity() {
     private lateinit var barcodeScannerView: DecoratedBarcodeView
     private var isFlashOn = false
 
-    // 相册选择�?    private val galleryLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    // 相册选择器
+    private val galleryLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             parseQrCodeFromUri(uri)
         }
@@ -42,7 +43,8 @@ class QrScannerActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 使用淡入淡出动画，避免相机加载时的黑屏造成的视觉卡�?        overridePendingTransition(R.anim.fade_in, R.anim.hold)
+        // 使用淡入淡出动画，避免相机加载时的黑屏造成的视觉卡顿
+        overridePendingTransition(R.anim.fade_in, R.anim.hold)
         setContentView(R.layout.activity_qr_scanner)
 
         barcodeScannerView = findViewById(R.id.barcode_scanner)
@@ -63,7 +65,8 @@ class QrScannerActivity : AppCompatActivity() {
             galleryLauncher.launch(arrayOf("image/*"))
         }
 
-        // 设置闪光灯按�?        findViewById<ImageButton>(R.id.btn_flash).setOnClickListener {
+        // 设置闪光灯按钮
+        findViewById<ImageButton>(R.id.btn_flash).setOnClickListener {
             toggleFlash()
         }
 
@@ -82,7 +85,7 @@ class QrScannerActivity : AppCompatActivity() {
                     withContext(Dispatchers.Main) {
                         if (result != null) {
                             val intent = Intent()
-                            // ZXing �?ScanIntentResult 使用 "SCAN_RESULT" 作为 key
+                            // ZXing 的 ScanIntentResult 使用 "SCAN_RESULT" 作为 key
                             intent.putExtra("SCAN_RESULT", result)
                             setResult(Activity.RESULT_OK, intent)
                             finish()
@@ -169,10 +172,3 @@ class QrScannerActivity : AppCompatActivity() {
         }
     }
 }
-
-
-
-
-
-
-

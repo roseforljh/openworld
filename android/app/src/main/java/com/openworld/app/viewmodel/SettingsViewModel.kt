@@ -64,7 +64,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private var defaultRuleSetDownloadJob: Job? = null
     private val defaultRuleSetDownloadTags = mutableSetOf<String>()
 
-    // 导入导出状�?    private val _exportState = MutableStateFlow<ExportState>(ExportState.Idle)
+    // 导入导出状态
+    private val _exportState = MutableStateFlow<ExportState>(ExportState.Idle)
     val exportState: StateFlow<ExportState> = _exportState.asStateFlow()
 
     private val _importState = MutableStateFlow<ImportState>(ImportState.Idle)
@@ -186,7 +187,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setBackgroundPowerSavingDelay(value: BackgroundPowerSavingDelay) {
         viewModelScope.launch {
             repository.setBackgroundPowerSavingDelay(value)
-            // 同步更新 AppLifecycleObserver 的超时时�?            com.openworld.app.lifecycle.AppLifecycleObserver.setBackgroundTimeout(value.delayMs)
+            // 同步更新 AppLifecycleObserver 的超时时间
+            com.openworld.app.lifecycle.AppLifecycleObserver.setBackgroundTimeout(value.delayMs)
         }
     }
 
@@ -195,12 +197,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             repository.setShowNotificationSpeed(value)
 
             // 跨进程通知 Service 立即更新设置 (因为 Service 运行在独立进程，无法实时监听 DataStore)
-            if (com.openworld.app.ipc.OpenWorldRemote.isRunning.value) {
+            if (com.openworld.app.ipc.SingBoxRemote.isRunning.value) {
                 try {
-                    val intent = android.content.Intent(getApplication(), com.openworld.app.service.OpenWorldService::class.java).apply {
-                        action = com.openworld.app.service.OpenWorldService.ACTION_UPDATE_SETTING
-                        putExtra(com.openworld.app.service.OpenWorldService.EXTRA_SETTING_KEY, "show_notification_speed")
-                        putExtra(com.openworld.app.service.OpenWorldService.EXTRA_SETTING_VALUE_BOOL, value)
+                    val intent = android.content.Intent(getApplication(), com.openworld.app.service.SingBoxService::class.java).apply {
+                        action = com.openworld.app.service.SingBoxService.ACTION_UPDATE_SETTING
+                        putExtra(com.openworld.app.service.SingBoxService.EXTRA_SETTING_KEY, "show_notification_speed")
+                        putExtra(com.openworld.app.service.SingBoxService.EXTRA_SETTING_VALUE_BOOL, value)
                     }
                     getApplication<Application>().startService(intent)
                 } catch (e: Exception) {
@@ -403,7 +405,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 // 先还原到原始 URL
                 var rawUrl = url
 
-                // 1. 如果�?jsDelivr 格式，还原为 raw 格式
+                // 1. 如果是 jsDelivr 格式，还原为 raw 格式
                 if (rawUrl.startsWith(cdnPrefix)) {
                     val path = rawUrl.removePrefix(cdnPrefix)
                     val parts = path.split("@", limit = 2)
@@ -428,7 +430,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             rawUrl = rawUrl.replace(mirror, rawPrefix)
                         }
                     }
-                    // 3. 处理已有�?raw 链接被代理的情况
+                    // 3. 处理已有的 raw 链接被代理的情况
                     if (rawUrl.contains("raw.githubusercontent.com") && !rawUrl.startsWith(rawPrefix)) {
                         val path = rawUrl.substringAfter("raw.githubusercontent.com/")
                         rawUrl = rawPrefix + path
@@ -437,7 +439,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
                 var updatedUrl = rawUrl
 
-                // 应用当前选择的镜�?                if (mirrorUrl.contains("cdn.jsdelivr.net")) {
+                // 应用当前选择的镜像
+                if (mirrorUrl.contains("cdn.jsdelivr.net")) {
                     if (rawUrl.startsWith(rawPrefix)) {
                         val path = rawUrl.removePrefix(rawPrefix)
                         val parts = path.split("/", limit = 4)
@@ -506,7 +509,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 // 先还原到原始 URL
                 var rawUrl = url
 
-                // 1. 如果�?jsDelivr 格式，还原为 raw 格式
+                // 1. 如果是 jsDelivr 格式，还原为 raw 格式
                 if (rawUrl.startsWith(cdnPrefix)) {
                     val path = rawUrl.removePrefix(cdnPrefix)
                     val parts = path.split("@", limit = 2)
@@ -531,7 +534,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                             rawUrl = rawUrl.replace(mirror, rawPrefix)
                         }
                     }
-                    // 3. 处理已有�?raw 链接被代理的情况
+                    // 3. 处理已有的 raw 链接被代理的情况
                     if (rawUrl.contains("raw.githubusercontent.com") && !rawUrl.startsWith(rawPrefix)) {
                         val path = rawUrl.substringAfter("raw.githubusercontent.com/")
                         rawUrl = rawPrefix + path
@@ -540,7 +543,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
                 var updatedUrl = rawUrl
 
-                // 应用当前选择的镜�?                if (mirrorUrl.contains("cdn.jsdelivr.net")) {
+                // 应用当前选择的镜像
+                if (mirrorUrl.contains("cdn.jsdelivr.net")) {
                     if (rawUrl.startsWith(rawPrefix)) {
                         val path = rawUrl.removePrefix(rawPrefix)
                         val parts = path.split("/", limit = 4)
@@ -640,7 +644,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // 全局规则集自动更新设�?    fun setRuleSetAutoUpdateEnabled(value: Boolean) {
+    // 全局规则集自动更新设置
+    fun setRuleSetAutoUpdateEnabled(value: Boolean) {
         viewModelScope.launch {
             val currentSettings = repository.settings.first()
             repository.setRuleSetAutoUpdateEnabled(value)
@@ -679,7 +684,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun addAppRule(rule: AppRule) {
         viewModelScope.launch {
             val currentRules = settings.value.appRules.toMutableList()
-            // 避免重复添加同一个应�?            currentRules.removeAll { it.packageName == rule.packageName }
+            // 避免重复添加同一个应用
+            currentRules.removeAll { it.packageName == rule.packageName }
             currentRules.add(rule)
             repository.setAppRules(currentRules)
         }
@@ -759,7 +765,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     // ==================== 导入导出功能 ====================
 
     /**
-     * 导出数据到文�?     */
+     * 导出数据到文件
+     */
     fun exportData(uri: Uri) {
         viewModelScope.launch {
             _exportState.value = ExportState.Exporting
@@ -823,20 +830,23 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * 重置导出状�?     */
+     * 重置导出状态
+     */
     fun resetExportState() {
         _exportState.value = ExportState.Idle
     }
 
     /**
-     * 重置导入状�?     */
+     * 重置导入状态
+     */
     fun resetImportState() {
         _importState.value = ImportState.Idle
     }
 }
 
 /**
- * 导出状�? */
+ * 导出状态
+ */
 sealed class ExportState {
     object Idle : ExportState()
     object Exporting : ExportState()
@@ -845,7 +855,8 @@ sealed class ExportState {
 }
 
 /**
- * 导入状�? */
+ * 导入状态
+ */
 sealed class ImportState {
     object Idle : ImportState()
     object Validating : ImportState()
@@ -867,10 +878,3 @@ sealed class ImportState {
     ) : ImportState()
     data class Error(val message: String) : ImportState()
 }
-
-
-
-
-
-
-

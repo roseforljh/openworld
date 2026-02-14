@@ -10,10 +10,3 @@ data class HubRuleSet(
     @SerializedName("sourceUrl") val sourceUrl: String = "",
     @SerializedName("binaryUrl") val binaryUrl: String = ""
 )
-
-
-
-
-
-
-

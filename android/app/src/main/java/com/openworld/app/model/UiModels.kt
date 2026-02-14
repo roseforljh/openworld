@@ -21,7 +21,8 @@ data class ProfileUi(
     @SerializedName("expireDate") val expireDate: Long = 0,
     @SerializedName("totalTraffic") val totalTraffic: Long = 0,
     @SerializedName("usedTraffic") val usedTraffic: Long = 0,
-    // DNS 预解析设�?    @SerializedName("dnsPreResolve") val dnsPreResolve: Boolean = false,
+    // DNS 预解析设置
+    @SerializedName("dnsPreResolve") val dnsPreResolve: Boolean = false,
     @SerializedName("dnsServer") val dnsServer: String? = null
 )
 
@@ -47,7 +48,9 @@ sealed class SubscriptionUpdateResult {
     /**
      * 更新成功，有变化
      * @param profileName 配置名称
-     * @param addedCount 新增节点�?     * @param removedCount 移除节点�?     * @param totalCount 总节点数
+     * @param addedCount 新增节点数
+     * @param removedCount 移除节点数
+     * @param totalCount 总节点数
      */
     data class SuccessWithChanges(
         val profileName: String,
@@ -78,7 +81,8 @@ sealed class SubscriptionUpdateResult {
 }
 
 /**
- * 批量更新订阅的汇总结�? */
+ * 批量更新订阅的汇总结果
+ */
 data class BatchUpdateResult(
     val successWithChanges: Int = 0,
     val successNoChanges: Int = 0,
@@ -118,11 +122,14 @@ data class NodeUi(
         get() = name
 
     /**
-     * 获取协议的显示名�?     * 将内部协议类型转换为用户友好的显示名�?     */
+     * 获取协议的显示名称
+     * 将内部协议类型转换为用户友好的显示名称
+     */
     val protocolDisplay: String
         get() = when (protocol.lowercase()) {
-            "http" -> "HTTPS" // HTTP 类型配置�?TLS 就是 HTTPS
-            "socks" -> "SOCKS5" // SOCKS 协议的现代版�?            "shadowsocks" -> "SS"
+            "http" -> "HTTPS" // HTTP 类型配置了 TLS 就是 HTTPS
+            "socks" -> "SOCKS5" // SOCKS 协议的现代版本
+            "shadowsocks" -> "SS"
             "vmess" -> "VMess"
             "vless" -> "VLESS"
             "trojan" -> "Trojan"
@@ -203,10 +210,3 @@ data class VMessLinkConfig(
     @SerializedName("fp") val fp: String? = null, // fingerprint
     @SerializedName("packetEncoding") val packetEncoding: String? = null // packet encoding
 )
-
-
-
-
-
-
-

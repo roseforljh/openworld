@@ -94,10 +94,3 @@ class TrafficStatsViewModel(application: Application) : AndroidViewModel(applica
         return _uiState.value.nodeNames[nodeId] ?: nodeId
     }
 }
-
-
-
-
-
-
-

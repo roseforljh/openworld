@@ -10,15 +10,16 @@ import kotlinx.coroutines.launch
 
 /**
  * 已安装应用的 ViewModel
- * 负责管理应用列表的加载状�? */
+ * 负责管理应用列表的加载状态
+ */
 class InstalledAppsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = InstalledAppsRepository.getInstance(application)
 
-    /** 已安装应用列�?*/
+    /** 已安装应用列表 */
     val installedApps: StateFlow<List<InstalledApp>> = repository.installedApps
 
-    /** 加载状�?*/
+    /** 加载状态 */
     val loadingState: StateFlow<InstalledAppsRepository.LoadingState> = repository.loadingState
 
     /**
@@ -46,10 +47,3 @@ class InstalledAppsViewModel(application: Application) : AndroidViewModel(applic
      */
     fun isLoaded(): Boolean = repository.isLoaded()
 }
-
-
-
-
-
-
-

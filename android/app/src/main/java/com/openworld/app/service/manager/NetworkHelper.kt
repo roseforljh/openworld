@@ -22,7 +22,8 @@ import java.net.NetworkInterface
 import java.net.Socket
 
 /**
- * 网络辅助工具�? * 提取�?OpenWorldService，负责网络相关的辅助操作
+ * 网络辅助工具类
+ * 提取自 SingBoxService，负责网络相关的辅助操作
  */
 class NetworkHelper(
     private val context: Context,
@@ -37,7 +38,9 @@ class NetworkHelper(
     }
 
     /**
-     * 并行启动初始�?     * 同时执行: 网络检测、规则集检查、设置加�?     */
+     * 并行启动初始化
+     * 同时执行: 网络检测、规则集检查、设置加载
+     */
     suspend fun parallelStartupInit(
         networkCallbackReady: Boolean,
         lastKnownNetwork: Network?,
@@ -103,7 +106,8 @@ class NetworkHelper(
 
         val cm = connectivityManager ?: return
 
-        // 先尝试主动采�?        val activeNet = cm.activeNetwork
+        // 先尝试主动采样
+        val activeNet = cm.activeNetwork
         if (activeNet != null) {
             val caps = cm.getNetworkCapabilities(activeNet)
             val isVpn = caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
@@ -135,7 +139,8 @@ class NetworkHelper(
     }
 
     /**
-     * 等待可用的物理网�?     */
+     * 等待可用的物理网络
+     */
     suspend fun waitForUsablePhysicalNetwork(
         lastKnownNetwork: Network?,
         networkManager: com.openworld.app.service.network.NetworkManager?,
@@ -144,7 +149,7 @@ class NetworkHelper(
     ): Network? {
         val cm = connectivityManager ?: return null
 
-        // 1. 检�?DefaultNetworkListener 缓存
+        // 1. 检查 DefaultNetworkListener 缓存
         DefaultNetworkListener.underlyingNetwork?.let { cached ->
             if (isValidPhysicalNetwork(cm, cached)) {
                 Log.i(TAG, "Using DefaultNetworkListener cache: $cached")
@@ -152,7 +157,7 @@ class NetworkHelper(
             }
         }
 
-        // 2. 检�?NetworkManager 缓存
+        // 2. 检查 NetworkManager 缓存
         networkManager?.lastKnownNetwork?.let { cached ->
             if (isValidPhysicalNetwork(cm, cached)) {
                 Log.i(TAG, "Using NetworkManager cache: $cached")
@@ -160,7 +165,7 @@ class NetworkHelper(
             }
         }
 
-        // 3. 检�?lastKnownNetwork
+        // 3. 检查 lastKnownNetwork
         lastKnownNetwork?.let { cached ->
             if (isValidPhysicalNetwork(cm, cached)) {
                 Log.i(TAG, "Using lastKnownNetwork cache: $cached")
@@ -221,7 +226,8 @@ class NetworkHelper(
     }
 
     /**
-     * 连通性检�?     */
+     * 连通性检查
+     */
     suspend fun performConnectivityCheck(): Boolean = withContext(Dispatchers.IO) {
         val testTargets = listOf(
             "1.1.1.1" to 53,
@@ -247,7 +253,7 @@ class NetworkHelper(
     }
 
     /**
-     * 重置连接 (优化�?
+     * 重置连接 (优化版)
      */
     suspend fun resetConnectionsOptimal(
         reason: String,
@@ -293,7 +299,7 @@ class NetworkHelper(
     }
 
     /**
-     * 检查是否有活跃�?VPN
+     * 检查是否有活跃的 VPN
      */
     fun isAnyVpnActive(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
@@ -388,12 +394,13 @@ class NetworkHelper(
     }
 
     /**
-     * �?NetworkManager �?null 时的回退逻辑（服务重启期间）
-     * 遍历所有网络，查找有效的物理网络（�?VPN�?     */
+     * 当 NetworkManager 为 null 时的回退逻辑（服务重启期间）
+     * 遍历所有网络，查找有效的物理网络（非 VPN）
+     */
     fun findBestPhysicalNetworkFallback(): Network? {
         val cm = connectivityManager ?: return null
 
-        // 1. 先检�?activeNetwork 是否是有效的物理网络
+        // 1. 先检查 activeNetwork 是否是有效的物理网络
         val activeNetwork = cm.activeNetwork
         if (activeNetwork != null && isValidPhysicalNetwork(cm, activeNetwork)) {
             return activeNetwork
@@ -448,10 +455,3 @@ class NetworkHelper(
         return null
     }
 }
-
-
-
-
-
-
-

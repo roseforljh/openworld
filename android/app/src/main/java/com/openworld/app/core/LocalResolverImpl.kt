@@ -1,26 +1,18 @@
 package com.openworld.app.core
 
-import android.util.Log
-import com.openworld.app.core.bridge.LocalDNSTransport
+import io.nekohasekai.libbox.ExchangeContext
+import io.nekohasekai.libbox.LocalDNSTransport
 import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
 
-/**
- * OpenWorld 本地 DNS 传输接口
- * 用于处理本地 DNS 查询
- */
 object LocalResolverImpl : LocalDNSTransport {
-    private const val TAG = "LocalResolverImpl"
+    override fun raw(): Boolean {
+        return false
+    }
 
-    /**
-     * 执行 DNS 查询
-     * @param network 网络类型: "ip4", "ip6", "ip"
-     * @param domain 域名
-     * @return 查询结果，包�?IP 地址列表（按换行分隔），失败返回 null
-     */
-    fun lookup(network: String, domain: String): String? {
-        return try {
+    override fun lookup(ctx: ExchangeContext, network: String, domain: String) {
+        try {
             val addresses = InetAddress.getAllByName(domain)
             val result = StringBuilder()
             for (address in addresses) {
@@ -30,32 +22,22 @@ object LocalResolverImpl : LocalDNSTransport {
                 } else if (network == "ip6" && address is Inet6Address) {
                     if (result.isNotEmpty()) result.append("\n")
                     result.append(address.hostAddress)
-                } else if (network == "ip") {
-                    // 返回所有地址
-                    if (result.isNotEmpty()) result.append("\n")
-                    result.append(address.hostAddress)
                 }
             }
-            if (result.isNotEmpty()) {
-                result.toString()
-            } else {
-                null
+            if (result.isEmpty() && addresses.isNotEmpty()) {
+                // No matching IP version found, but domain exists.
+                // Maybe we should return empty success?
+                // Or maybe we don't filter strict if network is just "ip"?
+                // Sing-box usually passes "ip4" or "ip6".
             }
+            ctx.success(result.toString())
         } catch (e: Exception) {
-            Log.w(TAG, "DNS lookup failed for $domain: ${e.message}")
-            null
+            // RCode 3 = NXDOMAIN, 2 = SERVFAIL
+            ctx.errorCode(2)
         }
     }
 
-    /**
-     * 检查是否支持原�?DNS 模式
-     */
-    fun isRawMode(): Boolean = false
+    override fun exchange(ctx: ExchangeContext, message: ByteArray) {
+        // Not used if raw() returns false
+    }
 }
-
-
-
-
-
-
-

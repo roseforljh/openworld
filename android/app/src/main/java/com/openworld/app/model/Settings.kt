@@ -42,12 +42,20 @@ data class AppSettings(
     @SerializedName("appendHttpProxy") val appendHttpProxy: Boolean = false,
 
     // DNS 设置
-    // 完美方案配置 (去大厂版)�?    // Local: 使用 "local" (系统/运营�?DNS)�?    // 原因:
-    // 1. 避开阿里/腾讯等互联网巨头的数据收集�?    // 2. 运营商物理网络本就知晓国内流量去向，使用�?DNS 不增加隐私风险�?    // 3. 拥有最快的解析速度和最准确的国�?CDN 调度�?    @SerializedName("localDns") val localDns: String = "local",
-    // Remote: Cloudflare DoH (IP直连�?，强制走代理�?    // 1. 隐私性极强，不记录日志�?    // 2. 走代理隐藏用户真�?IP�?    @SerializedName("remoteDns") val remoteDns: String = "https://1.1.1.1/dns-query",
+    // 完美方案配置 (去大厂版)：
+    // Local: 使用 "local" (系统/运营商 DNS)。
+    // 原因:
+    // 1. 避开阿里/腾讯等互联网巨头的数据收集。
+    // 2. 运营商物理网络本就知晓国内流量去向，使用其 DNS 不增加隐私风险。
+    // 3. 拥有最快的解析速度和最准确的国内 CDN 调度。
+    @SerializedName("localDns") val localDns: String = "local",
+    // Remote: Cloudflare DoH (IP直连版)，强制走代理。
+    // 1. 隐私性极强，不记录日志。
+    // 2. 走代理隐藏用户真实 IP。
+    @SerializedName("remoteDns") val remoteDns: String = "https://1.1.1.1/dns-query",
     @SerializedName("fakeDnsEnabled") val fakeDnsEnabled: Boolean = false,
     @SerializedName("fakeIpRange") val fakeIpRange: String = "198.18.0.0/15",
-    @SerializedName("fakeIpExcludeDomains") val fakeIpExcludeDomains: String = "", // 用户自定�?Fake IP 排除域名，逗号分隔
+    @SerializedName("fakeIpExcludeDomains") val fakeIpExcludeDomains: String = "", // 用户自定义 Fake IP 排除域名，逗号分隔
     @SerializedName("dnsStrategy") val dnsStrategy: DnsStrategy = DnsStrategy.PREFER_IPV4,
     @SerializedName("remoteDnsStrategy") val remoteDnsStrategy: DnsStrategy = DnsStrategy.AUTO,
     @SerializedName("directDnsStrategy") val directDnsStrategy: DnsStrategy = DnsStrategy.AUTO,
@@ -68,13 +76,15 @@ data class AppSettings(
     // TCP Keepalive 设置 (完美方案 - 防止连接假死)
     // 启用 TCP Keepalive，定期发送心跳包保持连接活跃
     @SerializedName("tcpKeepAliveEnabled") val tcpKeepAliveEnabled: Boolean = true,
-    // TCP Keepalive 间隔时间 (�?，默�?15 �?    @SerializedName("tcpKeepAliveInterval") val tcpKeepAliveInterval: Int = 15,
-    // 连接超时时间 (�?，默�?10 �?    @SerializedName("connectTimeout") val connectTimeout: Int = 10,
+    // TCP Keepalive 间隔时间 (秒)，默认 15 秒
+    @SerializedName("tcpKeepAliveInterval") val tcpKeepAliveInterval: Int = 15,
+    // 连接超时时间 (秒)，默认 10 秒
+    @SerializedName("connectTimeout") val connectTimeout: Int = 10,
 
     // 延迟测试设置
     @SerializedName("latencyTestMethod") val latencyTestMethod: LatencyTestMethod = LatencyTestMethod.REAL_RTT,
     @SerializedName("latencyTestUrl") val latencyTestUrl: String = "https://www.google.com/generate_204",
-    @SerializedName("latencyTestTimeout") val latencyTestTimeout: Int = 5000, // 默认 5000ms (参�?v2rayNG/sing-box 的超时设�?
+    @SerializedName("latencyTestTimeout") val latencyTestTimeout: Int = 5000, // 默认 5000ms (参考 v2rayNG/sing-box 的超时设置)
     @SerializedName("latencyTestConcurrency") val latencyTestConcurrency: Int = 5, // 批量测试并发数，降低默认值保护主连接
 
     // 镜像设置
@@ -86,11 +96,13 @@ data class AppSettings(
     @SerializedName("appRules") val appRules: List<AppRule> = emptyList(),
     @SerializedName("appGroups") val appGroups: List<AppGroup> = emptyList(),
 
-    // 规则集自动更�?    @SerializedName("ruleSetAutoUpdateEnabled") val ruleSetAutoUpdateEnabled: Boolean = false,
+    // 规则集自动更新
+    @SerializedName("ruleSetAutoUpdateEnabled") val ruleSetAutoUpdateEnabled: Boolean = false,
     @SerializedName("ruleSetAutoUpdateInterval") val ruleSetAutoUpdateInterval: Int = 60, // 分钟
 
     // 订阅更新超时设置
-    @SerializedName("subscriptionUpdateTimeout") val subscriptionUpdateTimeout: Int = 30, // 秒，默认30�?
+    @SerializedName("subscriptionUpdateTimeout") val subscriptionUpdateTimeout: Int = 30, // 秒，默认30秒
+
     // 节点列表设置
     @SerializedName("nodeFilter") val nodeFilter: NodeFilter = NodeFilter(),
     @SerializedName("nodeSortType") val nodeSortType: NodeSortType = NodeSortType.DEFAULT,
@@ -245,10 +257,3 @@ enum class BackgroundPowerSavingDelay(val delayMs: Long, @StringRes val displayN
         }
     }
 }
-
-
-
-
-
-
-

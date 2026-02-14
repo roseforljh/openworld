@@ -7,7 +7,7 @@ import com.tencent.mmkv.MMKV
 /**
  * DNS 解析结果存储
  *
- * 使用 MMKV 持久化存储解析后�?IP 地址，支�?TTL 过期机制
+ * 使用 MMKV 持久化存储解析后的 IP 地址，支持 TTL 过期机制
  */
 class DnsResolveStore private constructor() {
 
@@ -35,7 +35,8 @@ class DnsResolveStore private constructor() {
     private val gson = Gson()
 
     /**
-     * 存储的解析条�?     */
+     * 存储的解析条目
+     */
     data class ResolvedEntry(
         val ip: String,
         val resolvedAt: Long,
@@ -51,7 +52,7 @@ class DnsResolveStore private constructor() {
         }
 
         /**
-         * 获取剩余有效时间 (�?
+         * 获取剩余有效时间 (秒)
          */
         fun remainingSeconds(): Long {
             val elapsed = (System.currentTimeMillis() - resolvedAt) / 1000
@@ -93,7 +94,8 @@ class DnsResolveStore private constructor() {
      *
      * @param profileId 配置 ID
      * @param domain 域名
-     * @param allowExpired 是否允许返回过期的结�?     * @return 解析条目，如果不存在或已过期则返�?null
+     * @param allowExpired 是否允许返回过期的结果
+     * @return 解析条目，如果不存在或已过期则返回 null
      */
     fun get(
         profileId: String,
@@ -121,23 +123,25 @@ class DnsResolveStore private constructor() {
     }
 
     /**
-     * 获取解析�?IP 地址
+     * 获取解析的 IP 地址
      *
-     * @return IP 地址，如果不存在或已过期则返�?null
+     * @return IP 地址，如果不存在或已过期则返回 null
      */
     fun getIp(profileId: String, domain: String): String? {
         return get(profileId, domain)?.ip
     }
 
     /**
-     * 删除指定域名的解析结�?     */
+     * 删除指定域名的解析结果
+     */
     fun remove(profileId: String, domain: String) {
         val key = makeKey(profileId, domain)
         mmkv.removeValueForKey(key)
     }
 
     /**
-     * 删除指定配置的所有解析结�?     */
+     * 删除指定配置的所有解析结果
+     */
     fun removeAllForProfile(profileId: String) {
         val prefix = "${profileId}_"
         val keysToRemove = mmkv.allKeys()?.filter { it.startsWith(prefix) } ?: return
@@ -165,7 +169,8 @@ class DnsResolveStore private constructor() {
     }
 
     /**
-     * 获取配置的所有有效解析结�?     */
+     * 获取配置的所有有效解析结果
+     */
     fun getAllForProfile(profileId: String): Map<String, ResolvedEntry> {
         val prefix = "${profileId}_"
         val result = mutableMapOf<String, ResolvedEntry>()
@@ -242,16 +247,10 @@ class DnsResolveStore private constructor() {
     )
 
     /**
-     * 清空所有数�?     */
+     * 清空所有数据
+     */
     fun clear() {
         mmkv.clearAll()
         Log.d(TAG, "Cleared all entries")
     }
 }
-
-
-
-
-
-
-

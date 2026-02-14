@@ -4,10 +4,11 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
-import com.openworld.core.OpenWorldCore
+import io.nekohasekai.libbox.Libbox
 
 /**
- * 版本信息工具�? * 提供获取应用版本号和 sing-box 内核版本号的方法
+ * 版本信息工具类
+ * 提供获取应用版本号和 sing-box 内核版本号的方法
  */
 object VersionInfo {
     private const val TAG = "VersionInfo"
@@ -34,7 +35,7 @@ object VersionInfo {
     }
 
     /**
-     * 获取应用版本�?(versionCode)
+     * 获取应用版本号 (versionCode)
      */
     fun getAppVersionCode(context: Context): Long {
         return try {
@@ -64,21 +65,22 @@ object VersionInfo {
      */
     fun getSingBoxVersion(): String {
         return try {
-            OpenWorldCore.version()
+            Libbox.version()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get sing-box version", e)
             "Unknown"
         } catch (e: NoClassDefFoundError) {
-            Log.e(TAG, "OpenWorldCore class not found", e)
+            Log.e(TAG, "Libbox class not found", e)
             "Not available"
         } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "OpenWorldCore native library not loaded", e)
+            Log.e(TAG, "Libbox native library not loaded", e)
             "Not loaded"
         }
     }
 
     /**
-     * 获取格式化的版本信息字符�?     */
+     * 获取格式化的版本信息字符串
+     */
     fun getFormattedVersionInfo(context: Context): String {
         val appVersion = getAppVersionName(context)
         val appVersionCode = getAppVersionCode(context)
@@ -90,10 +92,3 @@ object VersionInfo {
         }.trimEnd()
     }
 }
-
-
-
-
-
-
-

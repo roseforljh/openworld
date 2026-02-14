@@ -17,8 +17,10 @@ import kotlinx.coroutines.channels.Channel
 import java.lang.ref.WeakReference
 
 /**
- * 网络监听�?- �?Application 启动时开始监听物理网络变�? *
- * 核心优化: 预缓存物理网�? VPN 启动时直接使用已缓存的网�? * 避免 VPN establish 后应用需要重新探测网络导致的二次加载
+ * 网络监听器 - 在 Application 启动时开始监听物理网络变化
+ *
+ * 核心优化: 预缓存物理网络, VPN 启动时直接使用已缓存的网络
+ * 避免 VPN establish 后应用需要重新探测网络导致的二次加载
  */
 object DefaultNetworkListener {
     private const val TAG = "DefaultNetworkListener"
@@ -82,7 +84,8 @@ object DefaultNetworkListener {
         }
     }
 
-    // 缓存的物理网�?- VPN 服务可直接使�?    @Volatile
+    // 缓存的物理网络 - VPN 服务可直接使用
+    @Volatile
     var underlyingNetwork: Network? = null
         private set
 
@@ -132,7 +135,8 @@ object DefaultNetworkListener {
                 return
             }
 
-            // 延迟后再次检查（WiFi -> 移动数据场景�?            mainHandler.postDelayed({
+            // 延迟后再次检查（WiFi -> 移动数据场景）
+            mainHandler.postDelayed({
                 if (underlyingNetwork != null && underlyingNetwork != network) {
                     return@postDelayed
                 }
@@ -165,14 +169,16 @@ object DefaultNetworkListener {
 
     /**
      * 启动网络监听
-     * 应在 Application.onCreate() 中调�?     */
+     * 应在 Application.onCreate() 中调用
+     */
     suspend fun start(connectivityManager: ConnectivityManager, key: Any, listener: (Network?) -> Unit) {
         connectivityManagerRef = WeakReference(connectivityManager)
         networkActor.send(NetworkMessage.Start(key, listener))
     }
 
     /**
-     * 获取当前缓存的网�?     */
+     * 获取当前缓存的网络
+     */
     suspend fun get(): Network? {
         return if (fallback) {
             if (Build.VERSION.SDK_INT >= 23) {
@@ -230,7 +236,9 @@ object DefaultNetworkListener {
     }
 
     /**
-     * 清理资源 - 用于测试或特殊场�?     * 正常使用中无需调用，Application 进程结束时资源自动回�?     */
+     * 清理资源 - 用于测试或特殊场景
+     * 正常使用中无需调用，Application 进程结束时资源自动回收
+     */
     fun cleanup() {
         networkActor.close()
         underlyingNetwork = null
@@ -238,10 +246,3 @@ object DefaultNetworkListener {
         Log.i(TAG, "DefaultNetworkListener cleaned up")
     }
 }
-
-
-
-
-
-
-

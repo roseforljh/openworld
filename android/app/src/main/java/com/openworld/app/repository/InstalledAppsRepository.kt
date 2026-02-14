@@ -12,16 +12,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 
 /**
- * 已安装应用的 Repository，单例模�? * 负责加载和缓存已安装应用列表，提供进度回�? */
+ * 已安装应用的 Repository，单例模式
+ * 负责加载和缓存已安装应用列表，提供进度回调
+ */
 class InstalledAppsRepository private constructor(private val context: Context) {
 
     /**
-     * 加载状�?     */
+     * 加载状态
+     */
     sealed class LoadingState {
         /** 空闲状态，尚未加载 */
         object Idle : LoadingState()
 
-        /** 加载�?*/
+        /** 加载中 */
         data class Loading(
             val progress: Float,
             val current: Int,
@@ -42,12 +45,14 @@ class InstalledAppsRepository private constructor(private val context: Context) 
     val loadingState: StateFlow<LoadingState> = _loadingState.asStateFlow()
 
     /**
-     * 加载已安装应用列�?     * 如果已经加载过或正在加载，则直接返回
+     * 加载已安装应用列表
+     * 如果已经加载过或正在加载，则直接返回
      */
     suspend fun loadApps() {
         // 如果已加载，直接返回
         if (_loadingState.value is LoadingState.Loaded) return
-        // 如果正在加载，直接返�?        if (_loadingState.value is LoadingState.Loading) return
+        // 如果正在加载，直接返回
+        if (_loadingState.value is LoadingState.Loading) return
 
         try {
             withContext(Dispatchers.IO) {
@@ -58,7 +63,8 @@ class InstalledAppsRepository private constructor(private val context: Context) 
                 val total = allApps.size
                 val result = mutableListOf<InstalledApp>()
 
-                // 初始化加载状�?                _loadingState.value = LoadingState.Loading(
+                // 初始化加载状态
+                _loadingState.value = LoadingState.Loading(
                     progress = 0f,
                     current = 0,
                     total = total
@@ -92,7 +98,8 @@ class InstalledAppsRepository private constructor(private val context: Context) 
                     }
                 }
 
-                // 排序并保存结�?                _installedApps.value = result.sortedBy { it.appName.lowercase() }
+                // 排序并保存结果
+                _installedApps.value = result.sortedBy { it.appName.lowercase() }
                 _loadingState.value = LoadingState.Loaded
             }
         } catch (e: Exception) {
@@ -110,7 +117,8 @@ class InstalledAppsRepository private constructor(private val context: Context) 
     }
 
     /**
-     * 检查是否需要加�?     */
+     * 检查是否需要加载
+     */
     fun needsLoading(): Boolean {
         return _loadingState.value is LoadingState.Idle
     }
@@ -135,10 +143,3 @@ class InstalledAppsRepository private constructor(private val context: Context) 
         }
     }
 }
-
-
-
-
-
-
-

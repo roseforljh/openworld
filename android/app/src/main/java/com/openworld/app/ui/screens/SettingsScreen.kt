@@ -90,21 +90,22 @@ fun SettingsScreen(
     var isUpdatingRuleSets by remember { mutableStateOf(false) }
     var updateMessage by remember { mutableStateOf("") }
 
-    // 文件选择�?- 导出
+    // 文件选择器 - 导出
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         uri?.let { viewModel.exportData(it) }
     }
 
-    // 文件选择�?- 导入
+    // 文件选择器 - 导入
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let { viewModel.validateImportFile(it) }
     }
 
-    // 生成导出文件�?    fun generateExportFileName(): String {
+    // 生成导出文件名
+    fun generateExportFileName(): String {
         val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
         return "singbox_backup_${dateFormat.format(Date())}.json"
     }
@@ -136,7 +137,8 @@ fun SettingsScreen(
             onSelect = { index ->
                 viewModel.setAppLanguage(AppLanguage.entries[index])
                 showLanguageDialog = false
-                // 提示用户需要重启应�?                Toast.makeText(
+                // 提示用户需要重启应用
+                Toast.makeText(
                     context,
                     context.getString(R.string.settings_restart_needed),
                     Toast.LENGTH_LONG
@@ -152,7 +154,8 @@ fun SettingsScreen(
         onDismiss = { viewModel.resetExportState() }
     )
 
-    // 导入预览对话�?    if (importState is ImportState.Preview) {
+    // 导入预览对话框
+    if (importState is ImportState.Preview) {
         val previewState = importState as ImportState.Preview
         ImportPreviewDialog(
             summary = previewState.summary,
@@ -163,7 +166,8 @@ fun SettingsScreen(
         )
     }
 
-    // 导入进度/结果对话�?    ImportProgressDialog(
+    // 导入进度/结果对话框
+    ImportProgressDialog(
         state = importState,
         onDismiss = { viewModel.resetImportState() }
     )
@@ -176,7 +180,8 @@ fun SettingsScreen(
     // 导入错误处理（如果在 Preview 之前就出错）
     LaunchedEffect(importState) {
         if (importState is ImportState.Error) {
-            // 错误会在 ImportProgressDialog 中显�?        }
+            // 错误会在 ImportProgressDialog 中显示
+        }
     }
 
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues()
@@ -213,7 +218,7 @@ fun SettingsScreen(
                 onClick = { showLanguageDialog = true }
             )
             SettingSwitchItem(
-                title = "自动检查更�?,
+                title = "自动检查更新",
                 subtitle = "启动应用时自动检查新版本",
                 icon = Icons.Rounded.SystemUpdate,
                 checked = settings.autoCheckUpdate,
@@ -361,7 +366,7 @@ fun SettingsScreen(
         StandardCard {
             SettingItem(
                 title = "流量统计",
-                subtitle = "查看各节点流量使用情�?,
+                subtitle = "查看各节点流量使用情况",
                 icon = Icons.Rounded.Analytics,
                 onClick = { navController.navigate(Screen.TrafficStats.route) }
             )
@@ -409,10 +414,3 @@ fun SettingsGroupTitle(title: String) {
         modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
     )
 }
-
-
-
-
-
-
-

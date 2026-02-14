@@ -5,7 +5,8 @@ import com.openworld.app.repository.SettingsRepository
 
 /**
  * Outbound 运行时修复器
- * 处理各种协议的配置修复和规范�? */
+ * 处理各种协议的配置修复和规范化
+ */
 object OutboundFixer {
 
     // TCP Keepalive 配置缓存
@@ -15,14 +16,15 @@ object OutboundFixer {
 
     /**
      * 获取 TCP Keepalive 配置
-     * �?SettingsRepository 读取并缓�?     */
+     * 从 SettingsRepository 读取并缓存
+     */
     private fun getTcpKeepAliveConfig(context: android.content.Context): Triple<Boolean, String?, String?> {
         // 如果已缓存，直接返回
         if (cachedTcpKeepAliveEnabled != null) {
             return Triple(cachedTcpKeepAliveEnabled!!, cachedTcpKeepAliveInterval, cachedConnectTimeout)
         }
 
-        // �?SettingsRepository 读取
+        // 从 SettingsRepository 读取
         val settings = SettingsRepository.getInstance(context).settings.value
         val enabled = settings.tcpKeepAliveEnabled
         val interval = if (enabled) "${settings.tcpKeepAliveInterval}s" else null
@@ -46,7 +48,8 @@ object OutboundFixer {
         cachedConnectTimeout = null
     }
 
-    // 正则表达式常�?    private val REGEX_INTERVAL_DIGITS = Regex("^\\d+$")
+    // 正则表达式常量
+    private val REGEX_INTERVAL_DIGITS = Regex("^\\d+$")
     private val REGEX_INTERVAL_DECIMAL = Regex("^\\d+\\.\\d+$")
     private val REGEX_INTERVAL_UNIT = Regex("^\\d+(\\.\\d+)?[smhSMH]$")
     private val REGEX_IPV4 = Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")
@@ -55,8 +58,9 @@ object OutboundFixer {
     private val REGEX_ED_PARAM_MID = Regex("&ed=\\d+")
 
     /**
-     * 运行时修�?Outbound 配置
-     * 包括：修�?interval 单位、清�?flow、补�?ALPN、补�?User-Agent、补充缺省�?     */
+     * 运行时修复 Outbound 配置
+     * 包括：修复 interval 单位、清理 flow、补充 ALPN、补充 User-Agent、补充缺省值
+     */
     fun fix(outbound: Outbound): Outbound {
         var result = outbound
 
@@ -176,7 +180,7 @@ object OutboundFixer {
             }
         }
 
-        // 强制清理 VLESS 协议中的 security 字段 (sing-box 不支�?
+        // 强制清理 VLESS 协议中的 security 字段 (sing-box 不支持)
         if (result.type == "vless" && result.security != null) {
             result = result.copy(security = null)
         }
@@ -186,7 +190,7 @@ object OutboundFixer {
             val up = result.upMbps
             val down = result.downMbps
             val defaultMbps = 50
-            // 清理空的 serverPorts 列表，并将短横线端口范围 (40000-50000) 转换�?sing-box 格式 (40000:50000)
+            // 清理空的 serverPorts 列表，并将短横线端口范围 (40000-50000) 转换为 sing-box 格式 (40000:50000)
             val cleanedServerPorts = result.serverPorts
                 ?.filter { it.isNotBlank() }
                 ?.map { convertPortRangeFormat(it) }
@@ -200,11 +204,13 @@ object OutboundFixer {
             )
         }
 
-        // 补齐 VMess packetEncoding 缺省�?        if (result.type == "vmess" && result.packetEncoding.isNullOrBlank()) {
+        // 补齐 VMess packetEncoding 缺省值
+        if (result.type == "vmess" && result.packetEncoding.isNullOrBlank()) {
             result = result.copy(packetEncoding = "xudp")
         }
 
-        // 清理 TLS 配置中的�?ALPN 列表（sing-box 不接受空数组�?        val currentTls = result.tls
+        // 清理 TLS 配置中的空 ALPN 列表（sing-box 不接受空数组）
+        val currentTls = result.tls
         if (currentTls != null && currentTls.alpn?.isEmpty() == true) {
             result = result.copy(tls = currentTls.copy(alpn = null))
         }
@@ -213,8 +219,8 @@ object OutboundFixer {
     }
 
     /**
-     * 构建运行�?Outbound，只保留必要字段
-     * @param context Android Context，用于读�?TCP Keepalive 配置
+     * 构建运行时 Outbound，只保留必要字段
+     * @param context Android Context，用于读取 TCP Keepalive 配置
      */
     @Suppress("LongMethod")
     fun buildForRuntime(context: android.content.Context, outbound: Outbound): Outbound {
@@ -425,8 +431,8 @@ object OutboundFixer {
     }
 
     /**
-     * 将端口范围从短横线格�?(40000-50000) 转换�?sing-box 格式 (40000:50000)
-     * 支持逗号分隔的多个范围，�?"40000-50000,60000-70000"
+     * 将端口范围从短横线格式 (40000-50000) 转换为 sing-box 格式 (40000:50000)
+     * 支持逗号分隔的多个范围，如 "40000-50000,60000-70000"
      */
     private fun convertPortRangeFormat(portSpec: String): String {
         return portSpec.split(",").joinToString(",") { part ->
@@ -439,10 +445,3 @@ object OutboundFixer {
         }
     }
 }
-
-
-
-
-
-
-

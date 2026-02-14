@@ -9,7 +9,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 /**
- * 节点切换管理�? * 负责热切换和下一节点切换逻辑
+ * 节点切换管理器
+ * 负责热切换和下一节点切换逻辑
  */
 class NodeSwitchManager(
     private val context: Context,
@@ -45,7 +46,8 @@ class NodeSwitchManager(
     }
 
     /**
-     * 执行热切�?     */
+     * 执行热切换
+     */
     fun performHotSwitch(
         nodeId: String,
         outboundTag: String?,
@@ -69,7 +71,8 @@ class NodeSwitchManager(
             if (success) {
                 Log.i(TAG, "Hot switch successful for $nodeTag")
                 val displayName = node?.name ?: nodeTag
-                // 2025-fix: 持久�?activeLabel �?VpnStateStore，确保跨进程/重启后通知栏显示正�?                VpnStateStore.setActiveLabel(displayName)
+                // 2025-fix: 持久化 activeLabel 到 VpnStateStore，确保跨进程/重启后通知栏显示正确
+                VpnStateStore.setActiveLabel(displayName)
                 callbacks?.setRealTimeNodeName(displayName)
                 runCatching { configRepository.syncActiveNodeFromProxySelection(displayName) }
                 callbacks?.requestNotificationUpdate(force = false)
@@ -87,7 +90,9 @@ class NodeSwitchManager(
     }
 
     /**
-     * 切换到下一个节�?     * 优化：直接使用内存中的节点列表，先执行切换再异步更新状�?     */
+     * 切换到下一个节点
+     * 优化：直接使用内存中的节点列表，先执行切换再异步更新状态
+     */
     fun switchNextNode(
         serviceClass: Class<*>,
         actionStart: String,
@@ -98,7 +103,8 @@ class NodeSwitchManager(
             return
         }
 
-        // 防抖检查：如果正在切换中或距离上次切换时间太短，忽略请�?        val now = System.currentTimeMillis()
+        // 防抖检查：如果正在切换中或距离上次切换时间太短，忽略请求
+        val now = System.currentTimeMillis()
         if (isSwitching) {
             Log.d(TAG, "switchNextNode: already switching, ignored")
             return
@@ -130,11 +136,13 @@ class NodeSwitchManager(
             try {
                 val success = callbacks?.hotSwitchNode(nextNode.name) == true
                 if (success) {
-                    // 2025-fix: 持久�?activeLabel �?VpnStateStore，确保跨进程/重启后通知栏显示正�?                    VpnStateStore.setActiveLabel(nextNode.name)
+                    // 2025-fix: 持久化 activeLabel 到 VpnStateStore，确保跨进程/重启后通知栏显示正确
+                    VpnStateStore.setActiveLabel(nextNode.name)
                     callbacks?.setRealTimeNodeName(nextNode.name)
                     callbacks?.requestNotificationUpdate(force = true)
                     callbacks?.notifyRemoteStateUpdate(force = true)
-                    // 异步更新持久化状态，不阻塞切�?                    runCatching {
+                    // 异步更新持久化状态，不阻塞切换
+                    runCatching {
                         configRepository.setActiveNodeIdOnly(nextNode.id)
                         configRepository.syncActiveNodeFromProxySelection(nextNode.name)
                     }
@@ -158,10 +166,3 @@ class NodeSwitchManager(
         callbacks = null
     }
 }
-
-
-
-
-
-
-

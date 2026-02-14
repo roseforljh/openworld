@@ -3,15 +3,17 @@ package com.openworld.app.service.manager
 import android.content.Context
 import android.os.SystemClock
 import com.google.gson.Gson
-import com.openworld.app.core.OpenWorldCore
-import com.openworld.app.core.bridge.CommandClient
-import com.openworld.app.model.OpenWorldConfig
+import com.openworld.app.core.SingBoxCore
+import com.openworld.app.model.SingBoxConfig
+import io.nekohasekai.libbox.CommandClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Semaphore
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 路由组自动选择管理�? * 负责定期为路由规则使用的 Selector 选择最低延迟节�? */
+ * 路由组自动选择管理器
+ * 负责定期为路由规则使用的 Selector 选择最低延迟节点
+ */
 class RouteGroupSelector(
     private val context: Context,
     private val serviceScope: CoroutineScope
@@ -66,9 +68,10 @@ class RouteGroupSelector(
     }
 
     /**
-     * 为路由规则引用的 Selector 选择最低延迟节�?     */
+     * 为路由规则引用的 Selector 选择最低延迟节点
+     */
     private suspend fun selectBestForRouteGroups(configContent: String) {
-        val cfg = runCatching { gson.fromJson(configContent, OpenWorldConfig::class.java) }.getOrNull() ?: return
+        val cfg = runCatching { gson.fromJson(configContent, SingBoxConfig::class.java) }.getOrNull() ?: return
         val routeRules = cfg.route?.rules.orEmpty()
         val referencedOutbounds = routeRules.mapNotNull { it.outbound }.toSet()
 
@@ -86,7 +89,7 @@ class RouteGroupSelector(
         if (targetSelectors.isEmpty()) return
 
         val client = waitForCommandClient(LATENCY_TEST_TIMEOUT_MS) ?: return
-        val core = OpenWorldCore.getInstance(context)
+        val core = SingBoxCore.getInstance(context)
         val semaphore = Semaphore(permits = MAX_CONCURRENT_TESTS)
 
         for (selector in targetSelectors) {
@@ -152,10 +155,3 @@ class RouteGroupSelector(
         callbacks = null
     }
 }
-
-
-
-
-
-
-

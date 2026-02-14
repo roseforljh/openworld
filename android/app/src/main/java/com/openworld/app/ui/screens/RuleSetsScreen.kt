@@ -715,7 +715,7 @@ fun RuleSetItem(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
-                        // 状态标�?- 绿色
+                        // 状态标签 - 绿色
                         Surface(
                             color = Color(0xFF2E7D32).copy(alpha = 0.8f),
                             shape = RoundedCornerShape(4.dp)
@@ -755,7 +755,8 @@ fun RuleSetItem(
                     val inbounds = ruleSet.inbounds ?: emptyList()
                     val inboundText = if (inbounds.isEmpty()) stringResource(R.string.common_all) else inbounds.joinToString(",")
                     Surface(
-                        color = Color(0xFFFF8F00).copy(alpha = 0.8f), // 琥珀�?                        shape = RoundedCornerShape(4.dp)
+                        color = Color(0xFFFF8F00).copy(alpha = 0.8f), // 琥珀色
+                        shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
                             text = inboundText,
@@ -767,7 +768,7 @@ fun RuleSetItem(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "${stringResource(ruleSet.type.displayNameRes)} �?${ruleSet.format}",
+                    text = "${stringResource(ruleSet.type.displayNameRes)} • ${ruleSet.format}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1069,10 +1070,3 @@ fun DefaultRuleSetProgressDialog(
         }
     )
 }
-
-
-
-
-
-
-

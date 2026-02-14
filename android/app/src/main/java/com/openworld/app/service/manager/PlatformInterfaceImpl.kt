@@ -12,15 +12,12 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.system.OsConstants
 import android.util.Log
-import com.openworld.app.core.bridge.InterfaceUpdateListener
-import com.openworld.app.core.bridge.NetworkInterfaceIterator
-import com.openworld.app.core.bridge.PlatformInterface
-import com.openworld.app.core.bridge.StringIterator
-import com.openworld.app.core.bridge.TunOptions
-import com.openworld.app.core.bridge.WIFIState
-import com.openworld.app.core.bridge.NetworkInterface as CoreNetworkInterface
-import com.openworld.app.core.bridge.LocalDNSTransport
-import com.openworld.app.core.bridge.Notification
+import io.nekohasekai.libbox.InterfaceUpdateListener
+import io.nekohasekai.libbox.NetworkInterfaceIterator
+import io.nekohasekai.libbox.PlatformInterface
+import io.nekohasekai.libbox.StringIterator
+import io.nekohasekai.libbox.TunOptions
+import io.nekohasekai.libbox.WIFIState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -32,7 +29,8 @@ import java.net.NetworkInterface
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * PlatformInterface 实现，从 OpenWorldService 中提�? * 处理 libbox 平台回调：TUN 设备、网络接口、连接所有者查询等
+ * PlatformInterface 实现，从 SingBoxService 中提取
+ * 处理 libbox 平台回调：TUN 设备、网络接口、连接所有者查询等
  */
 class PlatformInterfaceImpl(
     private val context: Context,
@@ -46,7 +44,8 @@ class PlatformInterfaceImpl(
         private const val NETWORK_SWITCH_DELAY_MS = 2000L
     }
 
-    // 网络切换管理�?    private val networkSwitchManager: NetworkSwitchManager by lazy {
+    // 网络切换管理器
+    private val networkSwitchManager: NetworkSwitchManager by lazy {
         NetworkSwitchManager(serviceScope, mainHandler).apply {
             init(networkSwitchCallbacks)
         }
@@ -78,14 +77,15 @@ class PlatformInterfaceImpl(
     }
 
     /**
-     * 回调接口，由 OpenWorldService 实现
+     * 回调接口，由 SingBoxService 实现
      */
     interface Callbacks {
         // VPN 操作
         fun protect(fd: Int): Boolean
         fun openTun(options: TunOptions): Result<Int>
 
-        // 网络状�?        fun getConnectivityManager(): ConnectivityManager?
+        // 网络状态
+        fun getConnectivityManager(): ConnectivityManager?
         fun getCurrentNetwork(): Network?
         fun getLastKnownNetwork(): Network?
         fun setLastKnownNetwork(network: Network?)
@@ -96,7 +96,8 @@ class PlatformInterfaceImpl(
         fun resetConnectionsOptimal(reason: String, skipDebounce: Boolean)
         fun setUnderlyingNetworks(networks: Array<Network>?)
 
-        // 状态查�?        fun isRunning(): Boolean
+        // 状态查询
+        fun isRunning(): Boolean
         fun isStarting(): Boolean
         fun isManuallyStopped(): Boolean
         fun getLastConfigPath(): String?
@@ -121,22 +122,25 @@ class PlatformInterfaceImpl(
         fun findBestPhysicalNetwork(): Network?
     }
 
-    // 网络监听状�?    private var connectivityManager: ConnectivityManager? = null
+    // 网络监听状态
+    private var connectivityManager: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var vpnNetworkCallback: ConnectivityManager.NetworkCallback? = null
     private var currentInterfaceListener: InterfaceUpdateListener? = null
     private var networkCallbackReady = false
     private var defaultInterfaceName = ""
 
-    // VPN 健康检�?    private var vpnHealthJob: Job? = null
+    // VPN 健康检查
+    private var vpnHealthJob: Job? = null
     private var postTunRebindJob: Job? = null
     private var vpnLinkValidated = false
 
-    // 避免在弱�?门户�?ROM异常场景下频繁触�?健康恢复"导致网络抖动
+    // 避免在弱网/门户网/ROM异常场景下频繁触发"健康恢复"导致网络抖动
     private val lastVpnHealthRecoveryAtMs = AtomicLong(0L)
     private val vpnHealthRecoveryMinIntervalMs: Long = 30_000L
 
-    // 时间�?    private val vpnStartedAtMs = AtomicLong(0L)
+    // 时间戳
+    private val vpnStartedAtMs = AtomicLong(0L)
     private val lastSetUnderlyingNetworksAtMs = AtomicLong(0L)
 
     // ProcFS readability cache (avoid repeated /proc reads)
@@ -144,7 +148,7 @@ class PlatformInterfaceImpl(
     @Volatile private var cachedProcFsReadable: Boolean? = null
     private val procFsCheckIntervalMs: Long = 5 * 60_000L
 
-    override fun localDNSTransport(): LocalDNSTransport {
+    override fun localDNSTransport(): io.nekohasekai.libbox.LocalDNSTransport {
         return com.openworld.app.core.LocalResolverImpl
     }
 
@@ -163,7 +167,7 @@ class PlatformInterfaceImpl(
         if (options == null) return -1
 
         try {
-            // 检�?VPN lockdown
+            // 检查 VPN lockdown
             val alwaysOnPkg = runCatching {
                 Settings.Secure.getString(context.contentResolver, "always_on_vpn_app")
             }.getOrNull() ?: runCatching {
@@ -182,7 +186,7 @@ class PlatformInterfaceImpl(
                 throw IllegalStateException("VPN lockdown enabled by $alwaysOnPkg")
             }
 
-            // 委托�?Callbacks
+            // 委托给 Callbacks
             val result = callbacks.openTun(options)
 
             return result.getOrElse { e ->
@@ -446,7 +450,8 @@ class PlatformInterfaceImpl(
 
         connectivityManager = callbacks.getConnectivityManager()
 
-        // 使用 Application 层预缓存的网�?        var initialNetwork: Network? = com.openworld.app.utils.DefaultNetworkListener.underlyingNetwork
+        // 使用 Application 层预缓存的网络
+        var initialNetwork: Network? = com.openworld.app.utils.DefaultNetworkListener.underlyingNetwork
 
         // 如果预缓存不可用，尝试使用之前保存的 lastKnownNetwork
         if (initialNetwork == null) {
@@ -462,7 +467,7 @@ class PlatformInterfaceImpl(
             }
         }
 
-        // 最后尝�?activeNetwork
+        // 最后尝试 activeNetwork
         if (initialNetwork == null) {
             val activeNet = connectivityManager?.activeNetwork
             if (activeNet != null) {
@@ -495,7 +500,7 @@ class PlatformInterfaceImpl(
             Log.w(TAG, "startDefaultInterfaceMonitor: no usable physical network found at startup")
         }
 
-        // �?NetworkCallback 注册延迟�?cgo callback 返回之后
+        // 将 NetworkCallback 注册延迟到 cgo callback 返回之后
         mainHandler.post {
             registerNetworkCallbacksDeferred()
         }
@@ -678,9 +683,9 @@ class PlatformInterfaceImpl(
 
                 override fun hasNext(): Boolean = iterator.hasNext()
 
-                override fun next(): CoreNetworkInterface {
+                override fun next(): io.nekohasekai.libbox.NetworkInterface {
                     val iface = iterator.next()
-                    return CoreNetworkInterface().apply {
+                    return io.nekohasekai.libbox.NetworkInterface().apply {
                         name = iface.name
                         index = iface.index
                         mtu = iface.mtu
@@ -718,7 +723,7 @@ class PlatformInterfaceImpl(
 
     override fun clearDNSCache() {}
 
-    override fun sendNotification(notification: Notification?) {}
+    override fun sendNotification(notification: io.nekohasekai.libbox.Notification?) {}
 
     override fun systemCertificates(): StringIterator? = null
 
@@ -730,7 +735,7 @@ class PlatformInterfaceImpl(
     // ========== 内部方法 ==========
 
     private fun updateDefaultInterface(network: Network) {
-        // 委托�?NetworkSwitchManager 处理
+        // 委托给 NetworkSwitchManager 处理
         networkSwitchManager.handleNetworkUpdate(network)
     }
 
@@ -741,10 +746,3 @@ class PlatformInterfaceImpl(
         override fun len(): Int = list.size
     }
 }
-
-
-
-
-
-
-

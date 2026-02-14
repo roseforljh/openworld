@@ -311,10 +311,3 @@ fun CustomRuleEditorDialog(
         }
     )
 }
-
-
-
-
-
-
-

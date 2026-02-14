@@ -3,7 +3,7 @@ package com.openworld.app.repository
 import android.content.Context
 import android.util.Log
 import com.openworld.app.R
-import com.openworld.app.core.OpenWorldCore
+import com.openworld.app.core.SingBoxCore
 import com.openworld.app.model.Outbound
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -11,7 +11,7 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 延迟测试�?- 负责节点延迟测试
+ * 延迟测试器 - 负责节点延迟测试
  *
  * 功能:
  * - 单节点延迟测试（带去重）
@@ -20,20 +20,22 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class LatencyTester(
     private val context: Context,
-    private val singBoxCore: OpenWorldCore
+    private val singBoxCore: SingBoxCore
 ) {
     companion object {
         private const val TAG = "LatencyTester"
     }
 
-    // 正在进行的延迟测试（用于去重�?    private val inFlightTests = ConcurrentHashMap<String, CompletableDeferred<Long>>()
+    // 正在进行的延迟测试（用于去重）
+    private val inFlightTests = ConcurrentHashMap<String, CompletableDeferred<Long>>()
 
     /**
-     * 测试单个节点的延�?     *
+     * 测试单个节点的延迟
+     *
      * @param nodeId 节点 ID
      * @param outbound 节点出站配置
-     * @param onResult 结果回调（用于更�?UI 状态）
-     * @return 延迟时间（毫秒）�?1 表示测试失败
+     * @param onResult 结果回调（用于更新 UI 状态）
+     * @return 延迟时间（毫秒），-1 表示测试失败
      */
     suspend fun testNode(
         nodeId: String,
@@ -122,15 +124,9 @@ class LatencyTester(
     }
 
     /**
-     * 获取正在测试的节点数�?     */
+     * 获取正在测试的节点数量
+     */
     fun getActiveTestCount(): Int {
         return inFlightTests.size
     }
 }
-
-
-
-
-
-
-

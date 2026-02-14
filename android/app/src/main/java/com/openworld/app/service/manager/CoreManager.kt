@@ -8,27 +8,28 @@ import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.net.wifi.WifiManager
 import android.util.Log
-import com.openworld.app.core.OpenWorldCore
+import com.openworld.app.core.SingBoxCore
 import com.openworld.app.core.BoxWrapperManager
 import com.openworld.app.core.SelectorManager
 import com.openworld.app.model.AppSettings
 import com.openworld.app.repository.SettingsRepository
 import com.openworld.app.service.tun.VpnTunManager
 import com.openworld.app.utils.perf.PerfTracer
-import com.openworld.app.core.bridge.CommandClient
-import com.openworld.app.core.bridge.CommandServer
-import com.openworld.app.core.bridge.Libbox
-import com.openworld.app.core.bridge.BoxService
-import com.openworld.app.core.bridge.PlatformInterface
-import com.openworld.app.core.bridge.TunOptions
+import io.nekohasekai.libbox.CommandClient
+import io.nekohasekai.libbox.CommandServer
+import io.nekohasekai.libbox.Libbox
+import io.nekohasekai.libbox.BoxService
+import io.nekohasekai.libbox.PlatformInterface
+import io.nekohasekai.libbox.TunOptions
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import java.io.File
 
 /**
- * 核心管理�?(重构�?
- * 负责完整�?VPN 生命周期管理
- * 使用 Result<T> 返回值模�? *
+ * 核心管理器 (重构版)
+ * 负责完整的 VPN 生命周期管理
+ * 使用 Result<T> 返回值模式
+ *
  * v1.12.20 libbox API:
  * - BoxService 通过 Libbox.newService(configContent, platformInterface) 创建
  * - BoxService.start() 启动服务
@@ -47,7 +48,7 @@ class CoreManager(
     private val tunManager = VpnTunManager(context, vpnService)
     private val settingsRepository by lazy { SettingsRepository.getInstance(context) }
 
-    // ===== 核心状�?=====
+    // ===== 核心状态 =====
     @Volatile var commandServer: CommandServer? = null
         private set
 
@@ -112,7 +113,7 @@ class CoreManager(
     }
 
     /**
-     * 预分�?TUN Builder
+     * 预分配 TUN Builder
      */
     fun preallocateTunBuilder(): Result<Unit> {
         return runCatching {
@@ -142,7 +143,7 @@ class CoreManager(
     }
 
     /**
-     * 获取 WakeLock �?WifiLock
+     * 获取 WakeLock 和 WifiLock
      */
     fun acquireLocks(): Result<Unit> {
         return runCatching {
@@ -177,7 +178,7 @@ class CoreManager(
     }
 
     /**
-     * 释放 WakeLock �?WifiLock
+     * 释放 WakeLock 和 WifiLock
      */
     fun releaseLocks(): Result<Unit> {
         return runCatching {
@@ -217,7 +218,7 @@ class CoreManager(
     }
 
     /**
-     * 清理 cache.db (跨配置切�?
+     * 清理 cache.db (跨配置切换)
      */
     fun cleanCacheDb(): Result<Boolean> {
         return runCatching {
@@ -234,7 +235,7 @@ class CoreManager(
     }
 
     /**
-     * 设置 CommandServer (�?CommandManager 传入)
+     * 设置 CommandServer (从 CommandManager 传入)
      */
     fun setCommandServer(server: CommandServer?) {
         commandServer = server
@@ -260,7 +261,7 @@ class CoreManager(
                 ?: throw IllegalStateException("PlatformInterface not initialized")
 
             logRepo.addLog("INFO [Startup] [STEP] startLibbox: ensureLibboxSetup...")
-            OpenWorldCore.ensureLibboxSetup(context)
+            SingBoxCore.ensureLibboxSetup(context)
 
             logRepo.addLog("INFO [Startup] [STEP] startLibbox: creating BoxService...")
             val serviceStartTime = android.os.SystemClock.elapsedRealtime()
@@ -299,7 +300,7 @@ class CoreManager(
     }
 
     /**
-     * 停止服务 (保留 TUN 用于跨配置切�?
+     * 停止服务 (保留 TUN 用于跨配置切换)
      * v1.12.20: 使用 BoxService.close() 替代 CommandServer.closeService()
      */
     suspend fun stopService(): Result<Unit> {
@@ -308,7 +309,8 @@ class CoreManager(
                 // 释放 BoxWrapperManager
                 BoxWrapperManager.release()
 
-                // 清除 SelectorManager 状�?                SelectorManager.clear()
+                // 清除 SelectorManager 状态
+                SelectorManager.clear()
 
                 // v1.12.20: 关闭 BoxService
                 boxService?.close()
@@ -342,9 +344,11 @@ class CoreManager(
                     vpnInterface = null
                 }
 
-                // 3. 清理 TUN 管理�?                tunManager.cleanup()
+                // 3. 清理 TUN 管理器
+                tunManager.cleanup()
 
-                // 4. 释放�?                releaseLocks()
+                // 4. 释放锁
+                releaseLocks()
 
                 currentSettings = null
                 Log.i(TAG, "VPN fully stopped")
@@ -356,12 +360,13 @@ class CoreManager(
     }
 
     /**
-     * 停止 (兼容�?API)
+     * 停止 (兼容旧 API)
      */
     suspend fun stop(): Result<Unit> = stopFully()
 
     /**
-     * 设置底层网络（统一方法�?     * 修复：复�?TUN 时也必须刷新 underlying networks
+     * 设置底层网络（统一方法）
+     * 修复：复用 TUN 时也必须刷新 underlying networks
      * 解决 ACTION_PREPARE_RESTART -> setUnderlyingNetworks(null) 后无法自动恢复的问题
      */
     private fun applyUnderlyingNetworkIfPossible(underlyingNetwork: Network?, reason: String) {
@@ -395,7 +400,8 @@ class CoreManager(
                     val existingFd = existing.fd
                     if (existingFd >= 0) {
                         // FIX: 即使复用 TUN，也必须刷新 underlying networks
-                        // 修复跨配置切换时 underlying networks 停留�?null 导致网络丢失的问�?                        applyUnderlyingNetworkIfPossible(underlyingNetwork, reason = "reuse_tun")
+                        // 修复跨配置切换时 underlying networks 停留在 null 导致网络丢失的问题
+                        applyUnderlyingNetworkIfPossible(underlyingNetwork, reason = "reuse_tun")
 
                         Log.i(TAG, "Reusing existing TUN interface (fd=$existingFd)")
                         return@runCatching existingFd
@@ -406,7 +412,7 @@ class CoreManager(
                 }
             }
 
-            // 2. 创建�?TUN 接口
+            // 2. 创建新 TUN 接口
             PerfTracer.begin(PerfTracer.Phases.TUN_CREATE)
 
             val builder = tunManager.consumePreallocatedBuilder()
@@ -414,7 +420,7 @@ class CoreManager(
 
             tunManager.configureBuilder(builder, options, currentSettings)
 
-            // 3. 建立 TUN 接口 (带重�?
+            // 3. 建立 TUN 接口 (带重试)
             val pfd = tunManager.establishWithRetry(builder) { isStopping }
                 ?: throw IllegalStateException("Failed to establish TUN interface")
 
@@ -452,7 +458,7 @@ class CoreManager(
 
     fun setVpnInterface(pfd: ParcelFileDescriptor?) { vpnInterface = pfd }
 
-    // v1.12.20: 检�?boxService 是否存在
+    // v1.12.20: 检查 boxService 是否存在
     fun isServiceRunning(): Boolean = boxService != null
 
     fun isVpnInterfaceValid(): Boolean = vpnInterface?.fileDescriptor?.valid() == true
@@ -479,7 +485,8 @@ class CoreManager(
 
     /**
      * Hot reload config without destroying VPN service
-     * v1.12.20: 需要关闭旧 BoxService 并创建新�?     * Returns true if hot reload succeeded, false if fallback to full restart is needed
+     * v1.12.20: 需要关闭旧 BoxService 并创建新的
+     * Returns true if hot reload succeeded, false if fallback to full restart is needed
      */
     @Suppress("UNUSED_PARAMETER")
     suspend fun hotReloadConfig(configContent: String, preserveSelector: Boolean = true): Result<Boolean> {
@@ -490,7 +497,8 @@ class CoreManager(
 
                 Log.i(TAG, "Attempting hot reload...")
 
-                // v1.12.20: 关闭旧服务，创建新服�?                boxService?.close()
+                // v1.12.20: 关闭旧服务，创建新服务
+                boxService?.close()
 
                 val newService = Libbox.newService(configContent, pi)
                 newService.start()
@@ -514,10 +522,3 @@ class CoreManager(
         }
     }
 }
-
-
-
-
-
-
-

@@ -3,8 +3,10 @@ package com.openworld.app.repository.store
 import com.openworld.app.model.*
 
 /**
- * SettingsStore 扩展方法 - 提供类型安全的设置更�? *
- * 使用示例�? * ```
+ * SettingsStore 扩展方法 - 提供类型安全的设置更新
+ *
+ * 使用示例：
+ * ```
  * settingsStore.setAutoConnect(true)
  * settingsStore.setTunStack(TunStack.MIXED)
  * settingsStore.setRuleSets(newRuleSets)
@@ -209,7 +211,7 @@ fun SettingsStore.setAppGroups(value: List<AppGroup>) {
     updateSettings { it.copy(appGroups = value) }
 }
 
-// ==================== 规则集自动更�?====================
+// ==================== 规则集自动更新 ====================
 
 fun SettingsStore.setRuleSetAutoUpdateEnabled(value: Boolean) {
     updateSettings { it.copy(ruleSetAutoUpdateEnabled = value) }
@@ -244,10 +246,3 @@ fun SettingsStore.setCustomNodeOrder(value: List<String>) {
 fun SettingsStore.setAutoCheckUpdate(value: Boolean) {
     updateSettings { it.copy(autoCheckUpdate = value) }
 }
-
-
-
-
-
-
-

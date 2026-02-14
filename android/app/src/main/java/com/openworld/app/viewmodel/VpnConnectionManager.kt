@@ -8,14 +8,14 @@ import android.net.VpnService
 import android.os.Build
 import android.util.Log
 import com.openworld.app.R
-import com.openworld.app.ipc.OpenWorldRemote
+import com.openworld.app.ipc.SingBoxRemote
 import com.openworld.app.ipc.VpnStateStore
 import com.openworld.app.model.ConnectionState
 import com.openworld.app.repository.ConfigRepository
 import com.openworld.app.repository.SettingsRepository
 import com.openworld.app.service.ProxyOnlyService
 import com.openworld.app.service.ServiceState
-import com.openworld.app.service.OpenWorldService
+import com.openworld.app.service.SingBoxService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -30,8 +30,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
 /**
- * VPN 连接管理�? *
- * 负责 VPN 的启动、停止和状态管�? */
+ * VPN 连接管理器
+ *
+ * 负责 VPN 的启动、停止和状态管理
+ */
 class VpnConnectionManager(
     private val context: Context,
     private val scope: CoroutineScope,
@@ -63,12 +65,13 @@ class VpnConnectionManager(
     }
 
     /**
-     * 切换连接状�?     *
-     * @return 是否需�?VPN 权限
+     * 切换连接状态
+     *
+     * @return 是否需要 VPN 权限
      */
     suspend fun toggleConnection(): Boolean {
         return when {
-            OpenWorldRemote.isRunning.value || OpenWorldRemote.isStarting.value -> {
+            SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value -> {
                 stopVpn()
                 false
             }
@@ -90,7 +93,7 @@ class VpnConnectionManager(
      * 重启 VPN
      */
     suspend fun restartVpn() {
-        if (!OpenWorldRemote.isRunning.value && !OpenWorldRemote.isStarting.value) {
+        if (!SingBoxRemote.isRunning.value && !SingBoxRemote.isStarting.value) {
             return
         }
 
@@ -99,7 +102,7 @@ class VpnConnectionManager(
 
         try {
             withTimeout(5000L) {
-                OpenWorldRemote.state.drop(1)
+                SingBoxRemote.state.drop(1)
                     .first { it == ServiceState.STOPPED }
             }
         } catch (@Suppress("SwallowedException") e: TimeoutCancellationException) {
@@ -126,8 +129,8 @@ class VpnConnectionManager(
             VpnStateStore.CoreMode.PROXY -> Intent(context, ProxyOnlyService::class.java).apply {
                 action = ProxyOnlyService.ACTION_STOP
             }
-            else -> Intent(context, OpenWorldService::class.java).apply {
-                action = OpenWorldService.ACTION_STOP
+            else -> Intent(context, SingBoxService::class.java).apply {
+                action = SingBoxService.ACTION_STOP
             }
         }
         context.startService(intent)
@@ -193,18 +196,18 @@ class VpnConnectionManager(
             }
             VpnStateStore.CoreMode.PROXY -> {
                 runCatching {
-                    context.startService(Intent(context, OpenWorldService::class.java).apply {
-                        action = OpenWorldService.ACTION_STOP
+                    context.startService(Intent(context, SingBoxService::class.java).apply {
+                        action = SingBoxService.ACTION_STOP
                     })
                 }
             }
             else -> return
         }
 
-        if (OpenWorldRemote.isRunning.value || OpenWorldRemote.isStarting.value) {
+        if (SingBoxRemote.isRunning.value || SingBoxRemote.isStarting.value) {
             try {
                 withTimeout(3000L) {
-                    OpenWorldRemote.state.drop(1)
+                    SingBoxRemote.state.drop(1)
                         .first { it == ServiceState.STOPPED }
                 }
             } catch (@Suppress("SwallowedException") e: TimeoutCancellationException) {
@@ -217,16 +220,16 @@ class VpnConnectionManager(
     private fun startService(mode: VpnStateStore.CoreMode, configPath: String) {
         val useTun = mode == VpnStateStore.CoreMode.VPN
         val intent = if (useTun) {
-            Intent(context, OpenWorldService::class.java).apply {
-                action = OpenWorldService.ACTION_START
-                putExtra(OpenWorldService.EXTRA_CONFIG_PATH, configPath)
-                putExtra(OpenWorldService.EXTRA_CLEAN_CACHE, true)
+            Intent(context, SingBoxService::class.java).apply {
+                action = SingBoxService.ACTION_START
+                putExtra(SingBoxService.EXTRA_CONFIG_PATH, configPath)
+                putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
             }
         } else {
             Intent(context, ProxyOnlyService::class.java).apply {
                 action = ProxyOnlyService.ACTION_START
                 putExtra(ProxyOnlyService.EXTRA_CONFIG_PATH, configPath)
-                putExtra(OpenWorldService.EXTRA_CLEAN_CACHE, true)
+                putExtra(SingBoxService.EXTRA_CLEAN_CACHE, true)
             }
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -245,12 +248,12 @@ class VpnConnectionManager(
             var showedStartingHint = false
 
             while (true) {
-                if (OpenWorldRemote.isRunning.value) {
+                if (SingBoxRemote.isRunning.value) {
                     callback?.onConnectionStateChange(ConnectionState.Connected)
                     return@launch
                 }
 
-                val err = OpenWorldRemote.lastError.value
+                val err = SingBoxRemote.lastError.value
                 if (!err.isNullOrBlank()) {
                     callback?.onConnectionStateChange(ConnectionState.Error)
                     callback?.onStatusMessage(err, 3000)
@@ -302,10 +305,3 @@ class VpnConnectionManager(
         callback = null
     }
 }
-
-
-
-
-
-
-

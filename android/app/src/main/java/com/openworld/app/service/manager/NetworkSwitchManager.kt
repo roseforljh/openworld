@@ -17,9 +17,11 @@ import java.util.concurrent.atomic.AtomicReference
  * 解决 WiFi <-> Cellular 切换时的连接问题
  *
  * 主要修复:
- * 1. 启动窗口期优�?- 缩短窗口期并延迟处理而非忽略
- * 2. 网络类型变化检�?- 检�?WiFi/Cellular 类型变化
- * 3. 事件聚合 - 防止快速切换产生多个事�? * 4. 健康检�?- 验证新网络是否真正可�? */
+ * 1. 启动窗口期优化 - 缩短窗口期并延迟处理而非忽略
+ * 2. 网络类型变化检测 - 检测 WiFi/Cellular 类型变化
+ * 3. 事件聚合 - 防止快速切换产生多个事件
+ * 4. 健康检查 - 验证新网络是否真正可用
+ */
 class NetworkSwitchManager(
     private val scope: CoroutineScope,
     private val mainHandler: Handler
@@ -28,9 +30,10 @@ class NetworkSwitchManager(
         private const val TAG = "NetworkSwitchManager"
 
         // 配置参数
-        private const val STARTUP_WINDOW_MS = 1000L // 启动窗口�?(�?3000ms 缩短)
+        private const val STARTUP_WINDOW_MS = 1000L // 启动窗口期 (从 3000ms 缩短)
         private const val EVENT_AGGREGATION_MS = 300L // 事件聚合时间
-        private const val MIN_SWITCH_INTERVAL_MS = 500L // 最小切换间�?    }
+        private const val MIN_SWITCH_INTERVAL_MS = 500L // 最小切换间隔
+    }
 
     // 回调接口
     interface Callbacks {
@@ -45,7 +48,8 @@ class NetworkSwitchManager(
 
     private var callbacks: Callbacks? = null
 
-    // 状�?    private val vpnStartedAtMs = AtomicLong(0L)
+    // 状态
+    private val vpnStartedAtMs = AtomicLong(0L)
     private val lastSwitchAtMs = AtomicLong(0L)
     private val lastNetworkType = AtomicReference(NetworkType.OTHER)
     private val pendingNetworkUpdate = AtomicReference<Network?>(null)
@@ -88,7 +92,8 @@ class NetworkSwitchManager(
             return
         }
 
-        // 检查最小切换间�?        val lastSwitch = lastSwitchAtMs.get()
+        // 检查最小切换间隔
+        val lastSwitch = lastSwitchAtMs.get()
         val timeSinceLastSwitch = now - lastSwitch
         if (timeSinceLastSwitch < MIN_SWITCH_INTERVAL_MS) {
             Log.d(TAG, "Network update too fast, aggregating...")
@@ -151,7 +156,8 @@ class NetworkSwitchManager(
         lastSwitchAtMs.set(now)
         switchCount.incrementAndGet()
 
-        // 检测网络类型变�?        val currentType = detectNetworkType(caps)
+        // 检测网络类型变化
+        val currentType = detectNetworkType(caps)
         val previousType = lastNetworkType.getAndSet(currentType)
         val typeChanged = currentType != previousType && previousType != NetworkType.OTHER
 
@@ -194,7 +200,8 @@ class NetworkSwitchManager(
     }
 
     /**
-     * 检测网络类�?     */
+     * 检测网络类型
+     */
     private fun detectNetworkType(caps: NetworkCapabilities?): NetworkType {
         if (caps == null) return NetworkType.OTHER
         return when {
@@ -206,7 +213,8 @@ class NetworkSwitchManager(
     }
 
     /**
-     * 执行健康检�?     */
+     * 执行健康检查
+     */
     @Suppress("CognitiveComplexMethod")
     private fun performHealthCheck(network: Network) {
         healthCheckJob?.cancel()
@@ -287,10 +295,3 @@ class NetworkSwitchManager(
         callbacks = null
     }
 }
-
-
-
-
-
-
-

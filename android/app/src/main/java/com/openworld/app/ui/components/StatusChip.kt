@@ -83,10 +83,3 @@ fun ModeChip(
         onClick = onClick
     )
 }
-
-
-
-
-
-
-

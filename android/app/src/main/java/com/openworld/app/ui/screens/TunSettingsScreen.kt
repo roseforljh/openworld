@@ -279,10 +279,3 @@ fun TunSettingsScreen(
         }
     }
 }
-
-
-
-
-
-
-

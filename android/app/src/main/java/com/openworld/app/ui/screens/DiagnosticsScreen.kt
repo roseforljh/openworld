@@ -165,10 +165,3 @@ fun DiagnosticsScreen(
         }
     }
 }
-
-
-
-
-
-
-

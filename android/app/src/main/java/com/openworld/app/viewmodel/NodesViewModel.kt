@@ -30,7 +30,7 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     private val configRepository = ConfigRepository.getInstance(application)
     private val settingsRepository = SettingsRepository.getInstance(application)
 
-    // 使用共享的设置状态，避免多个 ViewModel 各自收集相同�?Flow
+    // 使用共享的设置状态，避免多个 ViewModel 各自收集相同的 Flow
     private val displaySettings = NodeDisplaySettings.getInstance(application)
 
     private var testingJob: Job? = null
@@ -38,7 +38,7 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     private val _isTesting = MutableStateFlow(false)
     val isTesting: StateFlow<Boolean> = _isTesting.asStateFlow()
 
-    // 正在测试延迟的节�?ID 集合
+    // 正在测试延迟的节点 ID 集合
     private val _testingNodeIds = MutableStateFlow<Set<String>>(emptySet())
     val testingNodeIds: StateFlow<Set<String>> = _testingNodeIds.asStateFlow()
 
@@ -50,7 +50,8 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     private val _customNodeOrder = MutableStateFlow<List<String>>(emptyList())
 
     init {
-        // 从共享状态同�?customOrder 到本�?        viewModelScope.launch {
+        // 从共享状态同步 customOrder 到本地
+        viewModelScope.launch {
             displaySettings.customOrder.collect { order ->
                 _customNodeOrder.value = order
             }
@@ -63,7 +64,8 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
         displaySettings.nodeFilter,
         _customNodeOrder
     ) { nodes: List<NodeUi>, sortType: NodeSortType, filter: NodeFilter, customOrder: List<String> ->
-        // 先过�?        val filtered = when (filter.filterMode) {
+        // 先过滤
+        val filtered = when (filter.filterMode) {
             FilterMode.NONE -> nodes
             FilterMode.INCLUDE -> {
                 val keywords = filter.effectiveIncludeKeywords
@@ -90,11 +92,13 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-        // 再排�?        when (sortType) {
+        // 再排序
+        when (sortType) {
             NodeSortType.DEFAULT -> filtered
             NodeSortType.LATENCY -> filtered.sortedWith(compareBy<NodeUi> {
                 val l = it.latencyMs
-                // 将未测试(null)和超�?失败(<=0)的节点排到最�?                if (l == null || l <= 0) Long.MAX_VALUE else l
+                // 将未测试(null)和超时/失败(<=0)的节点排到最后
+                if (l == null || l <= 0) Long.MAX_VALUE else l
             })
             NodeSortType.NAME -> filtered.sortedBy { it.name }
             NodeSortType.REGION -> filtered.sortedWith(compareBy<NodeUi> {
@@ -187,8 +191,8 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
                 getRegionWeight(it.regionFlag)
             }.thenBy { it.name })
             NodeSortType.CUSTOM -> {
-                // filteredAllNodes 不使�?customOrder，或者我们可以简单地回退�?DEFAULT
-                // 既然 filteredAllNodes 目前主要用于后台逻辑，这里暂时使�?DEFAULT
+                // filteredAllNodes 不使用 customOrder，或者我们可以简单地回退到 DEFAULT
+                // 既然 filteredAllNodes 目前主要用于后台逻辑，这里暂时使用 DEFAULT
                 filtered
             }
         }
@@ -226,7 +230,7 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     private val _latencyMessage = MutableStateFlow<String?>(null)
     val latencyMessage: StateFlow<String?> = _latencyMessage.asStateFlow()
 
-    // 批量测速进�?(已完成数 / 总数)
+    // 批量测速进度 (已完成数 / 总数)
     private val _testProgress = MutableStateFlow<Pair<Int, Int>?>(null)
     val testProgress: StateFlow<Pair<Int, Int>?> = _testProgress.asStateFlow()
 
@@ -242,13 +246,16 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setActiveNode(nodeId: String) {
-        // 2025-fix: 先同步更�?activeNodeId，避免竞态条�?        // 场景：用户在节点页面连续快速切换节点后立即到首页启�?VPN
-        // 如果不同步更新，generateConfigFile() 可能读取到旧的节�?ID
+        // 2025-fix: 先同步更新 activeNodeId，避免竞态条件
+        // 场景：用户在节点页面连续快速切换节点后立即到首页启动 VPN
+        // 如果不同步更新，generateConfigFile() 可能读取到旧的节点 ID
         configRepository.setActiveNodeIdOnly(nodeId)
 
         viewModelScope.launch {
-            // 使用 configRepository 获取节点，避免因过滤导致找不到节点名�?            val node = configRepository.getNodeById(nodeId)
-            // 异步处理热切换（如果 VPN 正在运行�?            val success = configRepository.setActiveNode(nodeId)
+            // 使用 configRepository 获取节点，避免因过滤导致找不到节点名称
+            val node = configRepository.getNodeById(nodeId)
+            // 异步处理热切换（如果 VPN 正在运行）
+            val success = configRepository.setActiveNode(nodeId)
 
             // Only show toast when VPN is running
             val isVpnRunning = VpnStateStore.getActive()
@@ -359,7 +366,7 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setSortType(type: NodeSortType) {
-        // 写入持久化存储，SharedFlow 会自动更�?displaySettings.sortType
+        // 写入持久化存储，SharedFlow 会自动更新 displaySettings.sortType
         viewModelScope.launch {
             settingsRepository.setNodeSortType(type)
         }
@@ -441,10 +448,3 @@ class NodesViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 }
-
-
-
-
-
-
-

@@ -19,12 +19,15 @@ import com.openworld.app.database.entity.ProfileEntity
 import com.openworld.app.database.entity.SettingsEntity
 
 /**
- * 应用数据�? *
- * 使用 Room 存储 Profile、Node �?Settings 数据
+ * 应用数据库
  *
- * 优势�? * - 支持高效的查询和过滤
+ * 使用 Room 存储 Profile、Node 和 Settings 数据
+ *
+ * 优势：
+ * - 支持高效的查询和过滤
  * - 支持 Flow 实时观察数据变化
- * - 支持索引加速查�? * - 内置事务支持
+ * - 支持索引加速查询
+ * - 内置事务支持
  */
 @Database(
     entities = [
@@ -64,12 +67,13 @@ abstract class AppDatabase : RoomDatabase() {
                 AppDatabase::class.java,
                 DATABASE_NAME
             )
-                .allowMainThreadQueries() // 设置加载需要同步读�?                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .allowMainThreadQueries() // 设置加载需要同步读取
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
         }
 
         /**
-         * 数据库迁�? v1 -> v2 (添加 settings �?
+         * 数据库迁移: v1 -> v2 (添加 settings 表)
          */
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -85,7 +89,7 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
-         * 数据库迁�? v2 -> v3 (移除 node_latencies 外键约束)
+         * 数据库迁移: v2 -> v3 (移除 node_latencies 外键约束)
          * 由于 SQLite 不支持直接删除外键，需要重建表
          */
         private val MIGRATION_2_3 = object : Migration(2, 3) {
@@ -108,7 +112,7 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
-         * 数据库迁�? v3 -> v4 (添加 DNS 预解析字�?
+         * 数据库迁移: v3 -> v4 (添加 DNS 预解析字段)
          */
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -118,7 +122,8 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
-         * 仅用于测�?         */
+         * 仅用于测试
+         */
         fun getInMemoryDatabase(context: Context): AppDatabase {
             return Room.inMemoryDatabaseBuilder(
                 context.applicationContext,
@@ -127,10 +132,3 @@ abstract class AppDatabase : RoomDatabase() {
         }
     }
 }
-
-
-
-
-
-
-

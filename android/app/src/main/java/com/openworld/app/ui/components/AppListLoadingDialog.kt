@@ -28,7 +28,9 @@ import com.openworld.app.ui.theme.TextPrimary
 import com.openworld.app.ui.theme.TextSecondary
 
 /**
- * 应用列表加载对话�? * 显示加载进度和状�? */
+ * 应用列表加载对话框
+ * 显示加载进度和状态
+ */
 @Composable
 fun AppListLoadingDialog(
     loadingState: InstalledAppsRepository.LoadingState
@@ -91,7 +93,8 @@ fun AppListLoadingDialog(
 }
 
 /**
- * 简化版加载对话框（无具体进度，只显示加载中�? */
+ * 简化版加载对话框（无具体进度，只显示加载中）
+ */
 @Composable
 fun SimpleLoadingDialog(
     show: Boolean,
@@ -129,10 +132,3 @@ fun SimpleLoadingDialog(
         }
     }
 }
-
-
-
-
-
-
-

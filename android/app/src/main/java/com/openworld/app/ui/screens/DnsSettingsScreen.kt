@@ -217,10 +217,3 @@ fun DnsSettingsScreen(
         }
     }
 }
-
-
-
-
-
-
-

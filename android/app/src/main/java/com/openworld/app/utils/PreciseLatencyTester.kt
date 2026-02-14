@@ -16,11 +16,15 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * 精确延迟测试�? *
- * 使用 OkHttp EventListener 精确测量各阶段耗时�? * - RTT: �?TLS 握手完成到收到首字节的时间（排除连接建立开销�? * - Handshake: TLS 握手时间
+ * 精确延迟测试器
+ *
+ * 使用 OkHttp EventListener 精确测量各阶段耗时：
+ * - RTT: 从 TLS 握手完成到收到首字节的时间（排除连接建立开销）
+ * - Handshake: TLS 握手时间
  * - Total: 完整请求时间
  *
- * 相比简单的 System.nanoTime() 测量，此方案�? * 1. 更精确：排除了本地代理连接开销
+ * 相比简单的 System.nanoTime() 测量，此方案：
+ * 1. 更精确：排除了本地代理连接开销
  * 2. 更稳定：预热请求消除首次连接抖动
  * 3. 更灵活：支持多种测量标准
  */
@@ -31,11 +35,11 @@ object PreciseLatencyTester {
      * 测量标准
      */
     enum class Standard {
-        /** RTT: 从握手完成到收到首字节（推荐，最接近真实延迟�?*/
+        /** RTT: 从握手完成到收到首字节（推荐，最接近真实延迟） */
         RTT,
         /** Handshake: TLS 握手时间 */
         HANDSHAKE,
-        /** FirstByte: 从请求开始到收到首字�?*/
+        /** FirstByte: 从请求开始到收到首字节 */
         FIRST_BYTE,
         /** Total: 完整请求时间（包含连接建立） */
         TOTAL
@@ -62,7 +66,8 @@ object PreciseLatencyTester {
      * @param url 测试 URL
      * @param timeoutMs 超时时间（毫秒）
      * @param standard 测量标准
-     * @param warmup 是否预热（首次请求不计入结果�?     */
+     * @param warmup 是否预热（首次请求不计入结果）
+     */
     suspend fun test(
         proxyPort: Int,
         url: String,
@@ -79,10 +84,11 @@ object PreciseLatencyTester {
             .writeTimeout(timeoutMs.toLong(), TimeUnit.MILLISECONDS)
             .callTimeout(timeoutMs.toLong(), TimeUnit.MILLISECONDS)
             .eventListener(timingListener)
-            // 关键：根据测量标准决定是否禁�?Keep-Alive
+            // 关键：根据测量标准决定是否禁用 Keep-Alive
             .apply {
                 if (standard == Standard.HANDSHAKE) {
-                    // 测量握手时间时禁用连接复用，确保每次都执行握�?                    connectionPool(okhttp3.ConnectionPool(0, 1, TimeUnit.MILLISECONDS))
+                    // 测量握手时间时禁用连接复用，确保每次都执行握手
+                    connectionPool(okhttp3.ConnectionPool(0, 1, TimeUnit.MILLISECONDS))
                 }
             }
             .followRedirects(false) // 不跟随重定向
@@ -102,7 +108,8 @@ object PreciseLatencyTester {
                         resp.body?.close()
                     }
                 } catch (e: Exception) {
-                    // 预热失败不影响正式测�?                    Log.d(TAG, "Warmup request failed: ${e.message}")
+                    // 预热失败不影响正式测试
+                    Log.d(TAG, "Warmup request failed: ${e.message}")
                 }
             }
 
@@ -119,13 +126,14 @@ object PreciseLatencyTester {
             // 根据测量标准计算延迟
             val latency = when (standard) {
                 Standard.RTT -> {
-                    // RTT: 从握手完成到收到首字�?                    val handshakeEnd = timingListener.secureConnectEnd.get()
+                    // RTT: 从握手完成到收到首字节
+                    val handshakeEnd = timingListener.secureConnectEnd.get()
                         .takeIf { it > 0 } ?: timingListener.connectEnd.get()
                     val firstByte = timingListener.responseHeadersStart.get()
                     if (handshakeEnd > 0 && firstByte > handshakeEnd) {
                         firstByte - handshakeEnd
                     } else {
-                        // 回退�?Total 测量
+                        // 回退到 Total 测量
                         timingListener.callEnd.get() - timingListener.callStart.get()
                     }
                 }
@@ -141,7 +149,8 @@ object PreciseLatencyTester {
                     }
                 }
                 Standard.FIRST_BYTE -> {
-                    // 从请求开始到收到首字�?                    timingListener.responseHeadersStart.get() - timingListener.callStart.get()
+                    // 从请求开始到收到首字节
+                    timingListener.responseHeadersStart.get() - timingListener.callStart.get()
                 }
                 Standard.TOTAL -> {
                     // 完整请求时间
@@ -180,7 +189,7 @@ object PreciseLatencyTester {
     }
 
     /**
-     * 事件监听�?- 记录各阶段时间戳
+     * 事件监听器 - 记录各阶段时间戳
      */
     private class TimingEventListener : EventListener() {
         val callStart = AtomicLong(0)
@@ -270,10 +279,3 @@ object PreciseLatencyTester {
         }
     }
 }
-
-
-
-
-
-
-

@@ -41,10 +41,3 @@ object LibboxNativeSupport {
         return false
     }
 }
-
-
-
-
-
-
-
