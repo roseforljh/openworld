@@ -9,11 +9,7 @@ pub fn normalize(doc: &mut ZenOneDoc, diags: &mut Diagnostics) {
     }
 }
 
-fn normalize_node(
-    node: &mut super::types::ZenNode,
-    path: &str,
-    diags: &mut Diagnostics,
-) {
+fn normalize_node(node: &mut super::types::ZenNode, path: &str, diags: &mut Diagnostics) {
     let t = node.node_type.as_str();
 
     // 跳过 direct/reject，无需推断
@@ -42,7 +38,10 @@ fn normalize_node(
     }
 
     // TLS enabled 推断
-    let needs_tls_default = matches!(t, "trojan" | "vless" | "tuic" | "hysteria2" | "hysteria" | "naive");
+    let needs_tls_default = matches!(
+        t,
+        "trojan" | "vless" | "tuic" | "hysteria2" | "hysteria" | "naive"
+    );
     if needs_tls_default {
         let tls = node.tls.get_or_insert_with(|| super::types::ZenTls {
             enabled: None,
@@ -125,8 +124,7 @@ fn normalize_node(
 }
 
 fn is_ip_address(s: &str) -> bool {
-    s.parse::<std::net::IpAddr>().is_ok()
-        || (s.starts_with('[') && s.ends_with(']'))
+    s.parse::<std::net::IpAddr>().is_ok() || (s.starts_with('[') && s.ends_with(']'))
 }
 
 #[cfg(test)]
@@ -192,7 +190,10 @@ mod tests {
         normalize(&mut doc, &mut diags);
         assert_eq!(doc.nodes[0].port, Some(443));
         assert_eq!(doc.nodes[0].tls.as_ref().unwrap().enabled, Some(true));
-        assert_eq!(doc.nodes[0].tls.as_ref().unwrap().sni.as_deref(), Some("example.com"));
+        assert_eq!(
+            doc.nodes[0].tls.as_ref().unwrap().sni.as_deref(),
+            Some("example.com")
+        );
         assert!(!diags.has_errors());
     }
 

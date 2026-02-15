@@ -92,7 +92,11 @@ pub struct Diagnostic {
 
 impl fmt::Display for Diagnostic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}] {} at {}: {}", self.level, self.code, self.path, self.message)?;
+        write!(
+            f,
+            "[{}] {} at {}: {}",
+            self.level, self.code, self.path, self.message
+        )?;
         if let Some(hint) = &self.hint {
             write!(f, " (hint: {})", hint)?;
         }
@@ -150,11 +154,17 @@ impl Diagnostics {
     }
 
     pub fn errors(&self) -> Vec<&Diagnostic> {
-        self.items.iter().filter(|d| d.level == DiagLevel::Error).collect()
+        self.items
+            .iter()
+            .filter(|d| d.level == DiagLevel::Error)
+            .collect()
     }
 
     pub fn warnings(&self) -> Vec<&Diagnostic> {
-        self.items.iter().filter(|d| d.level == DiagLevel::Warn).collect()
+        self.items
+            .iter()
+            .filter(|d| d.level == DiagLevel::Warn)
+            .collect()
     }
 
     pub fn merge(&mut self, other: Diagnostics) {

@@ -42,14 +42,29 @@ fn validate_nodes(doc: &ZenOneDoc, mode: ValidationMode, diags: &mut Diagnostics
 
         // 名称非空
         if node.name.is_empty() {
-            diags.error(DiagCode::MissingRequiredField, format!("{}.name", path), "节点名称不能为空");
+            diags.error(
+                DiagCode::MissingRequiredField,
+                format!("{}.name", path),
+                "节点名称不能为空",
+            );
         }
 
         // 协议类型
         let t = node.node_type.as_str();
         let known = [
-            "vless", "vmess", "trojan", "shadowsocks", "hysteria2", "hysteria",
-            "tuic", "wireguard", "ssh", "naive", "chain", "direct", "reject",
+            "vless",
+            "vmess",
+            "trojan",
+            "shadowsocks",
+            "hysteria2",
+            "hysteria",
+            "tuic",
+            "wireguard",
+            "ssh",
+            "naive",
+            "chain",
+            "direct",
+            "reject",
         ];
         if !known.contains(&t) {
             match mode {
@@ -100,17 +115,29 @@ fn validate_nodes(doc: &ZenOneDoc, mode: ValidationMode, diags: &mut Diagnostics
         match t {
             "vless" => {
                 if node.uuid.is_none() {
-                    diags.error(DiagCode::MissingRequiredField, format!("{}.uuid", path), "vless 节点缺少 uuid");
+                    diags.error(
+                        DiagCode::MissingRequiredField,
+                        format!("{}.uuid", path),
+                        "vless 节点缺少 uuid",
+                    );
                 }
             }
             "vmess" => {
                 if node.uuid.is_none() {
-                    diags.error(DiagCode::MissingRequiredField, format!("{}.uuid", path), "vmess 节点缺少 uuid");
+                    diags.error(
+                        DiagCode::MissingRequiredField,
+                        format!("{}.uuid", path),
+                        "vmess 节点缺少 uuid",
+                    );
                 }
             }
             "trojan" => {
                 if node.password.is_none() {
-                    diags.error(DiagCode::MissingRequiredField, format!("{}.password", path), "trojan 节点缺少 password");
+                    diags.error(
+                        DiagCode::MissingRequiredField,
+                        format!("{}.password", path),
+                        "trojan 节点缺少 password",
+                    );
                 }
             }
             "shadowsocks" => {
@@ -119,64 +146,118 @@ fn validate_nodes(doc: &ZenOneDoc, mode: ValidationMode, diags: &mut Diagnostics
                     // 这里检查的是 normalize 后的值，所以通常已填充
                 }
                 if node.password.is_none() {
-                    diags.error(DiagCode::MissingRequiredField, format!("{}.password", path), "shadowsocks 节点缺少 password");
+                    diags.error(
+                        DiagCode::MissingRequiredField,
+                        format!("{}.password", path),
+                        "shadowsocks 节点缺少 password",
+                    );
                 }
             }
             "hysteria2" | "hysteria" => {
                 if node.password.is_none() {
-                    diags.error(DiagCode::MissingRequiredField, format!("{}.password", path), format!("{} 节点缺少 password", t));
+                    diags.error(
+                        DiagCode::MissingRequiredField,
+                        format!("{}.password", path),
+                        format!("{} 节点缺少 password", t),
+                    );
                 }
             }
             "tuic" => {
                 if node.uuid.is_none() {
-                    diags.error(DiagCode::MissingRequiredField, format!("{}.uuid", path), "tuic 节点缺少 uuid");
+                    diags.error(
+                        DiagCode::MissingRequiredField,
+                        format!("{}.uuid", path),
+                        "tuic 节点缺少 uuid",
+                    );
                 }
                 if node.password.is_none() {
-                    diags.error(DiagCode::MissingRequiredField, format!("{}.password", path), "tuic 节点缺少 password");
+                    diags.error(
+                        DiagCode::MissingRequiredField,
+                        format!("{}.password", path),
+                        "tuic 节点缺少 password",
+                    );
                 }
             }
             "wireguard" => {
                 if node.private_key.is_none() {
-                    diags.error(DiagCode::MissingRequiredField, format!("{}.private-key", path), "wireguard 节点缺少 private-key");
+                    diags.error(
+                        DiagCode::MissingRequiredField,
+                        format!("{}.private-key", path),
+                        "wireguard 节点缺少 private-key",
+                    );
                 }
                 if node.peer_public_key.is_none() && node.peers.is_none() {
-                    diags.error(DiagCode::MissingRequiredField, format!("{}.peer-public-key", path), "wireguard 节点缺少 peer-public-key 或 peers");
+                    diags.error(
+                        DiagCode::MissingRequiredField,
+                        format!("{}.peer-public-key", path),
+                        "wireguard 节点缺少 peer-public-key 或 peers",
+                    );
                 }
                 if node.local_address.is_none() {
-                    diags.error(DiagCode::MissingRequiredField, format!("{}.local-address", path), "wireguard 节点缺少 local-address");
+                    diags.error(
+                        DiagCode::MissingRequiredField,
+                        format!("{}.local-address", path),
+                        "wireguard 节点缺少 local-address",
+                    );
                 }
             }
             "ssh" => {
                 if node.username.is_none() {
-                    diags.error(DiagCode::MissingRequiredField, format!("{}.username", path), "ssh 节点缺少 username");
+                    diags.error(
+                        DiagCode::MissingRequiredField,
+                        format!("{}.username", path),
+                        "ssh 节点缺少 username",
+                    );
                 }
                 if node.password.is_none() && node.private_key.is_none() {
-                    diags.error(DiagCode::MissingRequiredField, format!("{}.password|private-key", path), "ssh 节点需要 password 或 private-key");
+                    diags.error(
+                        DiagCode::MissingRequiredField,
+                        format!("{}.password|private-key", path),
+                        "ssh 节点需要 password 或 private-key",
+                    );
                 }
             }
             "naive" => {
                 if node.username.is_none() {
-                    diags.error(DiagCode::MissingRequiredField, format!("{}.username", path), "naive 节点缺少 username");
+                    diags.error(
+                        DiagCode::MissingRequiredField,
+                        format!("{}.username", path),
+                        "naive 节点缺少 username",
+                    );
                 }
                 if node.password.is_none() {
-                    diags.error(DiagCode::MissingRequiredField, format!("{}.password", path), "naive 节点缺少 password");
+                    diags.error(
+                        DiagCode::MissingRequiredField,
+                        format!("{}.password", path),
+                        "naive 节点缺少 password",
+                    );
                 }
             }
-            "chain" => {
-                match &node.chain {
-                    None => {
-                        diags.error(DiagCode::MissingRequiredField, format!("{}.chain", path), "chain 节点缺少 chain 列表");
+            "chain" => match &node.chain {
+                None => {
+                    diags.error(
+                        DiagCode::MissingRequiredField,
+                        format!("{}.chain", path),
+                        "chain 节点缺少 chain 列表",
+                    );
+                }
+                Some(chain) => {
+                    if chain.is_empty() {
+                        diags.error(
+                            DiagCode::MissingRequiredField,
+                            format!("{}.chain", path),
+                            "chain 列表不能为空",
+                        );
                     }
-                    Some(chain) => {
-                        if chain.is_empty() {
-                            diags.error(DiagCode::MissingRequiredField, format!("{}.chain", path), "chain 列表不能为空");
-                        }
-                        if chain.contains(&node.name) {
-                            diags.error(DiagCode::CircularReference, format!("{}.chain", path), "chain 不能包含自身");
-                        }
+                    if chain.contains(&node.name) {
+                        diags.error(
+                            DiagCode::CircularReference,
+                            format!("{}.chain", path),
+                            "chain 不能包含自身",
+                        );
                     }
                 }
-            }
+            },
             _ => {}
         }
     }
@@ -197,11 +278,19 @@ fn validate_groups(doc: &ZenOneDoc, _mode: ValidationMode, diags: &mut Diagnosti
         let path = format!("groups[{}]", i);
 
         if !seen_group_names.insert(&group.name) {
-            diags.error(DiagCode::DuplicateName, &path, format!("组名重复: {}", group.name));
+            diags.error(
+                DiagCode::DuplicateName,
+                &path,
+                format!("组名重复: {}", group.name),
+            );
         }
 
         if node_names.contains(group.name.as_str()) {
-            diags.error(DiagCode::DuplicateName, &path, format!("组名与节点名冲突: {}", group.name));
+            diags.error(
+                DiagCode::DuplicateName,
+                &path,
+                format!("组名与节点名冲突: {}", group.name),
+            );
         }
 
         for (j, ref_name) in group.nodes.iter().enumerate() {
@@ -229,7 +318,10 @@ fn validate_router(doc: &ZenOneDoc, _mode: ValidationMode, diags: &mut Diagnosti
         .chain(doc.groups.iter().map(|g| g.name.as_str()))
         .collect();
 
-    if !all_names.contains(router.default.as_str()) && router.default != "direct" && router.default != "reject" {
+    if !all_names.contains(router.default.as_str())
+        && router.default != "direct"
+        && router.default != "reject"
+    {
         diags.error(
             DiagCode::UnresolvedReference,
             "router.default",
@@ -240,7 +332,10 @@ fn validate_router(doc: &ZenOneDoc, _mode: ValidationMode, diags: &mut Diagnosti
     for (i, rule) in router.rules.iter().enumerate() {
         let path = format!("router.rules[{}]", i);
         if let Some(ref outbound) = rule.outbound {
-            if !all_names.contains(outbound.as_str()) && outbound != "direct" && outbound != "reject" {
+            if !all_names.contains(outbound.as_str())
+                && outbound != "direct"
+                && outbound != "reject"
+            {
                 diags.error(
                     DiagCode::UnresolvedReference,
                     format!("{}.outbound", path),
@@ -263,16 +358,36 @@ mod tests {
             nodes: vec![ZenNode {
                 name: "direct".to_string(),
                 node_type: "direct".to_string(),
-                address: None, port: None, uuid: None, password: None,
-                method: None, flow: None, alter_id: None, plugin: None,
-                plugin_opts: None, identity_key: None, up_mbps: None,
-                down_mbps: None, obfs: None, obfs_password: None,
-                congestion_control: None, private_key: None,
-                peer_public_key: None, preshared_key: None,
-                local_address: None, mtu: None, keepalive: None,
-                peers: None, username: None, private_key_passphrase: None,
-                chain: None, tls: None, transport: None, mux: None,
-                dialer: None, health_check: None,
+                address: None,
+                port: None,
+                uuid: None,
+                password: None,
+                method: None,
+                flow: None,
+                alter_id: None,
+                plugin: None,
+                plugin_opts: None,
+                identity_key: None,
+                up_mbps: None,
+                down_mbps: None,
+                obfs: None,
+                obfs_password: None,
+                congestion_control: None,
+                private_key: None,
+                peer_public_key: None,
+                preshared_key: None,
+                local_address: None,
+                mtu: None,
+                keepalive: None,
+                peers: None,
+                username: None,
+                private_key_passphrase: None,
+                chain: None,
+                tls: None,
+                transport: None,
+                mux: None,
+                dialer: None,
+                health_check: None,
             }],
             groups: vec![],
             router: None,
@@ -327,15 +442,33 @@ mod tests {
             address: Some("example.com".to_string()),
             port: Some(443),
             uuid: None,
-            password: None, method: None, flow: None, alter_id: None,
-            plugin: None, plugin_opts: None, identity_key: None,
-            up_mbps: None, down_mbps: None, obfs: None, obfs_password: None,
-            congestion_control: None, private_key: None,
-            peer_public_key: None, preshared_key: None,
-            local_address: None, mtu: None, keepalive: None,
-            peers: None, username: None, private_key_passphrase: None,
-            chain: None, tls: None, transport: None, mux: None,
-            dialer: None, health_check: None,
+            password: None,
+            method: None,
+            flow: None,
+            alter_id: None,
+            plugin: None,
+            plugin_opts: None,
+            identity_key: None,
+            up_mbps: None,
+            down_mbps: None,
+            obfs: None,
+            obfs_password: None,
+            congestion_control: None,
+            private_key: None,
+            peer_public_key: None,
+            preshared_key: None,
+            local_address: None,
+            mtu: None,
+            keepalive: None,
+            peers: None,
+            username: None,
+            private_key_passphrase: None,
+            chain: None,
+            tls: None,
+            transport: None,
+            mux: None,
+            dialer: None,
+            health_check: None,
         });
         let mut diags = Diagnostics::new();
         validate(&doc, ValidationMode::Strict, &mut diags);
@@ -349,7 +482,10 @@ mod tests {
             name: "proxy".to_string(),
             group_type: "select".to_string(),
             nodes: vec!["nonexistent".to_string()],
-            url: None, interval: None, tolerance: None, strategy: None,
+            url: None,
+            interval: None,
+            tolerance: None,
+            strategy: None,
         });
         let mut diags = Diagnostics::new();
         validate(&doc, ValidationMode::Strict, &mut diags);

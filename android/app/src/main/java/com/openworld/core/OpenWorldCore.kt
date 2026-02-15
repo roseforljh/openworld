@@ -506,6 +506,21 @@ object OpenWorldCore {
      */
     external fun isZenoneFormat(content: String): Boolean
 
+    /**
+     * 导出配置为指定格式
+     * @param content Zenone 格式的配置内容
+     * @param format 目标格式: clash, singbox, zenone, json
+     * @return JSON 格式的导出结果: {"success": true, "content": "...", "format": "..."}
+     */
+    external fun exportConfig(content: String, format: String): String?
+
+    /**
+     * 导出节点为 URI 链接
+     * @param nodeJson 节点配置的 JSON
+     * @return JSON 格式的导出结果: {"success": true, "uri": "vmess://..."}
+     */
+    external fun exportNodeAsUri(nodeJson: String): String?
+
     // ═══════════════════════════════════════════════════════════════════
     // HTTP 请求
     // ═══════════════════════════════════════════════════════════════════

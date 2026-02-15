@@ -172,10 +172,7 @@ fn convert_node_to_outbound(
             method: node.method.clone(),
             security,
             sni,
-            allow_insecure: tls
-                .as_ref()
-                .map(|t| t.allow_insecure)
-                .unwrap_or(false),
+            allow_insecure: tls.as_ref().map(|t| t.allow_insecure).unwrap_or(false),
             flow: node.flow.clone(),
             public_key: tls.as_ref().and_then(|t| t.public_key.clone()),
             short_id: tls.as_ref().and_then(|t| t.short_id.clone()),
@@ -205,10 +202,7 @@ fn convert_node_to_outbound(
             obfs_password: node.obfs_password.clone(),
             chain: node.chain.clone(),
             dialer: None,
-            domain_resolver: node
-                .dialer
-                .as_ref()
-                .and_then(|d| d.domain_resolver.clone()),
+            domain_resolver: node.dialer.as_ref().and_then(|d| d.domain_resolver.clone()),
         },
     })
 }
@@ -301,10 +295,13 @@ fn convert_dns(dns: &ZenDns) -> cfg::DnsConfig {
         })
         .collect();
 
-    let fallback_filter = dns.fallback_filter.as_ref().map(|f| cfg::FallbackFilterConfig {
-        ip_cidr: f.ip_cidr.clone(),
-        domain: f.domain.clone(),
-    });
+    let fallback_filter = dns
+        .fallback_filter
+        .as_ref()
+        .map(|f| cfg::FallbackFilterConfig {
+            ip_cidr: f.ip_cidr.clone(),
+            domain: f.domain.clone(),
+        });
 
     let fake_ip = dns.fake_ip.as_ref().map(|f| cfg::FakeIpConfig {
         ipv4_range: f.ipv4_range.clone(),
@@ -336,11 +333,7 @@ fn convert_inbounds(inbounds: &[ZenInbound]) -> Vec<cfg::InboundConfig> {
             listen: ib.listen.clone().unwrap_or_else(|| "127.0.0.1".to_string()),
             port: ib.port.unwrap_or(7890),
             sniffing: cfg::SniffingConfig {
-                enabled: ib
-                    .sniffing
-                    .as_ref()
-                    .map(|s| s.enabled)
-                    .unwrap_or(false),
+                enabled: ib.sniffing.as_ref().map(|s| s.enabled).unwrap_or(false),
             },
             settings: cfg::InboundSettings {
                 set_system_proxy: ib.set_system_proxy,

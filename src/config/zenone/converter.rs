@@ -3,10 +3,7 @@ use super::types::*;
 use crate::config::types::OutboundConfig;
 
 /// 从 OutboundConfig 列表转换为 ZenOne 节点列表
-pub fn from_outbound_configs(
-    configs: &[OutboundConfig],
-    diags: &mut Diagnostics,
-) -> Vec<ZenNode> {
+pub fn from_outbound_configs(configs: &[OutboundConfig], diags: &mut Diagnostics) -> Vec<ZenNode> {
     configs
         .iter()
         .enumerate()
@@ -14,19 +11,13 @@ pub fn from_outbound_configs(
         .collect()
 }
 
-fn convert_outbound(
-    ob: &OutboundConfig,
-    idx: usize,
-    diags: &mut Diagnostics,
-) -> Option<ZenNode> {
+fn convert_outbound(ob: &OutboundConfig, idx: usize, diags: &mut Diagnostics) -> Option<ZenNode> {
     let path = format!("outbounds[{}]", idx);
     let s = &ob.settings;
 
     let node_type = match ob.protocol.as_str() {
-        "vmess" | "vless" | "trojan" | "shadowsocks" | "hysteria2" | "hysteria"
-        | "tuic" | "wireguard" | "ssh" | "naive" | "chain" | "direct" | "reject" => {
-            ob.protocol.clone()
-        }
+        "vmess" | "vless" | "trojan" | "shadowsocks" | "hysteria2" | "hysteria" | "tuic"
+        | "wireguard" | "ssh" | "naive" | "chain" | "direct" | "reject" => ob.protocol.clone(),
         "block" => "reject".to_string(),
         other => {
             diags.warn(
@@ -164,6 +155,32 @@ pub fn convert_subscription_to_zenone(
     if nodes.is_empty() {
         anyhow::bail!("转换后无可用节点");
     }
+
+    Ok(ZenOneDoc {
+        zen_version: 1,
+        metadata: None,
+        nodes,
+        groups: vec![],
+        router: None,
+        dns: None,
+        inbounds: vec![],
+        settings: None,
+        signature: None,
+    })
+}
+
+/// 从完整订阅内容转换为完整的 ZenOneDoc（包含 groups/router/dns）
+pub fn convert_full_subscription_to_zenone(
+    content: &str,
+    diags: &mut Diagnostics,
+) -> anyhow::Result<ZenOneDoc> {
+    let outbounds = crate::config::subscription::parse_subscription(content)?;
+
+    if outbounds.is_empty() {
+        anyhow::bail!("转换后无可用节点");
+    }
+
+    let nodes = from_outbound_configs(&outbounds, diags);
 
     Ok(ZenOneDoc {
         zen_version: 1,
@@ -508,7 +525,10 @@ rules:
 
         assert_eq!(nodes[1].node_type, "hysteria2");
         assert_eq!(nodes[1].name, "TW HY2 | Taiwan Hy2");
-        assert_eq!(nodes[1].password.as_deref(), Some("5ea25ac3-ad00-43b6-ab93-a669f0a28453"));
+        assert_eq!(
+            nodes[1].password.as_deref(),
+            Some("5ea25ac3-ad00-43b6-ab93-a669f0a28453")
+        );
 
         // WS 传输层
         assert_eq!(nodes[4].node_type, "vless");
@@ -535,12 +555,18 @@ rules:
         // 5) 编码为 YAML
         let yaml_out = super::super::encoder::encode_yaml(&doc).unwrap();
         assert!(yaml_out.contains("zen-version"), "输出应包含 zen-version");
-        assert!(yaml_out.contains("TW VL | Taiwan Reality"), "输出应包含节点名");
+        assert!(
+            yaml_out.contains("TW VL | Taiwan Reality"),
+            "输出应包含节点名"
+        );
         assert!(yaml_out.contains("vless"), "输出应包含协议类型");
 
         // 6) 编码为 JSON
         let json_out = super::super::encoder::encode_json(&doc).unwrap();
-        assert!(json_out.contains("\"zen-version\""), "JSON 应包含 zen-version");
+        assert!(
+            json_out.contains("\"zen-version\""),
+            "JSON 应包含 zen-version"
+        );
 
         // 7) 从 YAML 回解析验证 roundtrip
         let reparsed: ZenOneDoc = serde_yml::from_str(&yaml_out).unwrap();

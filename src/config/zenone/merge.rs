@@ -4,11 +4,7 @@ use super::types::ZenOneDoc;
 /// 处理 ZenOne 文档中的 !include 指令
 /// 注意：实际的文件级 include 在 enhance.rs 中已处理
 /// 这里处理的是 ZenOne 特有的数组级合并逻辑
-pub fn merge_included_docs(
-    base: &mut ZenOneDoc,
-    included: ZenOneDoc,
-    diags: &mut Diagnostics,
-) {
+pub fn merge_included_docs(base: &mut ZenOneDoc, included: ZenOneDoc, diags: &mut Diagnostics) {
     // 合并 nodes（按 name 去重，后者覆盖前者）
     for new_node in included.nodes {
         if let Some(pos) = base.nodes.iter().position(|n| n.name == new_node.name) {
@@ -65,16 +61,36 @@ mod tests {
         ZenNode {
             name: name.to_string(),
             node_type: "direct".to_string(),
-            address: None, port: None, uuid: None, password: None,
-            method: None, flow: None, alter_id: None, plugin: None,
-            plugin_opts: None, identity_key: None, up_mbps: None,
-            down_mbps: None, obfs: None, obfs_password: None,
-            congestion_control: None, private_key: None,
-            peer_public_key: None, preshared_key: None,
-            local_address: None, mtu: None, keepalive: None,
-            peers: None, username: None, private_key_passphrase: None,
-            chain: None, tls: None, transport: None, mux: None,
-            dialer: None, health_check: None,
+            address: None,
+            port: None,
+            uuid: None,
+            password: None,
+            method: None,
+            flow: None,
+            alter_id: None,
+            plugin: None,
+            plugin_opts: None,
+            identity_key: None,
+            up_mbps: None,
+            down_mbps: None,
+            obfs: None,
+            obfs_password: None,
+            congestion_control: None,
+            private_key: None,
+            peer_public_key: None,
+            preshared_key: None,
+            local_address: None,
+            mtu: None,
+            keepalive: None,
+            peers: None,
+            username: None,
+            private_key_passphrase: None,
+            chain: None,
+            tls: None,
+            transport: None,
+            mux: None,
+            dialer: None,
+            health_check: None,
         }
     }
 

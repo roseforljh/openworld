@@ -990,6 +990,55 @@ mod jni_exports {
         }
     }
 
+    /// 导出配置为指定格式
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_exportConfig(
+        mut env: JNIEnv,
+        _c: JClass,
+        content: JString,
+        format: JString,
+    ) -> jstring {
+        let content_s: String = match env.get_string(&content) {
+            Ok(s) => s.into(),
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let format_s: String = match env.get_string(&format) {
+            Ok(s) => s.into(),
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let cs_content = match std::ffi::CString::new(content_s) {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let cs_format = match std::ffi::CString::new(format_s) {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        ffi_str_to_jstring(&env, unsafe {
+            ffi::openworld_export_config(cs_content.as_ptr(), cs_format.as_ptr())
+        })
+    }
+
+    /// 导出节点为 URI 链接
+    #[no_mangle]
+    pub extern "system" fn Java_com_openworld_core_OpenWorldCore_exportNodeAsUri(
+        mut env: JNIEnv,
+        _c: JClass,
+        node_json: JString,
+    ) -> jstring {
+        let s: String = match env.get_string(&node_json) {
+            Ok(s) => s.into(),
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let cs = match std::ffi::CString::new(s) {
+            Ok(s) => s,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        ffi_str_to_jstring(&env, unsafe {
+            ffi::openworld_export_node_as_uri(cs.as_ptr())
+        })
+    }
+
     // ─── 独立 HTTP 下载（不依赖内核运行） ─────────────────────────────────
 
     #[no_mangle]

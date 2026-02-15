@@ -701,7 +701,11 @@ class ClashYamlParser : SubscriptionParser {
 
         // 端口跳跃 - 转换为 List<String> 格式
         val portsStr = asString(map["ports"])?.takeIf { it.isNotBlank() }
-        val serverPorts = portsStr?.let { listOf(it) }
+        val serverPorts = portsStr
+            ?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.takeIf { it.isNotEmpty() }
         val hopInterval = asString(map["hop-interval"])?.takeIf { it.isNotBlank() }
 
         return Outbound(
@@ -868,7 +872,11 @@ class ClashYamlParser : SubscriptionParser {
 
         // 端口跳跃 - 转换为 List<String> 格式 (sing-box 1.12.0+)
         val portsStr = asString(map["ports"])?.takeIf { it.isNotBlank() }
-        val serverPorts = portsStr?.let { listOf(it) }
+        val serverPorts = portsStr
+            ?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.takeIf { it.isNotEmpty() }
         val hopInterval = asString(map["hop-interval"])?.takeIf { it.isNotBlank() }
 
         return Outbound(

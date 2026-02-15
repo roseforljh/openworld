@@ -11,7 +11,7 @@ use anyhow::Result;
 use base64::Engine;
 use tracing::debug;
 
-use crate::config::types::{OutboundConfig, OutboundSettings, TlsConfig, TransportConfig};
+use crate::config::types::{DnsConfig, OutboundConfig, OutboundSettings, ProxyGroupConfig, RuleConfig, TlsConfig, TransportConfig};
 use crate::config::zenone::parser::is_zenone;
 use crate::config::zenone::bridge::zenone_to_outbounds;
 
@@ -1177,6 +1177,225 @@ pub fn parse_proxy_link(line: &str) -> Option<ProxyNode> {
     parse_proxy_uri(line)
         .ok()
         .map(|c| ProxyNode::from_outbound_config(&c))
+}
+
+// ─── 节点 URI 编码 ───
+
+/// 将 OutboundConfig 编码为 VMess URI
+pub fn encode_vmess_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    let s = &ob.settings;
+
+    let mut map = serde_json::json!({
+        "v": "2",
+        "ps": ob.tag,
+        "add": s.address.as_deref().unwrap_or(""),
+        "port": s.port.unwrap_or(443),
+        "id": s.uuid.as_deref().unwrap_or(""),
+        "aid": s.alter_id.unwrap_or(0),
+        "net": s.transport.as_ref().map(|t| t.transport_type.clone()).unwrap_or_else(|| "tcp".to_string()),
+        "type": "",
+        "host": s.transport.as_ref().and_then(|t| t.host.clone()).unwrap_or_default(),
+        "path": s.transport.as_ref().and_then(|t| t.path.clone()).unwrap_or_default(),
+        "tls": if s.tls.as_ref().map(|t| t.enabled).unwrap_or(false) { "tls" } else { "" },
+    });
+
+    // 添加 SNI
+    if let Some(tls) = &s.tls {
+        if let Some(sni) = &tls.sni {
+            map["sni"] = serde_json::json!(sni);
+        }
+    }
+
+    let json = map.to_string();
+    let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, json);
+    format!("vmess://{}", encoded)
+}
+
+/// 将 OutboundConfig 编码为 VLESS URI
+pub fn encode_vless_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    let s = &ob.settings;
+    let mut params = vec![];
+
+    if let Some(tls) = &s.tls {
+        if !tls.security.is_empty() {
+            params.push(format!("security={}", tls.security));
+        }
+        if let Some(sni) = &tls.sni {
+            params.push(format!("sni={}", sni));
+        }
+        if let Some(fp) = &tls.fingerprint {
+            params.push(format!("fp={}", fp));
+        }
+        if let Some(pbk) = &tls.public_key {
+            params.push(format!("pbk={}", pbk));
+        }
+        if let Some(sid) = &tls.short_id {
+            params.push(format!("sid={}", sid));
+        }
+    }
+
+    if let Some(flow) = &s.flow {
+        params.push(format!("flow={}", flow));
+    }
+
+    if let Some(transport) = &s.transport {
+        params.push(format!("type={}", transport.transport_type));
+        if let Some(path) = &transport.path {
+            params.push(format!("path={}", path));
+        }
+        if let Some(host) = &transport.host {
+            params.push(format!("host={}", host));
+        }
+    }
+
+    let addr = s.address.as_deref().unwrap_or("");
+    let port = s.port.unwrap_or(443);
+    let uuid = s.uuid.as_deref().unwrap_or("");
+    let query = if params.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", params.join("&"))
+    };
+
+    format!("vless://{}@{}:{}{}#{}", uuid, addr, port, query, urlencoding_encode(&ob.tag))
+}
+
+/// 将 OutboundConfig 编码为 Trojan URI
+pub fn encode_trojan_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    let s = &ob.settings;
+    let mut params = vec![];
+
+    if let Some(tls) = &s.tls {
+        if let Some(sni) = &tls.sni {
+            params.push(format!("sni={}", sni));
+        }
+        if let Some(fp) = &tls.fingerprint {
+            params.push(format!("fp={}", fp));
+        }
+    }
+
+    let addr = s.address.as_deref().unwrap_or("");
+    let port = s.port.unwrap_or(443);
+    let password = s.password.as_deref().unwrap_or("");
+    let query = if params.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", params.join("&"))
+    };
+
+    format!("trojan://{}@{}:{}{}#{}", password, addr, port, query, urlencoding_encode(&ob.tag))
+}
+
+/// 将 OutboundConfig 编码为 Shadowsocks URI
+pub fn encode_ss_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    let s = &ob.settings;
+    let method = s.method.as_deref().unwrap_or("aes-256-gcm");
+    let password = s.password.as_deref().unwrap_or("");
+    let addr = s.address.as_deref().unwrap_or("");
+    let port = s.port.unwrap_or(8388);
+
+    let userinfo = format!("{}:{}", method, password);
+    let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, userinfo);
+
+    format!("ss://{}@{}:{}#{}", encoded, addr, port, urlencoding_encode(&ob.tag))
+}
+
+/// 将 OutboundConfig 编码为 Hysteria2 URI
+pub fn encode_hy2_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    let s = &ob.settings;
+    let mut params = vec![];
+
+    if let Some(pwd) = &s.password {
+        params.push(format!("password={}", pwd));
+    }
+    if let Some(up) = s.up_mbps {
+        params.push(format!("up={}", up));
+    }
+    if let Some(down) = s.down_mbps {
+        params.push(format!("down={}", down));
+    }
+
+    let addr = s.address.as_deref().unwrap_or("");
+    let port = s.port.unwrap_or(443);
+    let query = if params.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", params.join("&"))
+    };
+
+    format!("hysteria2://{}:{}{}#{}", addr, port, query, urlencoding_encode(&ob.tag))
+}
+
+/// 将 OutboundConfig 编码为 TUIC URI
+pub fn encode_tuic_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    let s = &ob.settings;
+    let mut params = vec![
+        format!("uuid={}", s.uuid.as_deref().unwrap_or("")),
+        format!("password={}", s.password.as_deref().unwrap_or("")),
+    ];
+
+    if let Some(tls) = &s.tls {
+        if let Some(sni) = &tls.sni {
+            params.push(format!("sni={}", sni));
+        }
+        if let Some(congestion) = &s.congestion_control {
+            params.push(format!("congestion={}", congestion));
+        }
+    }
+
+    let addr = s.address.as_deref().unwrap_or("");
+    let port = s.port.unwrap_or(443);
+    let query = format!("?{}", params.join("&"));
+
+    format!("tuic://{}:{}@{}:{}#{}", s.uuid.as_deref().unwrap_or(""), s.password.as_deref().unwrap_or(""), addr, port, query)
+}
+
+/// 将 OutboundConfig 编码为 WireGuard URI
+pub fn encode_wg_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    let s = &ob.settings;
+    let mut params = vec![];
+
+    if let Some(pk) = &s.private_key {
+        params.push(format!("private_key={}", pk));
+    }
+    if let Some(addr) = &s.address {
+        params.push(format!("address={}", addr));
+    }
+    if let Some(pk) = &s.peer_public_key {
+        params.push(format!("public_key={}", pk));
+    }
+    if let Some(psk) = &s.preshared_key {
+        params.push(format!("preshared_key={}", psk));
+    }
+
+    let query = if params.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", params.join("&"))
+    };
+
+    format!("wg://{}#{}", query, urlencoding_encode(&ob.tag))
+}
+
+/// 将 OutboundConfig 编码为 SSH URI
+pub fn encode_ssh_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    let s = &ob.settings;
+    let user = s.username.as_deref().unwrap_or("");
+    let addr = s.address.as_deref().unwrap_or("");
+    let port = s.port.unwrap_or(22);
+    let password = s.password.as_deref().unwrap_or("");
+
+    format!("ssh://{}:{}@{}:{}", user, password, addr, port)
+}
+
+fn urlencoding_encode(s: &str) -> String {
+    s.chars().map(|c| {
+        match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
+            ' ' => "%20".to_string(),
+            _ => format!("%{:02X}", c as u8),
+        }
+    }).collect()
 }
 
 #[cfg(test)]

@@ -27,8 +27,8 @@ class ModelSerializationTest {
     }
 
     @Test
-    fun testSingBoxConfigSerialization() {
-        val config = SingBoxConfig(
+    fun testOpenWorldConfigSerialization() {
+        val config = OpenWorldConfig(
             outbounds = listOf(
                 Outbound(type = "direct", tag = "direct"),
                 Outbound(type = "vmess", tag = "proxy", server = "1.1.1.1", serverPort = 443)
@@ -36,7 +36,7 @@ class ModelSerializationTest {
         )
 
         val json = gson.toJson(config)
-        val decoded = gson.fromJson(json, SingBoxConfig::class.java)
+        val decoded = gson.fromJson(json, OpenWorldConfig::class.java)
 
         assertNotNull(decoded.outbounds)
         assertEquals(2, decoded.outbounds?.size)

@@ -68,9 +68,17 @@ pub struct ZenOneDoc {
 pub struct ZenMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "source-url")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "source-url"
+    )]
     pub source_url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "update-interval")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "update-interval"
+    )]
     pub update_interval: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "expire-at")]
     pub expire_at: Option<String>,
@@ -86,11 +94,23 @@ pub struct ZenMetadata {
     pub homepage: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revision: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "generated-by")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "generated-by"
+    )]
     pub generated_by: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "migrated-from")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "migrated-from"
+    )]
     pub migrated_from: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "migrated-at")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "migrated-at"
+    )]
     pub migrated_at: Option<String>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub extra: HashMap<String, serde_json::Value>,
@@ -120,9 +140,17 @@ pub struct ZenNode {
     // Shadowsocks 扩展
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugin: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "plugin-opts")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "plugin-opts"
+    )]
     pub plugin_opts: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "identity-key")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "identity-key"
+    )]
     pub identity_key: Option<String>,
     // Hysteria
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "up-mbps")]
@@ -131,19 +159,43 @@ pub struct ZenNode {
     pub down_mbps: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub obfs: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "obfs-password")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "obfs-password"
+    )]
     pub obfs_password: Option<String>,
     // TUIC
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "congestion-control")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "congestion-control"
+    )]
     pub congestion_control: Option<String>,
     // WireGuard
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "private-key")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "private-key"
+    )]
     pub private_key: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "peer-public-key")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "peer-public-key"
+    )]
     pub peer_public_key: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "preshared-key")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "preshared-key"
+    )]
     pub preshared_key: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "local-address")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "local-address"
+    )]
     pub local_address: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mtu: Option<u16>,
@@ -154,7 +206,11 @@ pub struct ZenNode {
     // SSH
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "private-key-passphrase")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "private-key-passphrase"
+    )]
     pub private_key_passphrase: Option<String>,
     // Chain
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -168,7 +224,11 @@ pub struct ZenNode {
     pub mux: Option<ZenMux>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dialer: Option<ZenDialer>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "health-check")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "health-check"
+    )]
     pub health_check: Option<ZenHealthCheck>,
 }
 
@@ -232,10 +292,18 @@ pub struct ZenTlsFragment {
     pub max_delay_ms: u64,
 }
 
-fn default_frag_min() -> usize { 10 }
-fn default_frag_max() -> usize { 100 }
-fn default_frag_delay_min() -> u64 { 10 }
-fn default_frag_delay_max() -> u64 { 50 }
+fn default_frag_min() -> usize {
+    10
+}
+fn default_frag_max() -> usize {
+    100
+}
+fn default_frag_delay_min() -> u64 {
+    10
+}
+fn default_frag_delay_max() -> u64 {
+    50
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZenTransport {
@@ -247,11 +315,23 @@ pub struct ZenTransport {
     pub host: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "service-name")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "service-name"
+    )]
     pub service_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "shadow-tls-password")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "shadow-tls-password"
+    )]
     pub shadow_tls_password: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "shadow-tls-sni")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "shadow-tls-sni"
+    )]
     pub shadow_tls_sni: Option<String>,
 }
 
@@ -267,9 +347,15 @@ pub struct ZenMux {
     pub padding: bool,
 }
 
-fn default_mux_proto() -> String { "sing-mux".into() }
-fn default_mux_conns() -> usize { 4 }
-fn default_mux_streams() -> usize { 128 }
+fn default_mux_proto() -> String {
+    "sing-mux".into()
+}
+fn default_mux_conns() -> usize {
+    4
+}
+fn default_mux_streams() -> usize {
+    128
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZenDialer {
@@ -281,7 +367,11 @@ pub struct ZenDialer {
     pub tcp_fast_open: bool,
     #[serde(default)]
     pub mptcp: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "domain-resolver")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "domain-resolver"
+    )]
     pub domain_resolver: Option<String>,
 }
 
@@ -293,13 +383,25 @@ pub struct ZenHealthCheck {
     pub url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interval: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "timeout-ms")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "timeout-ms"
+    )]
     pub timeout_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retries: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "failure-threshold")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "failure-threshold"
+    )]
     pub failure_threshold: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "recovery-threshold")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "recovery-threshold"
+    )]
     pub recovery_threshold: Option<u32>,
 }
 
@@ -327,21 +429,35 @@ pub struct ZenRouter {
     pub default: String,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "geoip-db")]
     pub geoip_db: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "geosite-db")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "geosite-db"
+    )]
     pub geosite_db: Option<String>,
     #[serde(default, rename = "geo-auto-update")]
     pub geo_auto_update: bool,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "geoip-url")]
     pub geoip_url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "geosite-url")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "geosite-url"
+    )]
     pub geosite_url: Option<String>,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty", rename = "rule-providers")]
+    #[serde(
+        default,
+        skip_serializing_if = "HashMap::is_empty",
+        rename = "rule-providers"
+    )]
     pub rule_providers: HashMap<String, ZenRuleProvider>,
     #[serde(default)]
     pub rules: Vec<ZenRule>,
 }
 
-fn default_direct() -> String { "direct".into() }
+fn default_direct() -> String {
+    "direct".into()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZenRuleProvider {
@@ -370,9 +486,17 @@ pub struct ZenRule {
     pub action: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sniff: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "override-address")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "override-address"
+    )]
     pub override_address: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "override-port")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "override-port"
+    )]
     pub override_port: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "sub-rules")]
     pub sub_rules: Option<Vec<ZenRule>>,
@@ -383,21 +507,37 @@ pub struct ZenRule {
 pub struct ZenDns {
     #[serde(default = "default_dns_mode")]
     pub mode: String,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "cache-size")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "cache-size"
+    )]
     pub cache_size: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "cache-ttl")]
     pub cache_ttl: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "negative-cache-ttl")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "negative-cache-ttl"
+    )]
     pub negative_cache_ttl: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "prefer-ip")]
     pub prefer_ip: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "edns-client-subnet")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "edns-client-subnet"
+    )]
     pub edns_client_subnet: Option<String>,
     #[serde(default)]
     pub servers: Vec<ZenDnsServer>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fallback: Vec<ZenDnsServer>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "fallback-filter")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "fallback-filter"
+    )]
     pub fallback_filter: Option<ZenFallbackFilter>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "fake-ip")]
     pub fake_ip: Option<ZenFakeIp>,
@@ -405,7 +545,9 @@ pub struct ZenDns {
     pub hosts: HashMap<String, String>,
 }
 
-fn default_dns_mode() -> String { "split".into() }
+fn default_dns_mode() -> String {
+    "split".into()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZenDnsServer {
@@ -426,13 +568,19 @@ pub struct ZenFallbackFilter {
 pub struct ZenFakeIp {
     #[serde(default = "default_fakeip_v4", rename = "ipv4-range")]
     pub ipv4_range: String,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "ipv6-range")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "ipv6-range"
+    )]
     pub ipv6_range: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<String>,
 }
 
-fn default_fakeip_v4() -> String { "198.18.0.0/15".into() }
+fn default_fakeip_v4() -> String {
+    "198.18.0.0/15".into()
+}
 
 /// 入站
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -444,7 +592,11 @@ pub struct ZenInbound {
     pub listen: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "max-connections")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "max-connections"
+    )]
     pub max_connections: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sniffing: Option<ZenSniffing>,
@@ -452,7 +604,11 @@ pub struct ZenInbound {
     pub auth: Option<Vec<ZenAuth>>,
     #[serde(default, rename = "set-system-proxy")]
     pub set_system_proxy: bool,
-    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "system-proxy-bypass")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        rename = "system-proxy-bypass"
+    )]
     pub system_proxy_bypass: Vec<String>,
 }
 
@@ -473,9 +629,17 @@ pub struct ZenAuth {
 pub struct ZenSettings {
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "log-level")]
     pub log_level: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "max-connections")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "max-connections"
+    )]
     pub max_connections: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "validation-mode")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "validation-mode"
+    )]
     pub validation_mode: Option<ValidationMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api: Option<ZenApi>,
@@ -497,12 +661,20 @@ pub struct ZenApi {
     pub port: u16,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secret: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "external-ui")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "external-ui"
+    )]
     pub external_ui: Option<String>,
 }
 
-fn default_api_listen() -> String { "127.0.0.1".into() }
-fn default_api_port() -> u16 { 9090 }
+fn default_api_listen() -> String {
+    "127.0.0.1".into()
+}
+fn default_api_port() -> u16 {
+    9090
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZenDerp {
@@ -520,9 +692,17 @@ pub struct ZenSecrets {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZenPerformance {
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "parse-concurrency")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "parse-concurrency"
+    )]
     pub parse_concurrency: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "healthcheck-concurrency")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "healthcheck-concurrency"
+    )]
     pub healthcheck_concurrency: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "max-nodes")]
     pub max_nodes: Option<usize>,
@@ -530,7 +710,11 @@ pub struct ZenPerformance {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZenExtensions {
-    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "allowed-prefixes")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        rename = "allowed-prefixes"
+    )]
     pub allowed_prefixes: Vec<String>,
 }
 
@@ -542,7 +726,11 @@ pub struct ZenSignature {
     pub key_id: String,
     #[serde(rename = "created-at")]
     pub created_at: String,
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "expires-at")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "expires-at"
+    )]
     pub expires_at: Option<String>,
     pub value: String,
 }

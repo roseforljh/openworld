@@ -218,6 +218,9 @@ dns:
         assert_eq!(doc.groups.len(), 2);
         assert!(doc.dns.is_some());
         assert!(doc.metadata.is_some());
-        assert_eq!(doc.metadata.as_ref().unwrap().name.as_deref(), Some("测试订阅"));
+        assert_eq!(
+            doc.metadata.as_ref().unwrap().name.as_deref(),
+            Some("测试订阅")
+        );
     }
 }
