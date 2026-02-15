@@ -14,9 +14,9 @@ use tracing::{debug, info, warn};
 use crate::config::types::OutboundConfig;
 use crate::proxy::group::health::HealthChecker;
 use crate::proxy::outbound::direct::DirectOutbound;
+use crate::proxy::outbound::http::HttpOutbound;
 use crate::proxy::outbound::hysteria2::Hysteria2Outbound;
 use crate::proxy::outbound::hysteria_v1::HysteriaV1Outbound;
-use crate::proxy::outbound::http::HttpOutbound;
 use crate::proxy::outbound::masque::MasqueOutbound;
 use crate::proxy::outbound::naive::NaiveOutbound;
 use crate::proxy::outbound::reject::{BlackholeOutbound, RejectOutbound};
@@ -60,27 +60,78 @@ impl LatencyTester {
     /// 注册需要测试的outbounds
     pub fn register_outbounds(&mut self, configs: &[OutboundConfig]) -> Result<()> {
         for config in configs {
-            if config.protocol == "direct" || config.protocol == "reject" || config.protocol == "block" {
+            if config.protocol == "direct"
+                || config.protocol == "reject"
+                || config.protocol == "block"
+            {
                 continue;
             }
 
             let handler: Arc<dyn OutboundHandler> = match config.protocol.as_str() {
-                "vless" => Arc::new(VlessOutbound::new(config)?),
-                "hysteria2" => Arc::new(Hysteria2Outbound::new(config)?),
-                "hysteria" | "hysteria1" => Arc::new(HysteriaV1Outbound::new(config)?),
-                "shadowsocks" | "ss" => Arc::new(ShadowsocksOutbound::new(config)?),
-                "trojan" => Arc::new(TrojanOutbound::new(config)?),
-                "vmess" => Arc::new(VmessOutbound::new(config)?),
-                "wireguard" | "wg" => Arc::new(WireGuardOutbound::new(config)?),
-                "http" | "https" => Arc::new(HttpOutbound::new(config)?),
-                "socks5" | "socks" => Arc::new(Socks5Outbound::new(config)?),
-                "ssh" => Arc::new(SshOutbound::new(config)?),
-                "tuic" => Arc::new(TuicOutbound::new(config)?),
-                "tor" => Arc::new(TorOutbound::new(config)?),
+                "vless" => Arc::new(VlessOutbound::new(config).map_err(|e| {
+                    anyhow::anyhow!("failed to create VlessOutbound for {}: {}", config.tag, e)
+                })?),
+                "hysteria2" => Arc::new(Hysteria2Outbound::new(config).map_err(|e| {
+                    anyhow::anyhow!(
+                        "failed to create Hysteria2Outbound for {}: {}",
+                        config.tag,
+                        e
+                    )
+                })?),
+                "hysteria" | "hysteria1" => {
+                    Arc::new(HysteriaV1Outbound::new(config).map_err(|e| {
+                        anyhow::anyhow!(
+                            "failed to create HysteriaV1Outbound for {}: {}",
+                            config.tag,
+                            e
+                        )
+                    })?)
+                }
+                "shadowsocks" | "ss" => {
+                    Arc::new(ShadowsocksOutbound::new(config).map_err(|e| {
+                        anyhow::anyhow!(
+                            "failed to create ShadowsocksOutbound for {}: {}",
+                            config.tag,
+                            e
+                        )
+                    })?)
+                }
+                "trojan" => Arc::new(TrojanOutbound::new(config).map_err(|e| {
+                    anyhow::anyhow!("failed to create TrojanOutbound for {}: {}", config.tag, e)
+                })?),
+                "vmess" => Arc::new(VmessOutbound::new(config).map_err(|e| {
+                    anyhow::anyhow!("failed to create VmessOutbound for {}: {}", config.tag, e)
+                })?),
+                "wireguard" | "wg" => Arc::new(WireGuardOutbound::new(config).map_err(|e| {
+                    anyhow::anyhow!(
+                        "failed to create WireGuardOutbound for {}: {}",
+                        config.tag,
+                        e
+                    )
+                })?),
+                "http" | "https" => Arc::new(HttpOutbound::new(config).map_err(|e| {
+                    anyhow::anyhow!("failed to create HttpOutbound for {}: {}", config.tag, e)
+                })?),
+                "socks5" | "socks" => Arc::new(Socks5Outbound::new(config).map_err(|e| {
+                    anyhow::anyhow!("failed to create Socks5Outbound for {}: {}", config.tag, e)
+                })?),
+                "ssh" => Arc::new(SshOutbound::new(config).map_err(|e| {
+                    anyhow::anyhow!("failed to create SshOutbound for {}: {}", config.tag, e)
+                })?),
+                "tuic" => Arc::new(TuicOutbound::new(config).map_err(|e| {
+                    anyhow::anyhow!("failed to create TuicOutbound for {}: {}", config.tag, e)
+                })?),
+                "tor" => Arc::new(TorOutbound::new(config).map_err(|e| {
+                    anyhow::anyhow!("failed to create TorOutbound for {}: {}", config.tag, e)
+                })?),
                 "reject" | "block" => Arc::new(RejectOutbound::new(config.tag.clone())),
-                "naive" | "naiveproxy" => Arc::new(NaiveOutbound::new(config)?),
+                "naive" | "naiveproxy" => Arc::new(NaiveOutbound::new(config).map_err(|e| {
+                    anyhow::anyhow!("failed to create NaiveOutbound for {}: {}", config.tag, e)
+                })?),
                 "blackhole" => Arc::new(BlackholeOutbound::new(config.tag.clone())),
-                "masque" => Arc::new(MasqueOutbound::new(config)?),
+                "masque" => Arc::new(MasqueOutbound::new(config).map_err(|e| {
+                    anyhow::anyhow!("failed to create MasqueOutbound for {}: {}", config.tag, e)
+                })?),
                 "direct" => Arc::new(DirectOutbound::new(config.tag.clone())),
                 other => {
                     warn!(protocol = other, "unsupported protocol for latency test");
@@ -90,6 +141,11 @@ impl LatencyTester {
 
             debug!(tag = %config.tag, protocol = %config.protocol, "outbound registered for latency test");
             self.handlers.insert(config.tag.clone(), handler);
+        }
+
+        // 只要有至少一个 handler 注册成功就算成功
+        if self.handlers.is_empty() {
+            anyhow::bail!("no outbounds could be registered");
         }
 
         info!(count = self.handlers.len(), "latency tester initialized");
@@ -110,12 +166,8 @@ impl LatencyTester {
         };
 
         let result = self.runtime.block_on(async {
-            HealthChecker::test_proxy(
-                handler.as_ref(),
-                url,
-                Duration::from_millis(timeout_ms),
-            )
-            .await
+            HealthChecker::test_proxy(handler.as_ref(), url, Duration::from_millis(timeout_ms))
+                .await
         });
 
         match result {
@@ -135,7 +187,7 @@ impl LatencyTester {
     /// 批量测试所有已注册outbounds的延迟
     pub fn test_all_latency(&self, url: &str, timeout_ms: u64) -> Vec<LatencyResult> {
         let tags: Vec<String> = self.handlers.keys().cloned().collect();
-        
+
         tags.into_iter()
             .map(|tag| {
                 let result = self.test_latency(&tag, url, timeout_ms);
@@ -173,7 +225,7 @@ mod tests {
     #[test]
     fn test_register_and_test() {
         let mut tester = LatencyTester::new().unwrap();
-        
+
         // 创建一个测试用的VLESS配置
         let config = OutboundConfig {
             tag: "test".to_string(),

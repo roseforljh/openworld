@@ -23,6 +23,16 @@ class OpenWorldCore private constructor(private val context: Context) {
     // OpenWorld 内核是否可用
     private var coreAvailable = false
 
+    private fun latencyInitFailureHint(code: Int): String {
+        return when (code) {
+            -2 -> "schema parse error"
+            -3 -> "empty outbounds"
+            -6 -> "missing required fields"
+            -7 -> "schema_version mismatch"
+            else -> "unknown init error"
+        }
+    }
+
     companion object {
         private const val TAG = "OpenWorldCore"
 
@@ -37,6 +47,59 @@ class OpenWorldCore private constructor(private val context: Context) {
 
         fun ensureCoreSetup(context: Context) {
             getInstance(context)
+        }
+
+        fun convertSubscriptionToZenone(content: String): String? {
+            return try {
+                NativeCore.convertSubscriptionToZenone(content)
+            } catch (e: Exception) {
+                Log.e(TAG, "convertSubscriptionToZenone failed", e)
+                null
+            }
+        }
+
+        fun detectSubscriptionFormat(content: String): String? {
+            return try {
+                when {
+                    content.contains("zen-version") -> "{\"format\":\"zenone\"}"
+                    content.contains("proxies:") -> "{\"format\":\"clash\"}"
+                    content.trim().startsWith("{") || content.trim().startsWith("[") -> "{\"format\":\"singbox\"}"
+                    content.contains("://") -> "{\"format\":\"uri\"}"
+                    else -> "{\"format\":\"unknown\"}"
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "detectSubscriptionFormat failed", e)
+                null
+            }
+        }
+
+        /**
+         * 导出配置为指定格式
+         * @param content Zenone 格式的配置内容
+         * @param format 目标格式: clash, singbox, zenone, json
+         * @return JSON 格式的导出结果
+         */
+        fun exportConfig(content: String, format: String): String? {
+            return try {
+                NativeCore.exportConfig(content, format)
+            } catch (e: Exception) {
+                Log.e(TAG, "exportConfig failed", e)
+                null
+            }
+        }
+
+        /**
+         * 导出节点为 URI 链接
+         * @param nodeJson 节点配置的 JSON
+         * @return JSON 格式的导出结果: {"success": true, "uri": "vmess://..."}
+         */
+        fun exportNodeAsUri(nodeJson: String): String? {
+            return try {
+                NativeCore.exportNodeAsUri(nodeJson)
+            } catch (e: Exception) {
+                Log.e(TAG, "exportNodeAsUri failed", e)
+                null
+            }
         }
     }
 
@@ -123,7 +186,7 @@ class OpenWorldCore private constructor(private val context: Context) {
         if (tag.isBlank()) return -1L
         return withContext(Dispatchers.IO) {
             runCatching {
-                NativeCore.urlTest(tag, "https://www.gstatic.com/generate_204", 4500).toLong()
+                NativeCore.urlTest(tag, "http://www.gstatic.com/generate_204", 4500).toLong()
             }.getOrDefault(-1L)
         }
     }
@@ -136,7 +199,7 @@ class OpenWorldCore private constructor(private val context: Context) {
             val tag = outbound.tag
             if (tag.isBlank()) return@forEach
             val latency = runCatching {
-                NativeCore.urlTest(tag, "https://www.gstatic.com/generate_204", 4500).toLong()
+                NativeCore.urlTest(tag, "http://www.gstatic.com/generate_204", 4500).toLong()
             }.getOrDefault(-1L)
             onNodeComplete(tag, latency)
         }
@@ -152,7 +215,7 @@ class OpenWorldCore private constructor(private val context: Context) {
      */
     suspend fun testOutboundsLatencyStandalone(
         outbounds: List<Outbound>,
-        url: String = "https://www.gstatic.com/generate_204",
+        url: String = "http://www.gstatic.com/generate_204",
         timeoutMs: Int = 5000
     ): Map<String, Long> = withContext(Dispatchers.IO) {
         if (outbounds.isEmpty()) {
@@ -162,16 +225,33 @@ class OpenWorldCore private constructor(private val context: Context) {
 
         Log.d(TAG, "testOutboundsLatencyStandalone: Testing ${outbounds.size} nodes, timeout=$timeoutMs ms")
 
-        // 将outbounds转换为JSON
         val gson = Gson()
-        val outboundsJson = gson.toJson(outbounds)
+        val violations = LatencyContractMapper.validateOutbounds(outbounds)
+        if (violations.isNotEmpty()) {
+            violations.forEach { violation ->
+                Log.e(TAG, "testOutboundsLatencyStandalone: contract violation $violation")
+            }
+            return@withContext outbounds.associate { it.tag to -1L }
+        }
+
+        val payload = try {
+            LatencyContractMapper.toPayload(outbounds)
+        } catch (e: IllegalArgumentException) {
+            Log.e(TAG, "testOutboundsLatencyStandalone: contract mapping failed", e)
+            return@withContext outbounds.associate { it.tag to -1L }
+        }
+        val outboundsJson = gson.toJson(payload)
         Log.d(TAG, "testOutboundsLatencyStandalone: JSON size=${outboundsJson.length}")
 
         // 初始化测试器
         val initResult = NativeCore.latencyTesterInit(outboundsJson)
         if (initResult != 0) {
-            Log.d(TAG, "testOutboundsLatencyStandalone: initResult=$initResult")
-            Log.e(TAG, "Failed to init latency tester: $initResult")
+            val hint = latencyInitFailureHint(initResult)
+            Log.e(
+                TAG,
+                "testOutboundsLatencyStandalone: init failure code=$initResult, hint=$hint, " +
+                    "contract=strict latency-init-schema-v1"
+            )
             return@withContext outbounds.associate { it.tag to -1L }
         }
 
@@ -186,7 +266,10 @@ class OpenWorldCore private constructor(private val context: Context) {
         Log.d(TAG, "testOutboundsLatencyStandalone: Tester freed")
 
         if (resultsJson.isNullOrEmpty()) {
-            Log.w(TAG, "testOutboundsLatencyStandalone: resultsJson is null or empty")
+            Log.w(
+                TAG,
+                "testOutboundsLatencyStandalone: runtime failure after successful init, resultsJson empty"
+            )
             return@withContext outbounds.associate { it.tag to -1L }
         }
 
@@ -203,7 +286,21 @@ class OpenWorldCore private constructor(private val context: Context) {
                 val tag = it["tag"] as? String ?: ""
                 val latency = (it["latency_ms"] as? Number)?.toLong() ?: -1L
                 val error = it["error"]
-                Log.d(TAG, "testOutboundsLatencyStandalone: node=$tag, latency=${latency}ms, error=$error")
+                if (latency < 0) {
+                    if (error == null) {
+                        Log.w(
+                            TAG,
+                            "testOutboundsLatencyStandalone: runtime timeout node=$tag latency=$latency"
+                        )
+                    } else {
+                        Log.w(
+                            TAG,
+                            "testOutboundsLatencyStandalone: runtime error node=$tag latency=$latency error=$error"
+                        )
+                    }
+                } else {
+                    Log.d(TAG, "testOutboundsLatencyStandalone: node=$tag, latency=${latency}ms")
+                }
                 tag to latency
             }
             Log.d(TAG, "testOutboundsLatencyStandalone: Total ${latencyMap.size} nodes tested")
@@ -212,6 +309,27 @@ class OpenWorldCore private constructor(private val context: Context) {
             Log.e(TAG, "Failed to parse latency results", e)
             outbounds.associate { it.tag to -1L }
         }
+    }
+
+    /**
+     * 独立单节点延迟测试（不依赖核心启动）
+     *
+     * @param outbound 要测试的节点
+     * @param url 测试URL
+     * @param timeoutMs 超时时间（毫秒）
+     * @return 延迟毫秒，-1 表示失败
+     */
+    suspend fun testOutboundLatencyStandalone(
+        outbound: Outbound,
+        url: String = "http://www.gstatic.com/generate_204",
+        timeoutMs: Int = 5000
+    ): Long = withContext(Dispatchers.IO) {
+        if (outbound.tag.isBlank()) {
+            return@withContext -1L
+        }
+
+        val results = testOutboundsLatencyStandalone(listOf(outbound), url, timeoutMs)
+        results[outbound.tag] ?: -1L
     }
 
     /**
@@ -261,10 +379,4 @@ class OpenWorldCore private constructor(private val context: Context) {
         // 清理资源
     }
 }
-
-
-
-
-
-
 

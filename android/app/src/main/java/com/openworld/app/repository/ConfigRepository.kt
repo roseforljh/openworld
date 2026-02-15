@@ -20,6 +20,7 @@ import com.openworld.app.service.ProxyOnlyService
 import com.openworld.app.utils.parser.Base64Parser
 import com.openworld.app.utils.parser.NodeLinkParser
 import com.openworld.app.utils.parser.OpenWorldParser
+import com.openworld.app.utils.parser.ZenOneParser
 import com.openworld.app.repository.config.OutboundFixer
 import com.openworld.app.repository.config.InboundBuilder
 import com.openworld.app.repository.config.NodeLinkExporter
@@ -229,6 +230,9 @@ class ConfigRepository(private val context: Context) {
 
     // 节点链接解析器 - 复用实例避免重复创建
     private val nodeLinkParser = NodeLinkParser(gson)
+
+    // ZenOne 解析器 - 用于解析内核返回的 ZenOne 配置
+    private val zenOneParser = ZenOneParser(gson)
 
     private val subscriptionManager = SubscriptionManager(listOf(
         OpenWorldParser(gson),
@@ -1050,6 +1054,60 @@ class ConfigRepository(private val context: Context) {
     }
 
     /**
+     * 使用内核解析订阅内容
+     *
+     * 将任意格式的订阅内容转换为 ZenOne 格式，并解析为 OpenWorldConfig
+     * 支持: singbox JSON, clash YAML, base64 编码, 单节点链接, 原生 ZenOne
+     *
+     * @param content 订阅内容
+     * @return 解析后的 OpenWorldConfig，如果失败返回 null
+     */
+    private fun parseSubscriptionWithCore(content: String): OpenWorldConfig? {
+        return try {
+            // 调用内核进行格式转换
+            val resultJson = OpenWorldCore.convertSubscriptionToZenone(content)
+            if (resultJson.isNullOrEmpty()) {
+                Log.w(TAG, "Core returned empty result")
+                return null
+            }
+
+            // 解析转换结果
+            val zenOneResult = zenOneParser.parseConvertResult(resultJson)
+            if (!zenOneResult.success) {
+                Log.w(TAG, "Core conversion failed: ${zenOneResult.error}")
+                return null
+            }
+
+            // 解析 ZenOne YAML/JSON 为 OpenWorldConfig
+            val zenoneContent = zenOneResult.zenoneYaml
+            if (zenoneContent.isNullOrEmpty()) {
+                Log.w(TAG, "Core returned empty ZenOne content")
+                return null
+            }
+
+            zenOneParser.parse(zenoneContent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse with core", e)
+            null
+        }
+    }
+
+    /**
+     * 检测订阅内容格式
+     */
+    private fun detectSubscriptionFormat(content: String): String {
+        return try {
+            val result = OpenWorldCore.detectSubscriptionFormat(content)
+            if (result.isNullOrEmpty()) "unknown" else {
+                val parsed = zenOneParser.parseConvertResult("{\"success\":true,\"format\":${result}}")
+                parsed.error ?: "unknown"
+            }
+        } catch (e: Exception) {
+            "unknown"
+        }
+    }
+
+    /**
      * 从订阅 URL 导入配置
      */
     @Suppress("LongMethod", "CognitiveComplexMethod")
@@ -1162,7 +1220,9 @@ class ConfigRepository(private val context: Context) {
             onProgress(context.getString(R.string.common_loading))
 
             val normalized = normalizeImportedContent(content)
-            val config = subscriptionManager.parse(normalized)
+
+            // 使用内核解析订阅（不支持回退）
+            val config = parseSubscriptionWithCore(normalized)
                 ?: return@withContext Result.failure(Exception(context.getString(R.string.profiles_parse_failed)))
 
             onProgress(context.getString(R.string.profiles_extracting_nodes, 0, 0))
@@ -2014,8 +2074,7 @@ class ConfigRepository(private val context: Context) {
                         }
 
                         val fixedOutbound = buildOutboundForRuntime(outbound)
-                        val allOutbounds = config.outbounds.map { buildOutboundForRuntime(it) }
-                        val latency = openWorldCore.testOutboundLatency(fixedOutbound, allOutbounds)
+                        val latency = openWorldCore.testOutboundLatencyStandalone(fixedOutbound)
 
                         _nodes.update { list ->
                             list.map {
@@ -2108,8 +2167,8 @@ class ConfigRepository(private val context: Context) {
         val outbounds = testInfoList.map { it.outbound }
         val tagToInfo = testInfoList.associateBy { it.outbound.tag }
 
-        openWorldCore.testOutboundsLatency(outbounds) { tag, latency ->
-            val info = tagToInfo[tag] ?: return@testOutboundsLatency
+        openWorldCore.testOutboundsLatencyStandalone(outbounds).forEach { (tag, latency) ->
+            val info = tagToInfo[tag] ?: return@forEach
             val latencyValue = if (latency > 0) latency else -1L
 
             _nodes.update { list ->

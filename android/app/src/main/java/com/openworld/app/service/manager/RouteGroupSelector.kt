@@ -112,7 +112,7 @@ class RouteGroupSelector(
                         try {
                             val outbound = byTag[tag] ?: return@async
                             val rtt = try {
-                                core.testOutboundLatency(outbound, outbounds)
+                                core.testOutboundLatencyStandalone(outbound)
                             } catch (_: Exception) {
                                 -1L
                             }

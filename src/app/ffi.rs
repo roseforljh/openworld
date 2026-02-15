@@ -10,12 +10,13 @@ use std::os::raw::c_char;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use crate::app::latency_test::LatencyTester;
 use crate::app::proxy_provider::ProxyProviderManager;
 use crate::app::tracker::ConnectionTracker;
-use crate::app::latency_test::LatencyTester;
 use crate::app::App;
 use crate::config::profile::ProfileManager;
 use crate::config::Config;
+use serde::Deserialize;
 
 /// 全局内核实例
 static INSTANCE: OnceLock<Mutex<Option<OpenWorldInstance>>> = OnceLock::new();
@@ -618,6 +619,287 @@ pub unsafe extern "C" fn openworld_url_test(
 static LATENCY_TESTER: once_cell::sync::Lazy<std::sync::Mutex<Option<LatencyTester>>> =
     once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
 
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+struct LatencyInitPayloadV1 {
+    schema_version: i32,
+    outbounds: Vec<LatencyOutboundV1>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+struct LatencyOutboundV1 {
+    tag: String,
+    protocol: String,
+    settings: LatencyOutboundSettingsV1,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+struct LatencyOutboundSettingsV1 {
+    address: String,
+    port: u16,
+    uuid: Option<String>,
+    password: Option<String>,
+    method: Option<String>,
+    security: Option<String>,
+    sni: Option<String>,
+    server_name: Option<String>,
+    fingerprint: Option<String>,
+    flow: Option<String>,
+    alter_id: Option<u16>,
+    network: Option<String>,
+    up_mbps: Option<u64>,
+    down_mbps: Option<u64>,
+    auth_str: Option<String>,
+    server_ports: Option<Vec<String>>,
+    hop_interval: Option<String>,
+    obfs: Option<LatencyObfsConfigV1>,
+    tls: Option<LatencyTlsConfigV1>,
+    transport: Option<LatencyTransportConfigV1>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+struct LatencyTlsConfigV1 {
+    enabled: Option<bool>,
+    server_name: Option<String>,
+    sni: Option<String>,
+    fingerprint: Option<String>,
+    alpn: Option<Vec<String>>,
+    reality: Option<LatencyRealityConfigV1>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+struct LatencyRealityConfigV1 {
+    public_key: Option<String>,
+    short_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+struct LatencyTransportConfigV1 {
+    #[serde(rename = "type")]
+    transport_type: Option<String>,
+    path: Option<String>,
+    headers: Option<std::collections::HashMap<String, String>>,
+    service_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+struct LatencyObfsConfigV1 {
+    #[serde(rename = "type")]
+    obfs_type: Option<String>,
+    password: Option<String>,
+}
+
+impl From<LatencyOutboundV1> for crate::config::types::OutboundConfig {
+    fn from(outbound: LatencyOutboundV1) -> Self {
+        let mut settings = crate::config::types::OutboundSettings::default();
+        settings.address = Some(outbound.settings.address);
+        settings.port = Some(outbound.settings.port);
+        settings.uuid = outbound.settings.uuid;
+        settings.password = outbound.settings.password.or(outbound.settings.auth_str);
+        settings.method = outbound.settings.method;
+        settings.security = outbound.settings.security.clone();
+        settings.sni = outbound.settings.sni.clone();
+        settings.server_name = outbound.settings.server_name.clone();
+        settings.fingerprint = outbound.settings.fingerprint.clone();
+        settings.flow = outbound.settings.flow;
+        settings.alter_id = outbound.settings.alter_id;
+        settings.up_mbps = outbound.settings.up_mbps;
+        settings.down_mbps = outbound.settings.down_mbps;
+        let _ = outbound.settings.server_ports;
+        let _ = outbound.settings.hop_interval;
+
+        if let Some(obfs) = outbound.settings.obfs {
+            settings.obfs = obfs.obfs_type;
+            settings.obfs_password = obfs.password;
+        }
+
+        if let Some(transport) = outbound.settings.transport {
+            settings.transport = Some(crate::config::types::TransportConfig {
+                transport_type: transport
+                    .transport_type
+                    .unwrap_or_else(|| "tcp".to_string()),
+                path: transport.path,
+                host: None,
+                headers: transport.headers,
+                service_name: transport.service_name,
+                shadow_tls_password: None,
+                shadow_tls_sni: None,
+            });
+        }
+
+        if let Some(tls) = outbound.settings.tls {
+            let public_key = tls.reality.as_ref().and_then(|v| v.public_key.clone());
+            let short_id = tls.reality.as_ref().and_then(|v| v.short_id.clone());
+            settings.public_key = public_key.clone();
+            settings.short_id = short_id.clone();
+
+            if settings.server_name.is_none() {
+                settings.server_name = tls.server_name.clone();
+            }
+            if settings.sni.is_none() {
+                settings.sni = tls.sni.clone().or_else(|| tls.server_name.clone());
+            }
+            if settings.fingerprint.is_none() {
+                settings.fingerprint = tls.fingerprint.clone();
+            }
+
+            settings.tls = Some(crate::config::types::TlsConfig {
+                enabled: tls.enabled.unwrap_or(true),
+                security: settings
+                    .security
+                    .clone()
+                    .unwrap_or_else(|| "tls".to_string()),
+                sni: settings.sni.clone(),
+                allow_insecure: false,
+                alpn: tls.alpn,
+                public_key,
+                short_id,
+                server_name: settings.server_name.clone(),
+                fingerprint: settings.fingerprint.clone(),
+                ech_config: None,
+                ech_grease: false,
+                ech_outer_sni: None,
+                ech_auto: false,
+                fragment: None,
+            });
+        }
+
+        crate::config::types::OutboundConfig {
+            tag: outbound.tag,
+            protocol: outbound.protocol,
+            settings,
+        }
+    }
+}
+
+fn parse_latency_contract_outbounds(
+    json_str: &str,
+) -> Result<Vec<crate::config::types::OutboundConfig>, i32> {
+    let value: serde_json::Value = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("latency_init invalid json: {}", e);
+            return Err(-2);
+        }
+    };
+
+    let root = match value.as_object() {
+        Some(v) => v,
+        None => {
+            tracing::error!("latency_init invalid: top-level object expected");
+            return Err(-2);
+        }
+    };
+
+    let schema_version = match root.get("schema_version").and_then(|v| v.as_i64()) {
+        Some(v) => v,
+        None => {
+            tracing::error!("latency_init invalid: schema_version missing or not integer");
+            return Err(-2);
+        }
+    };
+
+    if schema_version != 1 {
+        tracing::error!(
+            "latency_init invalid: schema_version={} unsupported",
+            schema_version
+        );
+        return Err(-7);
+    }
+
+    let outbounds = match root.get("outbounds").and_then(|v| v.as_array()) {
+        Some(v) => v,
+        None => {
+            tracing::error!("latency_init invalid: outbounds must be array");
+            return Err(-2);
+        }
+    };
+
+    if outbounds.is_empty() {
+        return Err(-3);
+    }
+
+    let mut missing_errors = Vec::new();
+    for (idx, item) in outbounds.iter().enumerate() {
+        let Some(obj) = item.as_object() else {
+            missing_errors.push(format!("outbounds[{}] object missing", idx));
+            continue;
+        };
+
+        let has_tag = obj
+            .get("tag")
+            .and_then(|v| v.as_str())
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false);
+        if !has_tag {
+            missing_errors.push(format!("outbounds[{}].tag missing", idx));
+        }
+
+        let has_protocol = obj
+            .get("protocol")
+            .and_then(|v| v.as_str())
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false);
+        if !has_protocol {
+            missing_errors.push(format!("outbounds[{}].protocol missing", idx));
+        }
+
+        let Some(settings) = obj.get("settings").and_then(|v| v.as_object()) else {
+            missing_errors.push(format!("outbounds[{}].settings missing", idx));
+            continue;
+        };
+
+        let has_address = settings
+            .get("address")
+            .and_then(|v| v.as_str())
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false);
+        if !has_address {
+            missing_errors.push(format!("outbounds[{}].settings.address missing", idx));
+        }
+
+        let valid_port = settings
+            .get("port")
+            .and_then(|v| v.as_u64())
+            .map(|v| (1..=65535).contains(&v))
+            .unwrap_or(false);
+        if !valid_port {
+            missing_errors.push(format!("outbounds[{}].settings.port missing", idx));
+        }
+    }
+
+    if !missing_errors.is_empty() {
+        for item in &missing_errors {
+            tracing::error!("latency_init invalid: {}", item);
+        }
+        return Err(-6);
+    }
+
+    let payload: LatencyInitPayloadV1 = match serde_json::from_value(value) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("latency_init invalid schema parse: {}", e);
+            return Err(-2);
+        }
+    };
+
+    if payload.schema_version != 1 {
+        tracing::error!(
+            "latency_init invalid: schema_version={} unsupported",
+            payload.schema_version
+        );
+        return Err(-7);
+    }
+
+    Ok(payload.outbounds.into_iter().map(Into::into).collect())
+}
+
 /// 初始化独立延迟测试器
 ///
 /// 接收outbound配置的JSON数组，注册需要测试的节点
@@ -626,21 +908,15 @@ static LATENCY_TESTER: once_cell::sync::Lazy<std::sync::Mutex<Option<LatencyTest
 /// # Safety
 /// `outbounds_json` 必须是合法的 C 字符串指针
 #[no_mangle]
-pub unsafe extern "C" fn openworld_latency_tester_init(
-    outbounds_json: *const c_char,
-) -> i32 {
+pub unsafe extern "C" fn openworld_latency_tester_init(outbounds_json: *const c_char) -> i32 {
     let json_str = match from_c_str(outbounds_json) {
         Some(s) => s.to_string(),
         None => return -1,
     };
 
-    // 解析outbounds JSON
-    let outbounds: Vec<crate::config::types::OutboundConfig> = match serde_json::from_str(&json_str) {
-        Ok(o) => o,
-        Err(e) => {
-            tracing::error!("failed to parse outbounds JSON: {}", e);
-            return -2;
-        }
+    let outbounds = match parse_latency_contract_outbounds(&json_str) {
+        Ok(v) => v,
+        Err(code) => return code,
     };
 
     if outbounds.is_empty() {
@@ -665,7 +941,10 @@ pub unsafe extern "C" fn openworld_latency_tester_init(
     let mut guard = LATENCY_TESTER.lock().unwrap();
     *guard = Some(tester);
 
-    tracing::info!("latency tester initialized with {} outbounds", outbounds.len());
+    tracing::info!(
+        "latency tester initialized with {} outbounds",
+        outbounds.len()
+    );
     0
 }
 
@@ -2345,6 +2624,25 @@ pub unsafe extern "C" fn openworld_fetch_url(url: *const c_char) -> *mut c_char 
 /// 返回 JSON: `{"zenone_yaml":"...","node_count":N,"diagnostics":[...]}`
 /// 失败时返回 `{"error":"..."}`
 ///
+/// 统一订阅转换接口
+///
+/// 将任意格式的订阅内容转换为完整的 ZenOne 格式
+/// 支持: singbox JSON, clash YAML, base64 编码, 单节点链接, 原生 ZenOne
+///
+/// 返回 JSON:
+/// ```json
+/// {
+///   "success": true,
+///   "zenone_yaml": "zen-version: 1\nnodes: [...]\ngroups: [...]\n...",
+///   "node_count": 10,
+///   "has_groups": true,
+///   "has_router": true,
+///   "has_dns": false,
+///   "metadata": { "name": "xxx", ... },
+///   "diagnostics": [...]
+/// }
+/// ```
+///
 /// # Safety
 /// `content` 必须是合法的 C 字符串指针
 #[no_mangle]
@@ -2353,21 +2651,40 @@ pub unsafe extern "C" fn openworld_convert_subscription_to_zenone(
 ) -> *mut c_char {
     let raw = match from_c_str(content) {
         Some(s) => s,
-        None => return to_c_string("{\"error\":\"null content\"}"),
+        None => return to_c_string(r#"{"success": false, "error": "null content"}"#),
     };
 
     let mut diags = crate::config::zenone::Diagnostics::new();
-    match crate::config::zenone::converter::convert_subscription_to_zenone(raw, &mut diags) {
-        Ok(doc) => {
-            let node_count = doc.nodes.len();
+
+    match crate::config::subscription::parse_subscription(raw) {
+        Ok(outbounds) => {
+            let node_count = outbounds.len();
+            let nodes = crate::config::zenone::from_outbound_configs(&outbounds, &mut diags);
+            let doc = crate::config::zenone::types::ZenOneDoc {
+                zen_version: 1,
+                metadata: None,
+                nodes,
+                groups: vec![],
+                router: None,
+                dns: None,
+                inbounds: vec![],
+                settings: None,
+                signature: None,
+            };
+
             let yaml = match crate::config::zenone::encode_yaml(&doc) {
                 Ok(y) => y,
                 Err(e) => {
                     return to_c_string(
-                        &serde_json::json!({"error": e.to_string()}).to_string(),
+                        &serde_json::json!({
+                            "success": false,
+                            "error": e.to_string()
+                        })
+                        .to_string(),
                     )
                 }
             };
+
             let diag_list: Vec<serde_json::Value> = diags
                 .items
                 .iter()
@@ -2379,14 +2696,26 @@ pub unsafe extern "C" fn openworld_convert_subscription_to_zenone(
                     })
                 })
                 .collect();
+
             let result = serde_json::json!({
+                "success": true,
                 "zenone_yaml": yaml,
                 "node_count": node_count,
+                "has_groups": false,
+                "has_router": false,
+                "has_dns": false,
+                "metadata": serde_json::Value::Null,
                 "diagnostics": diag_list,
             });
             to_c_string(&result.to_string())
         }
-        Err(e) => to_c_string(&serde_json::json!({"error": e.to_string()}).to_string()),
+        Err(e) => to_c_string(
+            &serde_json::json!({
+                "success": false,
+                "error": e.to_string()
+            })
+            .to_string(),
+        ),
     }
 }
 
@@ -2398,9 +2727,7 @@ pub unsafe extern "C" fn openworld_convert_subscription_to_zenone(
 /// # Safety
 /// `zenone_content` 必须是合法的 C 字符串指针
 #[no_mangle]
-pub unsafe extern "C" fn openworld_zenone_to_config(
-    zenone_content: *const c_char,
-) -> *mut c_char {
+pub unsafe extern "C" fn openworld_zenone_to_config(zenone_content: *const c_char) -> *mut c_char {
     let raw = match from_c_str(zenone_content) {
         Some(s) => s,
         None => return to_c_string("{\"error\":\"null content\"}"),
@@ -2414,9 +2741,7 @@ pub unsafe extern "C" fn openworld_zenone_to_config(
             let zenone_yaml = match crate::config::zenone::encode_yaml(&doc) {
                 Ok(y) => y,
                 Err(e) => {
-                    return to_c_string(
-                        &serde_json::json!({"error": e.to_string()}).to_string(),
-                    )
+                    return to_c_string(&serde_json::json!({"error": e.to_string()}).to_string())
                 }
             };
             let node_names: Vec<&str> = doc.nodes.iter().map(|n| n.name.as_str()).collect();
@@ -2462,6 +2787,217 @@ pub unsafe extern "C" fn openworld_is_zenone_format(content: *const c_char) -> i
         }
         None => -3,
     }
+}
+
+/// 检测订阅内容格式
+///
+/// 返回 JSON: `{"format": "zenone"|"clash"|"singbox"|"base64"|"uri"|"unknown"}`
+///
+/// # Safety
+/// `content` 必须是合法的 C 字符串指针
+#[no_mangle]
+pub unsafe extern "C" fn openworld_detect_subscription_format(
+    content: *const c_char,
+) -> *mut c_char {
+    let raw = match from_c_str(content) {
+        Some(s) => s,
+        None => return to_c_string(r#"{"format": "unknown", "error": "null content"}"#),
+    };
+
+    let format = crate::config::subscription::detect_format(raw);
+    let format_str = match format {
+        crate::config::subscription::SubFormat::ClashYaml => "clash",
+        crate::config::subscription::SubFormat::SingBoxJson => "singbox",
+        crate::config::subscription::SubFormat::Base64 => "base64",
+        crate::config::subscription::SubFormat::UriList => "uri",
+        crate::config::subscription::SubFormat::Unknown => "unknown",
+    };
+
+    // 特殊检测 ZenOne
+    if crate::config::zenone::is_zenone(raw) {
+        return to_c_string(&serde_json::json!({
+            "format": "zenone"
+        }).to_string());
+    }
+
+    to_c_string(&serde_json::json!({
+        "format": format_str
+    }).to_string())
+}
+
+/// 导出 ZenOne 配置为其他格式
+///
+/// 参数:
+/// - content: ZenOne YAML/JSON 内容
+/// - format: 目标格式 "clash" | "singbox"
+///
+/// 返回 JSON: `{"success": true, "content": "...", "format": "clash"}`
+/// 失败时返回 `{"success": false, "error": "..."}`
+///
+/// # Safety
+/// `content` 和 `format` 必须是合法的 C 字符串指针
+#[no_mangle]
+pub unsafe extern "C" fn openworld_export_config(
+    content: *const c_char,
+    format: *const c_char,
+) -> *mut c_char {
+    let raw_content = match from_c_str(content) {
+        Some(s) => s,
+        None => return to_c_string(r#"{"success": false, "error": "null content"}"#),
+    };
+
+    let target_format = match from_c_str(format) {
+        Some(s) => s,
+        None => return to_c_string(r#"{"success": false, "error": "null format"}"#),
+    };
+
+    // 解析 ZenOne 配置
+    let mut diags = crate::config::zenone::Diagnostics::new();
+    let doc = match crate::config::zenone::parse_and_validate(raw_content, None) {
+        Ok((d, _)) => d,
+        Err(e) => {
+            return to_c_string(&serde_json::json!({
+                "success": false,
+                "error": format!("ZenOne 解析失败: {}", e)
+            }).to_string())
+        }
+    };
+
+    // 根据目标格式导出
+    let result = match target_format {
+        "clash" | "singbox" => serde_json::json!({
+            "success": false,
+            "error": format!("当前版本不支持导出格式: {}", target_format)
+        }),
+        "zenone" | "yaml" => {
+            match crate::config::zenone::encode_yaml(&doc) {
+                Ok(yaml) => serde_json::json!({
+                    "success": true,
+                    "content": yaml,
+                    "format": "zenone"
+                }),
+                Err(e) => serde_json::json!({
+                    "success": false,
+                    "error": format!("导出 ZenOne 失败: {}", e)
+                }),
+            }
+        }
+        "json" => {
+            match crate::config::zenone::encode_json(&doc) {
+                Ok(json) => serde_json::json!({
+                    "success": true,
+                    "content": json,
+                    "format": "zenone_json"
+                }),
+                Err(e) => serde_json::json!({
+                    "success": false,
+                    "error": format!("导出 ZenOne JSON 失败: {}", e)
+                }),
+            }
+        }
+        _ => {
+            serde_json::json!({
+                "success": false,
+                "error": format!("不支持的格式: {}, 支持: clash, singbox, zenone, json", target_format)
+            })
+        }
+    };
+
+    to_c_string(&result.to_string())
+}
+
+/// 导出节点为 URI 链接
+///
+/// 参数:
+/// - node_json: 节点配置的 JSON（与 OpenWorldConfig 中的 Outbound 格式一致）
+///
+/// 返回 JSON: `{"success": true, "uri": "vmess://..."}`
+/// 失败时返回 `{"success": false, "error": "..."}`
+///
+/// # Safety
+/// `node_json` 必须是合法的 C 字符串指针
+#[no_mangle]
+pub unsafe extern "C" fn openworld_export_node_as_uri(node_json: *const c_char) -> *mut c_char {
+    let raw = match from_c_str(node_json) {
+        Some(s) => s,
+        None => return to_c_string(r#"{"success": false, "error": "null content"}"#),
+    };
+
+    // 解析节点 JSON
+    let outbound: crate::config::types::OutboundConfig = match serde_json::from_str(raw) {
+        Ok(o) => o,
+        Err(e) => {
+            return to_c_string(&serde_json::json!({
+                "success": false,
+                "error": format!("JSON 解析失败: {}", e)
+            }).to_string())
+        }
+    };
+
+    // 转换为 URI
+    let uri = match outbound.protocol.as_str() {
+        "vmess" => encode_vmess_uri(&outbound),
+        "vless" => encode_vless_uri(&outbound),
+        "trojan" => encode_trojan_uri(&outbound),
+        "shadowsocks" => encode_ss_uri(&outbound),
+        "hysteria2" => encode_hy2_uri(&outbound),
+        "tuic" => encode_tuic_uri(&outbound),
+        "wireguard" => encode_wg_uri(&outbound),
+        "ssh" => encode_ssh_uri(&outbound),
+        _ => {
+            return to_c_string(&serde_json::json!({
+                "success": false,
+                "error": format!("不支持的协议: {}", outbound.protocol)
+            }).to_string())
+        }
+    };
+
+    to_c_string(&serde_json::json!({
+        "success": true,
+        "uri": uri
+    }).to_string())
+}
+
+// ─── 节点 URI 编码函数 ───
+
+fn encode_vmess_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    use crate::config::subscription::encode_vmess_uri as encode;
+    encode(ob)
+}
+
+fn encode_vless_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    use crate::config::subscription::encode_vless_uri as encode;
+    encode(ob)
+}
+
+fn encode_trojan_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    use crate::config::subscription::encode_trojan_uri as encode;
+    encode(ob)
+}
+
+fn encode_ss_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    use crate::config::subscription::encode_ss_uri as encode;
+    encode(ob)
+}
+
+fn encode_hy2_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    use crate::config::subscription::encode_hy2_uri as encode;
+    encode(ob)
+}
+
+fn encode_tuic_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    use crate::config::subscription::encode_tuic_uri as encode;
+    encode(ob)
+}
+
+fn encode_wg_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    use crate::config::subscription::encode_wg_uri as encode;
+    encode(ob)
+}
+
+fn encode_ssh_uri(ob: &crate::config::types::OutboundConfig) -> String {
+    use crate::config::subscription::encode_ssh_uri as encode;
+    encode(ob)
 }
 
 #[cfg(test)]
@@ -2538,5 +3074,144 @@ mod tests {
         let ptr = to_c_string("hello");
         assert!(!ptr.is_null());
         unsafe { openworld_free_string(ptr) };
+    }
+
+    #[test]
+    fn latency_contract_valid_v1_payload_parses() {
+        let input = r#"{
+            "schema_version": 1,
+            "outbounds": [
+                {
+                    "tag": "vless-reality",
+                    "protocol": "vless",
+                    "settings": {
+                        "address": "example.com",
+                        "port": 443,
+                        "uuid": "550e8400-e29b-41d4-a716-446655440000",
+                        "tls": {
+                            "server_name": "example.com",
+                            "reality": {
+                                "public_key": "pub-key",
+                                "short_id": "abcd"
+                            }
+                        },
+                        "transport": {
+                            "type": "ws",
+                            "path": "/ws",
+                            "headers": {
+                                "Host": "example.com"
+                            }
+                        }
+                    }
+                }
+            ]
+        }"#;
+
+        let outbounds = parse_latency_contract_outbounds(input).expect("should parse");
+        assert_eq!(outbounds.len(), 1);
+        let first = &outbounds[0];
+        assert_eq!(first.tag, "vless-reality");
+        assert_eq!(first.settings.address.as_deref(), Some("example.com"));
+        assert_eq!(first.settings.port, Some(443));
+        assert_eq!(
+            first
+                .settings
+                .tls
+                .as_ref()
+                .and_then(|v| v.public_key.as_deref()),
+            Some("pub-key")
+        );
+        assert_eq!(
+            first
+                .settings
+                .tls
+                .as_ref()
+                .and_then(|v| v.short_id.as_deref()),
+            Some("abcd")
+        );
+        assert_eq!(
+            first
+                .settings
+                .transport
+                .as_ref()
+                .map(|v| v.transport_type.as_str()),
+            Some("ws")
+        );
+    }
+
+    #[test]
+    fn latency_contract_missing_required_field_returns_minus6() {
+        let input = r#"{
+            "schema_version": 1,
+            "outbounds": [
+                {
+                    "tag": "broken-node",
+                    "protocol": "vless",
+                    "settings": {
+                        "port": 443
+                    }
+                }
+            ]
+        }"#;
+
+        let err = parse_latency_contract_outbounds(input).unwrap_err();
+        assert_eq!(err, -6);
+    }
+
+    #[test]
+    fn latency_contract_schema_version_mismatch_returns_minus7() {
+        let input = r#"{
+            "schema_version": 2,
+            "outbounds": [
+                {
+                    "tag": "node",
+                    "protocol": "vless",
+                    "settings": {
+                        "address": "example.com",
+                        "port": 443
+                    }
+                }
+            ]
+        }"#;
+
+        let err = parse_latency_contract_outbounds(input).unwrap_err();
+        assert_eq!(err, -7);
+    }
+
+    #[test]
+    fn latency_contract_legacy_android_outbound_array_returns_minus2() {
+        let input = r#"[
+            {
+                "type": "vless",
+                "tag": "legacy",
+                "server": "example.com",
+                "server_port": 443,
+                "uuid": "550e8400-e29b-41d4-a716-446655440000"
+            }
+        ]"#;
+
+        let err = parse_latency_contract_outbounds(input).unwrap_err();
+        assert_eq!(err, -2);
+    }
+
+    #[test]
+    fn latency_contract_unknown_field_returns_minus2() {
+        let input = r#"{
+            "schema_version": 1,
+            "outbounds": [
+                {
+                    "tag": "node",
+                    "protocol": "vless",
+                    "settings": {
+                        "address": "example.com",
+                        "port": 443,
+                        "unexpected": "boom"
+                    }
+                }
+            ]
+        }"#;
+
+        let err = parse_latency_contract_outbounds(input).unwrap_err();
+        assert_eq!(err, -2);
     }
 }

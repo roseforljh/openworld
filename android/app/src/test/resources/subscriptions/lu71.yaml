@@ -1,0 +1,55 @@
+proxies:
+  - name: "reality-ws-node"
+    type: vless
+    server: reality.example.com
+    port: 443
+    uuid: 550e8400-e29b-41d4-a716-446655440000
+    tls: true
+    servername: reality.example.com
+    client-fingerprint: chrome
+    network: ws
+    ws-opts:
+      path: /edge
+      headers:
+        Host: cdn.reality.example.com
+    reality-opts:
+      public-key: "reality-public-key-001"
+      short-id: "a1b2c3d4"
+
+  - name: "vmess-ws-node"
+    type: vmess
+    server: vmess.example.com
+    port: 443
+    uuid: 650e8400-e29b-41d4-a716-446655440000
+    cipher: auto
+    tls: true
+    servername: vmess.example.com
+    network: ws
+    ws-opts:
+      path: /api/ws
+      headers:
+        Host: ws.vmess.example.com
+
+  - name: "hy2-node"
+    type: hysteria2
+    server: hy2.example.com
+    port: 8443
+    password: hy2-password
+    sni: hy2.example.com
+    alpn:
+      - h3
+    skip-cert-verify: false
+    up-mbps: 30
+    down-mbps: 150
+    obfs: salamander
+    obfs-password: hy2-obfs-password
+    ports: 8443,9000-9010
+    hop-interval: 20s
+
+proxy-groups:
+  - name: "PROXY"
+    type: select
+    proxies:
+      - reality-ws-node
+      - vmess-ws-node
+      - hy2-node

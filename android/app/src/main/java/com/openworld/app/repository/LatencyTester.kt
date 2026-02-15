@@ -58,7 +58,7 @@ class LatencyTester(
         try {
             val result = withContext(Dispatchers.IO) {
                 try {
-                    val latency = openWorldCore.testOutboundLatency(outbound, allOutbounds)
+                    val latency = openWorldCore.testOutboundLatencyStandalone(outbound)
                     onResult?.invoke(latency)
                     latency
                 } catch (e: Exception) {
@@ -98,7 +98,7 @@ class LatencyTester(
             return@withContext
         }
 
-        openWorldCore.testOutboundsLatency(outbounds) { tag, latency ->
+        openWorldCore.testOutboundsLatencyStandalone(outbounds).forEach { (tag, latency) ->
             val latencyValue = if (latency > 0) latency else -1L
             onNodeComplete?.invoke(tag, latencyValue)
         }
